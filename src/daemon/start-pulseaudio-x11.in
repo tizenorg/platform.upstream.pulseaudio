@@ -19,12 +19,6 @@
 
 set -e
 
-. /etc/sysconfig/sound
-
-if [ x"$PULSEAUDIO_ENABLE" = x"no" ] ; then
-    exit 1
-fi
-
 @PA_BINARY@ --start "$@"
 
 if [ x"$DISPLAY" != x ] ; then

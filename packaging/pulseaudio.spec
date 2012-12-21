@@ -223,6 +223,8 @@ cp $RPM_SOURCE_DIR/default.pa-for-gdm %{buildroot}%{_localstatedir}/lib/gdm/.pul
 ln -s esdcompat %{buildroot}%{_bindir}/esd
 rm -rf %{buildroot}/etc/xdg/autostart/pulseaudio-kde.desktop
 
+install -D -m 0644 %{SOURCE3} %{buildroot}%{_sysconfdir}/sysconfig/sound
+
 %clean
 rm -rf %{buildroot}
 
@@ -337,6 +339,7 @@ setup-pulseaudio --auto > /dev/null
 %{_libdir}/pulse-%{drvver}/modules/module-virtual-surround-sink.so
 %{_libdir}/pulse-%{drvver}/modules/module-volume-restore.so
 /lib/udev/rules.d/90-pulseaudio.rules
+%config(noreplace) %{_sysconfdir}/sysconfig/sound
 %dir %{_sysconfdir}/pulse/
 %config(noreplace) %{_sysconfdir}/pulse/daemon.conf
 %config(noreplace) %{_sysconfdir}/pulse/default.pa

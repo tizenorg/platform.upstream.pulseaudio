@@ -1,0 +1,10 @@
+Change-Id: Ie10df80c424066f034251ccc5e9212469ad9823d
+Code-Review+2: Anas Nashif <anas.nashif@intel.com>
+Code-Review+2: Rusty Lynch <rusty.lynch@intel.com>
+Verified+1: Rusty Lynch <rusty.lynch@intel.com>
+Code-Review+1: Philippe Coval <philippe.coval@eurogiciel.fr>
+Submitted-by: Rusty Lynch <rusty.lynch@intel.com>
+Submitted-at: Mon, 10 Jun 2013 19:24:58 -0700
+Reviewed-on: https://review.tizen.org/gerrit/3917
+Project: platform/upstream/pulseaudio
+Branch: refs/heads/tizen

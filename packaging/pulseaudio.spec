@@ -1,4 +1,5 @@
 %bcond_with tizen
+%bcond_with tizen_ivi
 
 Name:           pulseaudio
 Version:        2.1
@@ -250,6 +251,14 @@ ln -s esdcompat %{buildroot}%{_bindir}/esd
 rm -rf %{buildroot}%{_sysconfdir}/xdg/autostart/pulseaudio-kde.desktop
 
 install -D -m 0644 %{SOURCE3} %{buildroot}%{_sysconfdir}/sysconfig/sound
+
+%if %{with tizen_ivi}
+install -d  %{buildroot}/%{_libdir}/systemd/system
+install -m 644 pulseaudio.service %{buildroot}/%{_libdir}/systemd/system/pulseaudio.service
+mkdir -p  %{buildroot}/%{_libdir}/systemd/system/multi-user.target.wants
+ln -s  ../pulseaudio.service  %{buildroot}/%{_libdir}/systemd/system/multi-user.target.wants/pulseaudio.service
+%endif
+
 %pre
 groupadd -r pulse &>/dev/null || :
 useradd -r -c 'PulseAudio daemon' \

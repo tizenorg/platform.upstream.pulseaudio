@@ -1,0 +1,8 @@
+Change-Id: Ife052dac76f0a6c902f7c04359b6a1235fbf2f87
+Code-Review+2: Rusty Lynch <rusty.lynch@intel.com>
+Verified+1: Rusty Lynch <rusty.lynch@intel.com>
+Submitted-by: Rusty Lynch <rusty.lynch@intel.com>
+Submitted-at: Fri, 21 Jun 2013 10:44:16 -0700
+Reviewed-on: https://review.tizen.org/gerrit/4145
+Project: platform/upstream/pulseaudio
+Branch: refs/heads/tizen

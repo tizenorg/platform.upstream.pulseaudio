@@ -1,0 +1,8 @@
+Change-Id: I06ff20efee3d39dc3d2c72782150ee504ab431dd
+Code-Review+2: Jaska Uimonen <jaska.uimonen@intel.com>
+Verified+1: Jaska Uimonen <jaska.uimonen@intel.com>
+Submitted-by: Jaska Uimonen <jaska.uimonen@intel.com>
+Submitted-at: Tue, 25 Jun 2013 00:09:52 -0700
+Reviewed-on: https://review.tizen.org/gerrit/4238
+Project: platform/upstream/pulseaudio
+Branch: refs/heads/tizen

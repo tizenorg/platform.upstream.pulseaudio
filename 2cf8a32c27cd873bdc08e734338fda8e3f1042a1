@@ -1,0 +1,10 @@
+Change-Id: I2cf8a32c27cd873bdc08e734338fda8e3f1042a1
+Code-Review+1: Patrick McCarty <patrick.mccarty@linux.intel.com>
+Code-Review+1: Anas Nashif <anas.nashif@intel.com>
+Code-Review+2: Jaska Uimonen <jaska.uimonen@intel.com>
+Verified+1: Jaska Uimonen <jaska.uimonen@intel.com>
+Submitted-by: Jaska Uimonen <jaska.uimonen@intel.com>
+Submitted-at: Wed, 26 Jun 2013 23:05:36 -0700
+Reviewed-on: https://review.tizen.org/gerrit/4281
+Project: platform/upstream/pulseaudio
+Branch: refs/heads/tizen

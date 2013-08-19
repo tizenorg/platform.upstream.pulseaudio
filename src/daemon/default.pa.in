@@ -141,6 +141,17 @@ load-module module-systemd-login
 ### Enable positioned event sounds
 load-module module-position-event-sounds
 
+### Cork music/video streams when a phone stream is active
+load-module module-role-cork
+
+### Modules to allow autoloading of filters (such as echo cancellation)
+### on demand. module-filter-heuristics tries to determine what filters
+### make sense, and module-filter-apply does the heavy-lifting of
+### loading modules and rerouting streams.
+load-module module-filter-heuristics
+load-module module-filter-apply
+])dnl
+
 ifelse(@HAVE_DBUS@, 1, [dnl
 ### Load DBus protocol
 .ifexists module-dbus-protocol@PA_SOEXT@
@@ -185,17 +196,6 @@ load-module module-augment-properties
 
 ### Honour intended role device property
 load-module module-intended-roles
-
-### Cork music/video streams when a phone stream is active
-load-module module-role-cork
-
-### Modules to allow autoloading of filters (such as echo cancellation)
-### on demand. module-filter-heuristics tries to determine what filters
-### make sense, and module-filter-apply does the heavy-lifting of
-### loading modules and rerouting streams.
-load-module module-filter-heuristics
-load-module module-filter-apply
-])dnl
 
 .endif
 

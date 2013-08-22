@@ -1,0 +1,10 @@
+Code-Review+1: Patrick McCarty <patrick.mccarty@linux.intel.com>
+Code-Review+2: vivian zhang <vivian.zhang@intel.com>
+Verified+1: vivian zhang <vivian.zhang@intel.com>
+Code-Review+1: Michael Doherty <michael.i.doherty@intel.com>
+Verified+1: Michael Doherty <michael.i.doherty@intel.com>
+Submitted-by: vivian zhang <vivian.zhang@intel.com>
+Submitted-at: Wed, 21 Aug 2013 18:29:44 -0700
+Reviewed-on: https://review.tizen.org/gerrit/8496
+Project: platform/upstream/pulseaudio
+Branch: refs/heads/tizen

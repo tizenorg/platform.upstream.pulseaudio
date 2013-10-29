@@ -2,7 +2,7 @@
 %bcond_with pulseaudio_dlog
 %bcond_with pulseaudio_bt_profile_set
 %bcond_with pulseaudio_udev_with_usb_only
-%bcond_with pulseaudio_with_bluez5
+%bcond_with pulseaudio_with_samsung_policy
 
 Name:             pulseaudio
 Summary:          Improved Linux sound server
@@ -214,6 +214,9 @@ export LD_AS_NEEDED=0
 %endif
 %if %{with pulseaudio_udev_with_usb_only}
         --enable-udev-with-usb-only \
+%endif
+%if %{with pulseaudio_samsung_policy}
+        --enable-samsung-policy \
 %endif
         --with-udev-rules-dir=%{_libdir}/udev/rules.d \
         --with-system-user=pulse \

@@ -2067,12 +2067,10 @@ int pa_sink_input_process_msg(pa_msgobject *o, int code, void *userdata, int64_t
             return 0;
 
         case PA_SINK_INPUT_MESSAGE_SET_VOLUME_RAMP:
-            if (!pa_cvolume_ramp_equal(&i->thread_info.ramp, &i->ramp)) {
-                /* we have ongoing ramp where we take current start values */
-                pa_cvolume_ramp_start_from(&i->thread_info.ramp, &i->ramp);
-                i->thread_info.ramp = i->ramp;
-                pa_sink_input_request_rewind(i, 0, TRUE, FALSE, FALSE);
-            }
+            /* we have ongoing ramp where we take current start values */
+            pa_cvolume_ramp_start_from(&i->thread_info.ramp, &i->ramp);
+            i->thread_info.ramp = i->ramp;
+            pa_sink_input_request_rewind(i, 0, TRUE, FALSE, FALSE);
             return 0;
 
         case PA_SINK_INPUT_MESSAGE_SET_SOFT_MUTE:

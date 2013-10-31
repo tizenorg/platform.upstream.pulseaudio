@@ -342,9 +342,11 @@ rm -f %{buildroot}/%{_libdir}/pulseaudio/*.la
 %{_libdir}/pulse-%{version}/modules/module-role-cork.so
 %{_libdir}/pulse-%{version}/modules/module-switch-on-port-available.so
 %{_libdir}/pulse-%{version}/modules/module-virtual-surround-sink.so
-%{_libdir}/pulse-%{version}/modules/module-policy.so
 %{_libdir}/pulse-%{version}/modules/module-role-ducking.so
 %{_libdir}/pulse-%{version}/modules/module-systemd-login.so
+%if %{with pulseaudio_samsung_policy}
+%{_libdir}/pulse-%{version}/modules/module-policy.so
+%endif
 %config(noreplace) /etc/bash_completion.d/pulseaudio-bash-completion.sh
 
 %files -n libpulse

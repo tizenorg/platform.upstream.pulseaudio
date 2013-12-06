@@ -1,0 +1,8 @@
+Code-Review+1: Patrick McCarty <patrick.mccarty@linux.intel.com>
+Code-Review+2: Rusty Lynch <rusty.lynch@intel.com>
+Verified+1: Rusty Lynch <rusty.lynch@intel.com>
+Submitted-by: Rusty Lynch <rusty.lynch@intel.com>
+Submitted-at: Fri, 06 Dec 2013 13:27:12 -0800
+Reviewed-on: https://review.tizen.org/gerrit/13481
+Project: platform/upstream/pulseaudio
+Branch: refs/heads/tizen

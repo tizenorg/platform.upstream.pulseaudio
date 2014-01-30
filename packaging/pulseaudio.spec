@@ -4,6 +4,7 @@
 %bcond_with pulseaudio_udev_with_usb_only
 %bcond_with pulseaudio_with_bluez5
 %bcond_with pulseaudio_samsung_policy
+%bcond_with x
 
 Name:             pulseaudio
 Summary:          Improved Linux sound server
@@ -27,7 +28,9 @@ BuildRequires:    pkgconfig(gconf-2.0)
 BuildRequires:    pkgconfig(bluez)
 BuildRequires:    pkgconfig(sbc)
 BuildRequires:    pkgconfig(dbus-1)
+%if %{with x}
 BuildRequires:    pkgconfig(xi)
+%endif
 BuildRequires:    pkgconfig(libudev)
 BuildRequires:    pkgconfig(openssl)
 BuildRequires:    pkgconfig(json)

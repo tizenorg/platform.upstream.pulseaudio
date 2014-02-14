@@ -1,3 +1,7 @@
+* Fri Feb 14 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- disable bluez4 to get rid of extra logging spam
+- enable build without X
+
 * Mon Jan 20 2014 Jaska Uimonen <jaska.uimonen@intel.com>
 - make things compile for common pc distros
 - fix a lot of warnings

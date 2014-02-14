@@ -204,6 +204,7 @@ export LD_AS_NEEDED=0
         --disable-xen \
         --without-fftw \
         --enable-bluez \
+	--disable-bluez4 \
         --with-bluetooth-headset-backend=ofono \
         --enable-systemd \
         --with-database=tdb \
@@ -215,6 +216,7 @@ export LD_AS_NEEDED=0
 %endif
 %if %{with pulseaudio_bt_profile_set}
         --enable-bt-profile-set \
+
 %endif
 %if %{with pulseaudio_udev_with_usb_only}
         --enable-udev-with-usb-only \
@@ -400,9 +402,6 @@ rm -f %{buildroot}/%{_libdir}/pulseaudio/*.la
 %defattr(-,root,root,-)
 %{_libdir}/pulse-%{version}/modules/module-bluetooth-discover.so
 %{_libdir}/pulse-%{version}/modules/module-bluetooth-policy.so
-%{_libdir}/pulse-%{version}/modules/module-bluez4-discover.so
-%{_libdir}/pulse-%{version}/modules/module-bluez4-device.so
-%{_libdir}/pulse-%{version}/modules/libbluez4-util.so
 %{_libdir}/pulse-%{version}/modules/module-bluez5-discover.so
 %{_libdir}/pulse-%{version}/modules/module-bluez5-device.so
 %{_libdir}/pulse-%{version}/modules/libbluez5-util.so

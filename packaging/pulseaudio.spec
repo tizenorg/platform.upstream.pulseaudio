@@ -5,6 +5,7 @@
 %bcond_with pulseaudio_with_bluez5
 %bcond_with pulseaudio_samsung_policy
 %bcond_with x
+%bcond_with jack
 
 Name:             pulseaudio
 Summary:          Improved Linux sound server
@@ -23,6 +24,9 @@ BuildRequires:    fdupes
 BuildRequires:    pkgconfig(speexdsp)
 BuildRequires:    pkgconfig(sndfile)
 BuildRequires:    pkgconfig(alsa)
+%if %{with jack}
+BuildRequires:    pkgconfig(jack)
+%endif
 BuildRequires:    pkgconfig(glib-2.0)
 BuildRequires:    pkgconfig(gconf-2.0)
 BuildRequires:    pkgconfig(bluez)
@@ -200,7 +204,6 @@ export LD_AS_NEEDED=0
         --disable-hal-compat \
         --disable-lirc \
         --disable-avahi \
-        --disable-jack \
         --disable-xen \
         --without-fftw \
         --enable-bluez \
@@ -208,6 +211,9 @@ export LD_AS_NEEDED=0
         --with-bluetooth-headset-backend=ofono \
         --enable-systemd \
         --with-database=tdb \
+%if !%{with jack}
+       --disable-jack \
+%endif
 %if %{with pulseaudio_dlog}
         --enable-dlog \
 %endif
@@ -352,6 +358,11 @@ rm -f %{buildroot}/%{_libdir}/pulseaudio/*.la
 %{_libdir}/pulse-%{version}/modules/module-virtual-surround-sink.so
 %{_libdir}/pulse-%{version}/modules/module-role-ducking.so
 %{_libdir}/pulse-%{version}/modules/module-systemd-login.so
+%if %{with jack}
+%{_libdir}/pulse-%{version}/modules/module-jack-sink.so
+%{_libdir}/pulse-%{version}/modules/module-jack-source.so
+%{_libdir}/pulse-%{version}/modules/module-jackdbus-detect.so
+%endif
 %if %{with pulseaudio_samsung_policy}
 %{_libdir}/pulse-%{version}/modules/module-policy.so
 %endif

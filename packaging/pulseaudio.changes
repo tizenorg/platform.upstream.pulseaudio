@@ -1,3 +1,7 @@
+* Wed May 7 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- upstream patch to fix mute issue TIVI-2799
+- patch to fix noise issue TIVI-2950
+
 * Fri Feb 14 2014 Jaska Uimonen <jaska.uimonen@intel.com>
 - disable bluez4 to get rid of extra logging spam
 - enable build without X

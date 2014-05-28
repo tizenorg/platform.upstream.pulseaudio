@@ -1,3 +1,11 @@
+Code-Review+2: Ismo Puustinen <ismo.puustinen@intel.com>
+Verified+1: Ismo Puustinen <ismo.puustinen@intel.com>
+Submitted-by: Ismo Puustinen <ismo.puustinen@intel.com>
+Submitted-at: Wed, 28 May 2014 04:50:19 -0700
+Reviewed-on: https://review.tizen.org/gerrit/21979
+Project: platform/upstream/pulseaudio
+Branch: refs/heads/tizen
+
 Reviewed-on: https://review.tizen.org/gerrit/21979
 Project: platform/upstream/pulseaudio
 Branch: refs/heads/tizen

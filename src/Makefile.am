@@ -99,6 +99,8 @@ EXTRA_DIST = \
 		daemon/esdcompat.in \
 		daemon/start-pulseaudio-x11.in \
 		daemon/start-pulseaudio-kde.in \
+		daemon/systemd/system/pulseaudio.service.in \
+		daemon/systemd/system/pulseaudio.socket \
 		daemon/systemd/user/pulseaudio.service.in \
 		daemon/systemd/user/pulseaudio.socket \
 		utils/padsp.in \
@@ -148,7 +150,6 @@ xdgautostart_in_files = \
 xdgautostart_DATA = $(xdgautostart_in_files:.desktop.in=.desktop)
 @INTLTOOL_DESKTOP_RULE@
 endif
-
 
 ###################################
 #          Includes               #
@@ -250,6 +251,10 @@ pax11publish_LDADD = $(AM_LDADD) libpulse.la libpulsecommon-@PA_MAJORMINOR@.la $
 pax11publish_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 if HAVE_SYSTEMD_DAEMON
+
+systemdsystemunit_DATA = \
+    daemon/systemd/system/pulseaudio.service \
+    daemon/systemd/system/pulseaudio.socket
 
 systemduserunit_DATA = \
     pulseaudio.service \
@@ -2269,6 +2274,7 @@ endif
 
 CLEANFILES += daemon/pulseaudio.desktop daemon/pulseaudio-kde.desktop
 DISTCLEANFILES = esdcompat client.conf default.pa system.pa daemon.conf start-pulseaudio-x11 start-pulseaudio-kde pulseaudio.service
+DISTCLEANFILES += daemon/systemd/system/pulseaudio.service
 
 if OS_IS_WIN32
 SYMLINK_PROGRAM=cd $(DESTDIR)$(bindir) && cp

@@ -692,6 +692,16 @@ AC_ARG_ENABLE(bt-profile-set, AC_HELP_STRING([--enable-bt-profile-set], [enable 
 AM_CONDITIONAL(USE_BT_PROFILE_SET, test "x$USE_BT_PROFILE_SET" = "xyes")
 dnl end --------------------------------------------------------------------
 
+### murphy ###
+
+# If the option "--enable-muphy" is present we don't build modules
+# combine-sink and augment-properties.la since they are already
+# provided by pulseaudio-module-murphy-ivi.
+AC_ARG_ENABLE(murphy, AC_HELP_STRING([--enable-murphy], [using murphy]), 
+    USE_MURPHY=1, 
+    USE_MURPHY=0)
+AM_CONDITIONAL([USE_MURPHY], [test "x$USE_MURPHY" = "x1"])
+
 #### atomic-ops ####
 
 AC_MSG_CHECKING([whether we need libatomic_ops])
@@ -1557,6 +1567,7 @@ AS_IF([test "x$USE_DLOG" = "x1"], ENABLE_DLOG=yes, ENABLE_DLOG=no)
 AS_IF([test "x$USE_PM_LOCK" = "x1"], ENABLE_PM_LOCK=yes, ENABLE_PM_LOCK=no)
 AS_IF([test "x$USE_BT_PROFILE_SET" = "x1"], ENABLE_BT_PROFILE_SET=yes, ENABLE_BT_PROFILE_SET=no)
 AS_IF([test "x$HAVE_BT_A2DP_APTX" = "x1"], HAVE_BT_A2DP_APTX=yes, HAVE_BT_A2DP_APTX=no)
+AS_IF([test "x$USE_MURPHY" = "x1"], HAVE_MURPHY=yes, HAVE_MURPHY=no)
 
 echo "
  ---{ $PACKAGE_NAME $VERSION }---
@@ -1629,6 +1640,7 @@ echo "
       bluetooth profile set:       ${ENABLE_BT_PROFILE_SET}
       bluetooth aptx codec:        ${HAVE_BT_A2DP_APTX}
       udev with usb only:          ${ENABLE_UDEV_ONLY_USB}
+      murphy:                      ${HAVE_MURPHY}
 "
 
 if test "${ENABLE_SPEEX}" = "no" && test "${ENABLE_WEBRTC}" = "no" && test "${ENABLE_ADRIAN_EC}" = "no" ; then

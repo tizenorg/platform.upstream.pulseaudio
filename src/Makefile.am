@@ -1184,7 +1184,6 @@ modlibexec_LTLIBRARIES += \
 		module-native-protocol-tcp.la \
 		module-native-protocol-fd.la \
 		module-combine.la \
-		module-combine-sink.la \
 		module-remap-sink.la \
 		module-remap-source.la \
 		module-ladspa-sink.la \
@@ -1193,7 +1192,6 @@ modlibexec_LTLIBRARIES += \
 		module-tunnel-sink.la \
 		module-tunnel-source.la \
 		module-position-event-sounds.la \
-		module-augment-properties.la \
 		module-role-cork.la \
 		module-loopback.la \
 		module-virtual-sink.la \
@@ -1205,6 +1203,12 @@ modlibexec_LTLIBRARIES += \
 		module-filter-heuristics.la \
 		module-role-ducking.la \
 		module-audio-groups.la
+
+if !USE_MURPHY
+modlibexec_LTLIBRARIES += \
+		module-combine-sink.la \
+		module-augment-properties.la
+endif
 
 if HAVE_ESOUND
 modlibexec_LTLIBRARIES += \
@@ -1718,9 +1722,11 @@ module_combine_la_SOURCES = modules/module-combine.c
 module_combine_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_combine_la_LIBADD = $(MODULE_LIBADD)
 
+if !USE_MURPHY
 module_combine_sink_la_SOURCES = modules/module-combine-sink.c
 module_combine_sink_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_combine_sink_la_LIBADD = $(MODULE_LIBADD)
+endif
 
 module_switch_on_connect_la_SOURCES = modules/module-switch-on-connect.c
 module_switch_on_connect_la_LDFLAGS = $(MODULE_LDFLAGS)
@@ -1965,12 +1971,14 @@ module_role_ducking_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_role_ducking_la_LIBADD = $(MODULE_LIBADD)
 module_role_ducking_la_CFLAGS = $(AM_CFLAGS)
 
+if !USE_MURPHY
 # Augment properties from XDG .desktop files
 module_augment_properties_la_SOURCES = modules/module-augment-properties.c
 module_augment_properties_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_augment_properties_la_LIBADD = $(MODULE_LIBADD)
 #module_augment_properties_la_CFLAGS = $(AM_CFLAGS) -DDESKTOPFILEDIR=\"$(datadir)/applications\"
 module_augment_properties_la_CFLAGS = $(AM_CFLAGS) -DDESKTOPFILEDIR=\"/usr/share/applications\"
+endif
 
 # Cork certain streams while others are active (e.g. cork music when phone streams appear)
 module_role_cork_la_SOURCES = modules/module-role-cork.c

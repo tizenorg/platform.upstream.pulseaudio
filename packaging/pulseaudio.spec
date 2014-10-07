@@ -5,6 +5,7 @@
 %bcond_with pulseaudio_with_bluez5
 %bcond_with pulseaudio_samsung_policy
 %bcond_with x
+%bcond_with audio_session_manager_with_murphy
 
 Name:             pulseaudio
 Summary:          Improved Linux sound server
@@ -138,6 +139,7 @@ Group:   Multimedia/Audio
 %description module-filter
 PA module-filter.
 
+%if !%{with audio_session_manager_with_murphy}
 %package module-combine-sink
 Summary: PA module-combine-sink
 Group:   Multimedia/Audio
@@ -151,6 +153,7 @@ Group:   Multimedia/Audio
 
 %description module-augment-properties
 PA module-augment-properties.
+%endif
 
 %package module-dbus-protocol
 Summary: PA module-dbus-protocol
@@ -231,12 +234,15 @@ export LD_AS_NEEDED=0
 %if %{with pulseaudio_samsung_policy}
         --enable-samsung-policy \
 %endif
+%if %{with audio_session_manager_with_murphy}
+        --enable-murphy \
+%endif
         --with-udev-rules-dir=%{_libdir}/udev/rules.d \
         --with-system-user=pulse \
         --with-system-group=pulse \
         --with-access-group=pulse-access
 
-make %{?_smp_mflags} V=0
+%__make %{?_smp_mflags} V=0
 
 %install
 %make_install
@@ -287,8 +293,8 @@ rm -f %{buildroot}/%{_libdir}/pulseaudio/*.la
 %files
 %manifest %{name}.manifest
 %defattr(-,root,root,-)
-%doc LICENSE GPL LGPL
-%{_sysconfdir}/pulse/filter/*.dat
+%license LICENSE GPL LGPL
+%config %{_sysconfdir}/pulse/filter/*.dat
 %{_bindir}/esdcompat
 %{_bindir}/pulseaudio
 %dir %{_libexecdir}/pulse
@@ -434,6 +440,7 @@ rm -f %{buildroot}/%{_libdir}/pulseaudio/*.la
 %defattr(-,root,root,-)
 %{_libdir}/pulse-%{version}/modules/module-filter-*.so
 
+%if !%{with audio_session_manager_with_murphy}
 %files module-combine-sink
 %manifest %{name}.manifest
 %defattr(-,root,root,-)
@@ -443,6 +450,7 @@ rm -f %{buildroot}/%{_libdir}/pulseaudio/*.la
 %manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_libdir}/pulse-%{version}/modules/module-augment-properties.so
+%endif
 
 %files module-dbus-protocol
 %manifest %{name}.manifest

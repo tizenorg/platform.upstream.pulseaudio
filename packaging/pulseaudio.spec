@@ -243,6 +243,10 @@ NOCONFIGURE=yes ./bootstrap.sh
 %make_install
 %find_lang %{name}
 
+install -d  %{buildroot}/%{_libdir}/systemd/user
+install -m 644 src/pulseaudio.service %{buildroot}/%{_libdir}/systemd/user/pulseaudio.service
+install -m 644 src/daemon/systemd/user/pulseaudio.socket %{buildroot}/%{_libdir}/systemd/user/pulseaudio.socket
+
 pushd %{buildroot}%{_sysconfdir}/pulse/filter
 ln -sf filter_8000_44100.dat filter_11025_44100.dat
 ln -sf filter_8000_44100.dat filter_12000_44100.dat
@@ -364,6 +368,9 @@ rm -f %{buildroot}%{_libdir}/pulseaudio/*.la
 %{_libdir}/pulse-%{version}/modules/module-virtual-surround-sink.so
 %{_libdir}/pulse-%{version}/modules/module-role-ducking.so
 %{_libdir}/pulse-%{version}/modules/module-systemd-login.so
+%{_libdir}/systemd/user/pulseaudio.service
+%{_libdir}/systemd/user/pulseaudio.socket
+%{_libdir}/systemd/user/sockets.target.wants/pulseaudio.socket
 %if %{with pulseaudio_samsung_policy}
 %{_libdir}/pulse-%{version}/modules/module-policy.so
 %endif

@@ -269,8 +269,14 @@ fdupes  %{buildroot}%{_includedir}
 rm -f %{buildroot}%{_libdir}/*.la
 rm -f %{buildroot}%{_libdir}/pulseaudio/*.la
 
-%post -p /sbin/ldconfig
-%postun -p /sbin/ldconfig
+%post
+/sbin/ldconfig
+systemctl --user enable --global pulseaudio.socket
+%postun
+/sbin/ldconfig
+if [ "$1" < 1 ]; then
+systemctl --user disable --global pulseaudio.socket
+fi
 
 %post   -n libpulse -p /sbin/ldconfig
 %postun -n libpulse -p /sbin/ldconfig
@@ -364,6 +370,8 @@ rm -f %{buildroot}%{_libdir}/pulseaudio/*.la
 %{_libdir}/pulse-%{version}/modules/module-virtual-surround-sink.so
 %{_libdir}/pulse-%{version}/modules/module-role-ducking.so
 %{_libdir}/pulse-%{version}/modules/module-systemd-login.so
+%{_unitdir_user}/pulseaudio.service
+%{_unitdir_user}/pulseaudio.socket
 %if %{with pulseaudio_samsung_policy}
 %{_libdir}/pulse-%{version}/modules/module-policy.so
 %endif

@@ -4,4 +4,7 @@ Description=Sound System
 [Socket]
 Priority=6
 Backlog=5
-ListenStream=%t/pulse/native
+ListenStream=/tmp/.esd-%U/socket
+ListenStream=/run/user/%U/pulse/native
+ListenStream=[::1]:2345
+ListenStream=127.0.0.1:4712

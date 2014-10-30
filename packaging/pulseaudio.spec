@@ -322,6 +322,7 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-console-kit.so
 %{_libdir}/pulse-%{version}/modules/module-device-restore.so
 %{_libdir}/pulse-%{version}/modules/module-stream-restore.so
+%{_libdir}/pulse-%{version}/modules/module-tunnel-manager.so
 %{_libdir}/pulse-%{version}/modules/module-cli-protocol-tcp.so
 %{_libdir}/pulse-%{version}/modules/module-cli-protocol-unix.so
 %{_libdir}/pulse-%{version}/modules/module-cli.so

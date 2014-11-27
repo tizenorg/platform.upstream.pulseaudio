@@ -46,6 +46,7 @@ static void remote_server_set_failed(pa_tunnel_manager_remote_server *server, bo
 static void remote_device_new(pa_tunnel_manager_remote_server *server, pa_device_type_t type, const void *info);
 static void remote_device_free(pa_tunnel_manager_remote_device *device);
 static void remote_device_update(pa_tunnel_manager_remote_device *device);
+static void remote_device_apply_tunnel_enabled_policy(pa_tunnel_manager_remote_device *device);
 
 struct device_stub {
     pa_tunnel_manager_remote_server *server;
@@ -67,6 +68,21 @@ static void device_stub_new(pa_tunnel_manager_remote_server *server, pa_device_t
 static void device_stub_unlink(struct device_stub *stub);
 static void device_stub_free(struct device_stub *stub);
 
+static pa_hook_result_t module_unload_cb(void *hook_data, void *call_data, void *userdata) {
+    pa_module *module = call_data;
+    pa_tunnel_manager *manager = userdata;
+    pa_tunnel_manager_remote_device *device;
+
+    pa_assert(module);
+    pa_assert(manager);
+
+    device = pa_hashmap_remove(manager->remote_devices_by_module, module);
+    if (device)
+        device->tunnel_module = NULL;
+
+    return PA_HOOK_OK;
+}
+
 static pa_tunnel_manager *tunnel_manager_new(pa_core *core) {
     pa_tunnel_manager *manager;
     pa_tunnel_manager_config *manager_config;
@@ -77,8 +93,12 @@ static pa_tunnel_manager *tunnel_manager_new(pa_core *core) {
 
     manager = pa_xnew0(pa_tunnel_manager, 1);
     manager->core = core;
+    manager->remote_devices_by_module = pa_hashmap_new(NULL, NULL);
     manager->remote_servers = pa_hashmap_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
     manager->refcnt = 1;
+
+    manager->module_unload_slot = pa_hook_connect(&core->hooks[PA_CORE_HOOK_MODULE_UNLOAD], PA_HOOK_NORMAL, module_unload_cb,
+                                                  manager);
 
     manager_config = pa_tunnel_manager_config_new();
 
@@ -98,6 +118,9 @@ static void tunnel_manager_free(pa_tunnel_manager *manager) {
 
     pa_shared_remove(manager->core, "tunnel_manager");
 
+    if (manager->module_unload_slot)
+        pa_hook_slot_free(manager->module_unload_slot);
+
     if (manager->remote_servers) {
         pa_tunnel_manager_remote_server *server;
 
@@ -105,6 +128,11 @@ static void tunnel_manager_free(pa_tunnel_manager *manager) {
             remote_server_free(server);
 
         pa_hashmap_free(manager->remote_servers);
+    }
+
+    if (manager->remote_devices_by_module) {
+        pa_assert(pa_hashmap_isempty(manager->remote_devices_by_module));
+        pa_hashmap_free(manager->remote_devices_by_module);
     }
 
     pa_xfree(manager);
@@ -561,6 +589,36 @@ static void remote_device_new(pa_tunnel_manager_remote_server *server, pa_device
     pa_log_debug("        Sample spec: %s", pa_sample_spec_snprint(sample_spec_str, sizeof(sample_spec_str), sample_spec));
     pa_log_debug("        Channel map: %s", pa_channel_map_snprint(channel_map_str, sizeof(channel_map_str), channel_map));
     pa_log_debug("        Is monitor: %s", pa_boolean_to_string(device->is_monitor));
+    pa_log_debug("        Tunnel enabled: %s", pa_boolean_to_string(device->tunnel_enabled));
+
+    remote_device_apply_tunnel_enabled_policy(device);
+
+    if (device->tunnel_enabled) {
+        const char *module_name;
+        char *args;
+
+        switch (device->type) {
+            case PA_DEVICE_TYPE_SINK:
+                module_name = "module-tunnel-sink-new";
+                break;
+
+            case PA_DEVICE_TYPE_SOURCE:
+                module_name = "module-tunnel-source-new";
+                break;
+        }
+
+        args = pa_sprintf_malloc("server=%s "
+                                 "%s=%s "
+                                 "%s_name=tunnel_manager.%s.%s",
+                                 device->server->address,
+                                 device_type_to_string(device->type), device->name,
+                                 device_type_to_string(device->type), device->server->name, device->name);
+        device->tunnel_module = pa_module_load(device->server->manager->core, module_name, args);
+        pa_xfree(args);
+
+        if (device->tunnel_module)
+            pa_hashmap_put(device->server->manager->remote_devices_by_module, device->tunnel_module, device);
+    }
 }
 
 static void remote_device_free(pa_tunnel_manager_remote_device *device) {
@@ -569,6 +627,11 @@ static void remote_device_free(pa_tunnel_manager_remote_device *device) {
     pa_assert(device);
 
     pa_log_debug("[%s] Freeing remote device %s.", device->server->name, device->name);
+
+    if (device->tunnel_module) {
+        pa_hashmap_remove(device->server->manager->remote_devices_by_module, device->tunnel_module);
+        pa_module_unload(device->server->manager->core, device->tunnel_module, true);
+    }
 
     pa_hashmap_remove(device->server->devices, device->name);
     pa_hook_fire(&device->hooks[PA_TUNNEL_MANAGER_REMOTE_DEVICE_HOOK_UNLINKED], NULL);
@@ -600,6 +663,18 @@ static void remote_device_set_proplist(pa_tunnel_manager_remote_device *device, 
     pa_log_debug("[%s %s] Proplist changed.", device->server->name, device->name);
 
     pa_hook_fire(&device->hooks[PA_TUNNEL_MANAGER_REMOTE_DEVICE_HOOK_PROPLIST_CHANGED], NULL);
+}
+
+static void remote_device_set_tunnel_enabled(pa_tunnel_manager_remote_device *device, bool enabled) {
+    pa_assert(device);
+
+    if (enabled == device->tunnel_enabled)
+        return;
+
+    device->tunnel_enabled = enabled;
+
+    pa_log_debug("[%s %s] Tunnel enabled changed from %s to %s.", device->server->name, device->name,
+                 pa_boolean_to_string(!enabled), pa_boolean_to_string(enabled));
 }
 
 static void remote_device_get_info_cb(pa_context *context, const void *info, int is_last, void *userdata) {
@@ -672,6 +747,12 @@ static void remote_device_update(pa_tunnel_manager_remote_device *device) {
                device_type_to_string(device->type), pa_strerror(pa_context_errno(device->server->context)));
         remote_server_set_failed(device->server, true);
     }
+}
+
+static void remote_device_apply_tunnel_enabled_policy(pa_tunnel_manager_remote_device *device) {
+    pa_assert(device);
+
+    remote_device_set_tunnel_enabled(device, !device->is_monitor);
 }
 
 static void device_stub_get_info_cb(pa_context *context, const void *info, int is_last, void *userdata) {

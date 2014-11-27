@@ -32,9 +32,11 @@ typedef struct pa_tunnel_manager_remote_device pa_tunnel_manager_remote_device;
 
 struct pa_tunnel_manager {
     pa_core *core;
+    pa_hashmap *remote_devices_by_module; /* pa_module -> pa_tunnel_manager_remote_device */
     pa_hashmap *remote_servers; /* name -> pa_tunnel_manager_remote_server */
 
     unsigned refcnt;
+    pa_hook_slot *module_unload_slot;
 };
 
 /* If ref is true, the reference count of the manager is incremented, and also
@@ -73,9 +75,11 @@ struct pa_tunnel_manager_remote_device {
     pa_sample_spec sample_spec;
     pa_channel_map channel_map;
     bool is_monitor;
+    bool tunnel_enabled;
     pa_hook hooks[PA_TUNNEL_MANAGER_REMOTE_DEVICE_HOOK_MAX];
 
     pa_operation *get_info_operation;
+    pa_module *tunnel_module;
 
     /* These are a workaround for the problem that the introspection API's info
      * callbacks are called multiple times, which means that if the userdata

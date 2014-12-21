@@ -217,3 +217,25 @@ int pa_client_get_gid(pa_client *c, gid_t *gid) {
     return -1;
 #endif
 }
+
+const char *pa_client_getenv(pa_client *c, const char *name) {
+    static bool module_requested = false;
+    const char *value;
+
+    pa_assert(c);
+    pa_assert(c->core);
+
+    if (!c->core->client_getenv && !module_requested) {
+        module_requested = true;
+        pa_module_load(c->core, "module-expose-environment", "variables=\"*\"");
+    }
+
+    if (c->core->client_getenv)
+        value = c->core->client_getenv(c, name);
+    else
+        value = NULL;
+
+    pa_log_debug("Environment variable '%s' for client #%u: '%s", name, c->index, value ? value : "<null>");
+
+    return value;
+}

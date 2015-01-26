@@ -36,6 +36,11 @@
 #include <pulsecore/sound-file.h>
 #include <pulsecore/play-memblockq.h>
 #include <pulsecore/shared.h>
+#ifdef HAVE_DBUS
+#include <pulsecore/dbus-shared.h>
+#include <pulsecore/dbus-util.h>
+#include <pulsecore/protocol-dbus.h>
+#endif
 
 #include "module-policy-symdef.h"
 #include "tizen-audio.h"
@@ -78,6 +83,170 @@ static const char* const valid_modargs[] = {
 
 /* Audio HAL library */
 #define LIB_TIZEN_AUDIO "libtizen-audio.so"
+
+struct userdata;
+
+#ifdef HAVE_DBUS
+
+/*** Defines for module policy dbus interface ***/
+#define OBJECT_PATH "/org/pulseaudio/policy1"
+#define INTERFACE_POLICY "org.PulseAudio.Ext.Policy1"
+#ifndef USE_DBUS_PROTOCOL
+#define POLICY_INTROSPECT_XML                                               \
+    DBUS_INTROSPECT_1_0_XML_DOCTYPE_DECL_NODE                               \
+    "<node>"                                                                \
+    " <interface name=\"" INTERFACE_POLICY "\">"                            \
+    "  <method name=\"MethodTest1\">"                                       \
+    "   <arg name=\"arg1\" direction=\"in\" type=\"s\"/>"                   \
+    "   <arg name=\"arg2\" direction=\"out\" type=\"u\"/>"                  \
+    "  </method>"                                                           \
+    "  <method name=\"MethodTest2\">"                                       \
+    "   <arg name=\"arg1\" direction=\"in\" type=\"i\"/>"                   \
+    "   <arg name=\"arg2\" direction=\"in\" type=\"i\"/>"                   \
+    "   <arg name=\"arg3\" direction=\"out\" type=\"i\"/>"                  \
+    "  </method>"                                                           \
+    "  <property name=\"PropertyTest1\" type=\"i\" access=\"readwrite\"/>"  \
+    "  <property name=\"PropertyTest2\" type=\"s\" access=\"read\"/>"       \
+    "  <signal name=\"PropertyTest1Changed\">"                              \
+    "   <arg name=\"arg1\" type=\"i\"/>"                                    \
+    "  </signal>"                                                           \
+    "  <signal name=\"SignalTest2\">"                                       \
+    "   <arg name=\"arg1\" type=\"s\"/>"                                    \
+    "  </signal>"                                                           \
+    " </interface>"                                                         \
+    " <interface name=\"" DBUS_INTERFACE_INTROSPECTABLE "\">\n"             \
+    "  <method name=\"Introspect\">\n"                                      \
+    "   <arg name=\"data\" type=\"s\" direction=\"out\"/>\n"                \
+    "  </method>\n"                                                         \
+    " </interface>\n"                                                       \
+    " <interface name=\"" DBUS_INTERFACE_PROPERTIES "\">\n"                 \
+    "  <method name=\"Get\">\n"                                             \
+    "   <arg name=\"interface_name\" type=\"s\" direction=\"in\"/>\n"       \
+    "   <arg name=\"property_name\" type=\"s\" direction=\"in\"/>\n"        \
+    "   <arg name=\"value\" type=\"v\" direction=\"out\"/>\n"               \
+    "  </method>\n"                                                         \
+    "  <method name=\"Set\">\n"                                             \
+    "   <arg name=\"interface_name\" type=\"s\" direction=\"in\"/>\n"       \
+    "   <arg name=\"property_name\" type=\"s\" direction=\"in\"/>\n"        \
+    "   <arg name=\"value\" type=\"v\" direction=\"in\"/>\n"                \
+    "  </method>\n"                                                         \
+    "  <method name=\"GetAll\">\n"                                          \
+    "   <arg name=\"interface_name\" type=\"s\" direction=\"in\"/>\n"       \
+    "   <arg name=\"props\" type=\"a{sv}\" direction=\"out\"/>\n"           \
+    "  </method>\n"                                                         \
+    " </interface>\n"                                                       \
+    "</node>"
+
+
+static DBusHandlerResult handle_get_property(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static DBusHandlerResult handle_get_all_property(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static DBusHandlerResult handle_set_property(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static DBusHandlerResult handle_policy_methods(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static DBusHandlerResult handle_introspect(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static DBusHandlerResult method_call_handler(DBusConnection *c, DBusMessage *m, void *userdata);
+static void endpoint_init(struct userdata *u);
+static void endpoint_done(struct userdata* u);
+#endif
+
+/*** Called when module-policy load/unload ***/
+static void dbus_init(struct userdata* u);
+static void dbus_deinit(struct userdata* u);
+
+/*** Defines for Property handle ***/
+/* property handlers */
+static void handle_get_property_test1(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_set_property_test1(DBusConnection *conn, DBusMessage *msg, DBusMessageIter *iter, void *userdata);
+static void handle_get_property_test2(DBusConnection *conn, DBusMessage *msg, void *userdata);
+
+enum property_handler_index {
+    PROPERTY_HANDLER_TEST1,
+    PROPERTY_HANDLER_TEST2,
+    PROPERTY_HANDLER_MAX
+};
+
+static pa_dbus_property_handler property_handlers[PROPERTY_HANDLER_MAX] = {
+    [PROPERTY_HANDLER_TEST1] = { .property_name = "PropertyTest1", .type = "i", .get_cb = handle_get_property_test1, .set_cb = handle_set_property_test1 },
+    [PROPERTY_HANDLER_TEST2] = { .property_name = "PropertyTest2", .type = "s", .get_cb = handle_get_property_test2, .set_cb = NULL }
+};
+
+
+/*** Defines for method handle ***/
+/* method handlers */
+static void handle_method_test1(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_method_test2(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_get_all(DBusConnection *conn, DBusMessage *msg, void *userdata);
+
+enum method_handler_index {
+    METHOD_HANDLER_TEST1,
+    METHOD_HANDLER_TEST2,
+    METHOD_HANDLER_MAX
+};
+
+static pa_dbus_arg_info method1_args[] = { { "arg1",              "s",     "in" },
+                                             { "arg2",             "u",     "out" } };
+
+static pa_dbus_arg_info method2_args[] = { { "arg1",              "i",     "in" },
+                                             { "arg2",             "i",     "in" },
+                                             { "arg3",             "i",     "out" } };
+
+static const char* method_arg_signatures[] = { "s", "ii" };
+
+static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
+    [METHOD_HANDLER_TEST1] = {
+        .method_name = "MethodTest1",
+        .arguments = method1_args,
+        .n_arguments = sizeof(method1_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_method_test1 },
+    [METHOD_HANDLER_TEST2] = {
+        .method_name = "MethodTest2",
+        .arguments = method2_args,
+        .n_arguments = sizeof(method2_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_method_test2 }
+};
+
+/*** Defines for signal send ***/
+static int watch_signals(struct userdata* u);
+static void unwatch_signals(struct userdata* u);
+static void send_prop1_changed_signal(struct userdata* u);
+
+enum signal_index {
+    SIGNAL_PROP1_CHANGED,
+    SIGNAL_TEST2,
+    SIGNAL_MAX
+};
+
+static pa_dbus_arg_info signal_test1_args[] = { { "arg1", "i", NULL } };
+static pa_dbus_arg_info signal_test2_args[] = { { "arg1", "s", NULL } };
+
+static pa_dbus_signal_info signals[SIGNAL_MAX] = {
+    [SIGNAL_PROP1_CHANGED] = { .name = "PropertyTest1Changed", .arguments = signal_test1_args, .n_arguments = 1 },
+    [SIGNAL_TEST2] = { .name = "SignalTest2", .arguments = signal_test2_args, .n_arguments = 1 }
+};
+
+/*** For handle module-policy dbus interface ***/
+static pa_dbus_interface_info policy_interface_info = {
+    .name = INTERFACE_POLICY,
+    .method_handlers = method_handlers,
+    .n_method_handlers = METHOD_HANDLER_MAX,
+    .property_handlers = property_handlers,
+    .n_property_handlers = PROPERTY_HANDLER_MAX,
+    .get_all_properties_cb = handle_get_all,
+    .signals = signals,
+    .n_signals = SIGNAL_MAX
+};
+
+/*** Defines for get signal ***/
+#define SOUND_SERVER_INTERFACE_NAME "org.tizen.soundserver.service"
+#define AUDIO_CLIENT_INTERFACE_NAME "org.tizen.audioclient.service"
+
+#define SOUND_SERVER_FILTER              \
+    "type='signal',"                    \
+    " interface='" SOUND_SERVER_INTERFACE_NAME "'"
+#define AUDIO_CLIENT_FILTER              \
+    "type='signal',"                    \
+    " interface='" AUDIO_CLIENT_INTERFACE_NAME "'"
+
+#endif
 
 /* Tunning Value */
 #define DEFAULT_TSCHED_BUFFER_SIZE 16384
@@ -271,6 +440,13 @@ struct userdata {
         pa_usec_t time_interval;
         pa_usec_t factor; /* timer boosting */
     } audio_sample_userdata;
+#ifdef HAVE_DBUS
+#ifdef USE_DBUS_PROTOCOL
+    pa_dbus_protocol *dbus_protocol;
+#endif
+    pa_dbus_connection *dbus_conn;
+    int32_t test_property1;
+#endif
 
     struct {
         pa_communicator *comm;
@@ -4125,6 +4301,519 @@ static pa_hook_result_t route_option_update_hook_cb(pa_core *c, pa_stream_manage
     return PA_HOOK_OK;
 }
 
+#ifdef HAVE_DBUS
+static void _do_something1(char* arg1, int arg2, void *data)
+{
+    pa_assert(data);
+    pa_assert(arg1);
+
+    pa_log_debug("Do Something 1 , arg1 (%s) arg2 (%d)", arg1, arg2);
+}
+
+static void _do_something2(char* arg1, void *data)
+{
+    pa_assert(data);
+    pa_assert(arg1);
+
+    pa_log_debug("Do Something 2 , arg1 (%s) ", arg1);
+}
+
+static void handle_get_property_test1(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    struct userdata *u = userdata;
+    dbus_int32_t value_i = 0;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(u);
+
+    value_i = u->test_property1;
+
+    pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_INT32, &value_i);
+}
+
+static void handle_set_property_test1(DBusConnection *conn, DBusMessage *msg, DBusMessageIter *iter, void *userdata)
+{
+    struct userdata *u = userdata;
+    dbus_int32_t value_i = 0;
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(u);
+
+    dbus_message_iter_get_basic(iter, &value_i);
+
+    u->test_property1 = value_i;
+    pa_dbus_send_empty_reply(conn, msg);
+
+    /* send signal to notify change of property1*/
+    send_prop1_changed_signal(u);
+}
+
+/* test property handler : return module name */
+static void handle_get_property_test2(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    struct userdata *u = userdata;
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(u);
+
+    if (!u->module->name) {
+        pa_dbus_send_error(conn, msg, DBUS_ERROR_INVALID_ARGS, "property(module name) null");
+        return;
+    }
+
+    pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_STRING, &u->module->name);
+}
+
+static void handle_get_all(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    struct userdata *u = userdata;
+    dbus_int32_t value_i = 0;
+
+    DBusMessage *reply = NULL;
+    DBusMessageIter msg_iter;
+    DBusMessageIter dict_iter;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(u);
+
+    pa_assert_se((reply = dbus_message_new_method_return(msg)));
+
+    value_i = u->test_property1;
+
+    dbus_message_iter_init_append(reply, &msg_iter);
+    pa_assert_se(dbus_message_iter_open_container(&msg_iter, DBUS_TYPE_ARRAY, "{sv}", &dict_iter));
+
+    pa_dbus_append_basic_variant_dict_entry(&dict_iter, property_handlers[PROPERTY_HANDLER_TEST1].property_name, DBUS_TYPE_INT32, &value_i);
+    pa_dbus_append_basic_variant_dict_entry(&dict_iter, property_handlers[PROPERTY_HANDLER_TEST2].property_name, DBUS_TYPE_STRING, &u->module->name);
+    pa_assert_se(dbus_message_iter_close_container(&msg_iter, &dict_iter));
+    pa_assert_se(dbus_connection_send(conn, reply, NULL));
+    dbus_message_unref(reply);
+}
+
+/* test method : return length of argument string */
+static void handle_method_test1(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    const char* arg1_s = NULL;
+    dbus_uint32_t value_u = 0;
+    pa_assert(conn);
+    pa_assert(msg);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &arg1_s, DBUS_TYPE_INVALID));
+    value_u = strlen(arg1_s);
+    pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_UINT32, &value_u);
+}
+
+static void handle_method_test2(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    dbus_int32_t value1, value2, result;
+    pa_assert(conn);
+    pa_assert(msg);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL,
+                                       DBUS_TYPE_INT32, &value1,
+                                       DBUS_TYPE_INT32, &value2,
+                                       DBUS_TYPE_INVALID));
+
+    result = value1 * value2;
+
+    pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_INT32, &result);
+}
+
+
+static void send_prop1_changed_signal(struct userdata* u) {
+    DBusMessage *signal_msg;
+
+    pa_assert_se(signal_msg = dbus_message_new_signal(OBJECT_PATH, INTERFACE_POLICY, signals[SIGNAL_PROP1_CHANGED].name));
+    pa_assert_se(dbus_message_append_args(signal_msg, DBUS_TYPE_INT32, &u->test_property1, DBUS_TYPE_INVALID));
+#ifdef USE_DBUS_PROTOCOL
+    pa_dbus_protocol_send_signal(u->dbus_protocol, signal_msg);
+#else
+    dbus_connection_send(pa_dbus_connection_get(u->dbus_conn), signal_msg, NULL);
+#endif
+    dbus_message_unref(signal_msg);
+}
+
+
+static DBusHandlerResult dbus_filter_audio_handler(DBusConnection *c, DBusMessage *s, void *userdata)
+{
+    DBusError error;
+    char* arg_s = NULL;
+    int arg_i = 0;
+
+    pa_assert(userdata);
+
+    if(dbus_message_get_type(s)!=DBUS_MESSAGE_TYPE_SIGNAL)
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+
+    pa_log_info("Audio handler received msg");
+    dbus_error_init(&error);
+
+    if (dbus_message_is_signal(s, SOUND_SERVER_INTERFACE_NAME, "TestSignalFromSS1")) {
+        if (!dbus_message_get_args(s, NULL,
+            DBUS_TYPE_STRING, &arg_s,
+            DBUS_TYPE_INT32, &arg_i ,
+            DBUS_TYPE_INVALID)) {
+            goto fail;
+        } else {
+            _do_something1(arg_s, arg_i, userdata);
+        }
+    } else if (dbus_message_is_signal(s, SOUND_SERVER_INTERFACE_NAME, "TestSignalFromSS2")) {
+        if (!dbus_message_get_args(s, NULL,
+            DBUS_TYPE_STRING, &arg_s,
+            DBUS_TYPE_INVALID)) {
+            goto fail;
+        } else{
+            _do_something2(arg_s, userdata);
+        }
+    } else if (dbus_message_is_signal(s, AUDIO_CLIENT_INTERFACE_NAME, "TestSignalFromClient1")) {
+        if (!dbus_message_get_args(s, NULL,
+            DBUS_TYPE_STRING, &arg_s,
+            DBUS_TYPE_INVALID)) {
+            goto fail;
+        } else{
+            _do_something2(arg_s, userdata);
+        }
+    } else {
+        pa_log_info("Unknown message, not handle it");
+        dbus_error_free(&error);
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+
+    pa_log_debug("Dbus Message handled");
+
+    dbus_error_free(&error);
+    return DBUS_HANDLER_RESULT_HANDLED;
+
+fail:
+    pa_log_error("Fail to handle dbus signal");
+    dbus_error_free(&error);
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+#ifndef USE_DBUS_PROTOCOL
+
+static DBusHandlerResult handle_get_property(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    int prop_idx = 0;
+    const char *interface_name, *property_name;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(userdata);
+
+    if (pa_streq(dbus_message_get_signature(msg), "ss")) {
+        pa_assert_se(dbus_message_get_args(msg, NULL,
+                                           DBUS_TYPE_STRING, &interface_name,
+                                           DBUS_TYPE_STRING, &property_name,
+                                           DBUS_TYPE_INVALID));
+        if (pa_streq(interface_name, INTERFACE_POLICY)) {
+            for (prop_idx = 0; prop_idx < PROPERTY_HANDLER_MAX; prop_idx++) {
+                if (pa_streq(property_name, property_handlers[prop_idx].property_name)) {
+                    property_handlers[prop_idx].get_cb(conn, msg, userdata);
+                    return DBUS_HANDLER_RESULT_HANDLED;
+                }
+            }
+        }
+        else{
+            pa_log_warn("Not our interface, not handle it");
+        }
+    } else{
+        pa_log_warn("Wrong Signature");
+        pa_dbus_send_error(conn, msg, DBUS_ERROR_INVALID_SIGNATURE,  "Wrong Signature, Expected (ss)");
+    }
+
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+static DBusHandlerResult handle_get_all_property(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    const char *interface_name;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(userdata);
+
+    if (pa_streq(dbus_message_get_signature(msg), "s")) {
+        pa_assert_se(dbus_message_get_args(msg, NULL,
+                                           DBUS_TYPE_STRING, &interface_name,
+                                           DBUS_TYPE_INVALID));
+        if (pa_streq(interface_name, INTERFACE_POLICY)) {
+            handle_get_all(conn, msg, userdata);
+            return DBUS_HANDLER_RESULT_HANDLED;
+        }
+        else{
+            pa_log_warn("Not our interface, not handle it");
+        }
+    } else{
+        pa_log_warn("Wrong Signature");
+        pa_dbus_send_error(conn, msg, DBUS_ERROR_INVALID_SIGNATURE,  "Wrong Signature, Expected (ss)");
+    }
+
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+static DBusHandlerResult handle_set_property(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    int prop_idx = 0;
+    const char *interface_name, *property_name, *property_sig;
+    DBusMessageIter msg_iter;
+    DBusMessageIter variant_iter;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(userdata);
+
+    if (pa_streq(dbus_message_get_signature(msg), "ssv")) {
+        pa_assert_se(dbus_message_iter_init(msg, &msg_iter));
+        dbus_message_iter_get_basic(&msg_iter, &interface_name);
+        pa_assert_se(dbus_message_iter_next(&msg_iter));
+        dbus_message_iter_get_basic(&msg_iter, &property_name);
+        pa_assert_se(dbus_message_iter_next(&msg_iter));
+
+        dbus_message_iter_recurse(&msg_iter, &variant_iter);
+
+        property_sig = dbus_message_iter_get_signature(&variant_iter);
+
+        if (pa_streq(interface_name, INTERFACE_POLICY)) {
+            for (prop_idx = 0; prop_idx < PROPERTY_HANDLER_MAX; prop_idx++) {
+                if (pa_streq(property_name, property_handlers[prop_idx].property_name)) {
+                    if (pa_streq(property_handlers[prop_idx].type,property_sig)) {
+                        property_handlers[prop_idx].set_cb(conn, msg, &variant_iter, userdata);
+                        return DBUS_HANDLER_RESULT_HANDLED;
+                    }
+                    else{
+                        pa_log_warn("Wrong Property Signature");
+                        pa_dbus_send_error(conn, msg, DBUS_ERROR_INVALID_SIGNATURE,  "Wrong Signature, Expected (ssv)");
+                    }
+                    break;
+                }
+            }
+        }
+        else{
+            pa_log_warn("Not our interface, not handle it");
+        }
+    } else{
+        pa_log_warn("Wrong Signature");
+        pa_dbus_send_error(conn, msg, DBUS_ERROR_INVALID_SIGNATURE,  "Wrong Signature, Expected (ssv)");
+    }
+
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+static DBusHandlerResult handle_policy_methods(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    int method_idx = 0;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(userdata);
+
+    for (method_idx = 0; method_idx < METHOD_HANDLER_MAX; method_idx++) {
+        if (dbus_message_is_method_call(msg, INTERFACE_POLICY, method_handlers[method_idx].method_name )) {
+            if (pa_streq(dbus_message_get_signature(msg), method_arg_signatures[method_idx])) {
+                method_handlers[method_idx].receive_cb(conn, msg, userdata);
+                return DBUS_HANDLER_RESULT_HANDLED;
+            }
+            else{
+                pa_log_warn("Wrong Argument Signature");
+                pa_dbus_send_error(conn, msg, DBUS_ERROR_INVALID_SIGNATURE,  "Wrong Signature, Expected %s", method_arg_signatures[method_idx]);
+                return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+            }
+        }
+    }
+
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+static DBusHandlerResult handle_introspect(DBusConnection *conn, DBusMessage *msg, void *userdata)
+{
+    const char *xml = POLICY_INTROSPECT_XML;
+    DBusMessage *r = NULL;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(userdata);
+
+    pa_assert_se(r = dbus_message_new_method_return(msg));
+    pa_assert_se(dbus_message_append_args(r, DBUS_TYPE_STRING, &xml, DBUS_TYPE_INVALID));
+
+    if (r) {
+        pa_assert_se(dbus_connection_send((conn), r, NULL));
+        dbus_message_unref(r);
+    }
+
+    return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+static DBusHandlerResult method_call_handler(DBusConnection *c, DBusMessage *m, void *userdata)
+{
+    struct userdata *u = userdata;
+    const char *path, *interface, *member;
+
+    pa_assert(c);
+    pa_assert(m);
+    pa_assert(u);
+
+    path = dbus_message_get_path(m);
+    interface = dbus_message_get_interface(m);
+    member = dbus_message_get_member(m);
+
+    pa_log_debug("dbus: path=%s, interface=%s, member=%s", path, interface, member);
+
+    if (!pa_streq(path, OBJECT_PATH))
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+
+    if (dbus_message_is_method_call(m, "org.freedesktop.DBus.Introspectable", "Introspect")) {
+        return handle_introspect(c, m, u);
+    } else if (dbus_message_is_method_call(m, "org.freedesktop.DBus.Properties", "Get")){
+        return handle_get_property(c, m, u);
+    } else if (dbus_message_is_method_call(m, "org.freedesktop.DBus.Properties", "Set")){
+        return  handle_set_property(c, m, u);
+    } else if (dbus_message_is_method_call(m, "org.freedesktop.DBus.Properties", "GetAll")){
+        return handle_get_all_property(c, m, u);
+    } else{
+        return handle_policy_methods(c, m, u);
+    }
+
+    return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+static void endpoint_init(struct userdata *u)
+{
+    static const DBusObjectPathVTable vtable_endpoint = {
+        .message_function = method_call_handler,
+    };
+
+    pa_log_debug("Dbus endpoint init");
+
+    if (u && u->dbus_conn) {
+        if(!dbus_connection_register_object_path(pa_dbus_connection_get(u->dbus_conn), OBJECT_PATH, &vtable_endpoint, u))
+            pa_log_error("Failed to register object path");
+    } else{
+        pa_log_error("Cannot get dbus connection to register object path");
+    }
+}
+
+static void endpoint_done(struct userdata* u)
+{
+    pa_log_debug("Dbus endpoint done");
+    if (u && u->dbus_conn) {
+        if(!dbus_connection_unregister_object_path(pa_dbus_connection_get(u->dbus_conn), OBJECT_PATH))
+            pa_log_error("Failed to unregister object path");
+    } else{
+        pa_log_error("Cannot get dbus connection to unregister object path");
+    }
+}
+#endif
+
+
+static int watch_signals(struct userdata* u)
+{
+    DBusError error;
+
+    dbus_error_init(&error);
+
+    pa_log_debug("Watch Dbus signals");
+
+    if (u && u->dbus_conn) {
+
+        if (!dbus_connection_add_filter(pa_dbus_connection_get(u->dbus_conn), dbus_filter_audio_handler, u, NULL)) {
+            pa_log_error("Unable to add D-Bus filter : %s: %s", error.name, error.message);
+            goto fail;
+        }
+
+        if (pa_dbus_add_matches(pa_dbus_connection_get(u->dbus_conn), &error, SOUND_SERVER_FILTER, AUDIO_CLIENT_FILTER, NULL) < 0) {
+            pa_log_error("Unable to subscribe to signals: %s: %s", error.name, error.message);
+            goto fail;
+        }
+        return 0;
+    }
+
+fail:
+    dbus_error_free(&error);
+    return -1;
+}
+
+static void unwatch_signals(struct userdata* u)
+{
+    pa_log_debug("Unwatch Dbus signals");
+
+    if (u && u->dbus_conn) {
+        pa_dbus_remove_matches(pa_dbus_connection_get(u->dbus_conn), SOUND_SERVER_FILTER, AUDIO_CLIENT_FILTER, NULL);
+        dbus_connection_remove_filter(pa_dbus_connection_get(u->dbus_conn), dbus_filter_audio_handler, u);
+    }
+}
+
+
+
+static void dbus_init(struct userdata* u)
+{
+    DBusError error;
+    pa_dbus_connection *connection = NULL;
+
+    pa_log_debug("Dbus init");
+    dbus_error_init(&error);
+
+    if (!(connection = pa_dbus_bus_get(u->core, DBUS_BUS_SYSTEM, &error)) || dbus_error_is_set(&error)) {
+        if (connection) {
+            pa_dbus_connection_unref(connection);
+        }
+        pa_log_error("Unable to contact D-Bus system bus: %s: %s", error.name, error.message);
+        goto fail;
+    } else{
+        pa_log_debug("Got dbus connection");
+    }
+
+    u->dbus_conn = connection;
+
+    if( watch_signals(u) < 0 )
+        pa_log_error("dbus watch signals failed");
+    else
+        pa_log_debug("dbus ready to get signals");
+
+#ifdef USE_DBUS_PROTOCOL
+    /* use dbus protocol */
+    u->dbus_protocol = pa_dbus_protocol_get(u->core);
+
+    pa_assert_se(pa_dbus_protocol_add_interface(u->dbus_protocol, OBJECT_PATH, &policy_interface_info, u) >= 0);
+    pa_assert_se(pa_dbus_protocol_register_extension(u->dbus_protocol, INTERFACE_POLICY) >= 0);
+#else
+    endpoint_init(u);
+#endif
+
+
+fail:
+    dbus_error_free(&error);
+
+}
+
+static void dbus_deinit(struct userdata* u)
+{
+    pa_log_debug("Dbus deinit");
+    if (u) {
+
+#ifdef USE_DBUS_PROTOCOL
+        if (u->dbus_protocol) {
+            pa_assert_se(pa_dbus_protocol_unregister_extension(u->dbus_protocol, INTERFACE_POLICY) >= 0);
+            pa_assert_se(pa_dbus_protocol_remove_interface(u->dbus_protocol, OBJECT_PATH, policy_interface_info.name) >= 0);
+            pa_dbus_protocol_unref(u->dbus_protocol);
+            u->dbus_protocol = NULL;
+        }
+#else
+        endpoint_done(u);
+#endif
+        unwatch_signals(u);
+
+        if (u->dbus_conn){
+            pa_dbus_connection_unref(u->dbus_conn);
+            u->dbus_conn = NULL;
+        }
+    }
+}
+#endif
+
 int pa__init(pa_module *m)
 {
     pa_modargs *ma = NULL;
@@ -4158,6 +4847,10 @@ int pa__init(pa_module *m)
     u->wideband = wideband;
     u->fragment_size = frag_size;
     u->tsched_buffer_size = tsched_size;
+#ifdef HAVE_DBUS
+    u->dbus_conn = NULL;
+    u->test_property1 = 123;
+#endif
 
     /* A little bit later than module-stream-restore */
     u->sink_state_changed_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_STATE_CHANGED], PA_HOOK_NORMAL, (pa_hook_cb_t)sink_state_changed_hook_cb, u);
@@ -4281,6 +4974,11 @@ int pa__init(pa_module *m)
 #endif
 
     __load_dump_config(u);
+
+#ifdef HAVE_DBUS
+    dbus_init(u);
+#endif
+
     pa_log_info("policy module is loaded\n");
 
     if (ma)
@@ -4305,6 +5003,9 @@ void pa__done(pa_module *m)
 
     if (!(u = m->userdata))
         return;
+#ifdef HAVE_DBUS
+    dbus_deinit(u);
+#endif
 
     if (u->sink_input_new_hook_slot)
         pa_hook_slot_free(u->sink_input_new_hook_slot);

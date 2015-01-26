@@ -1149,12 +1149,20 @@ int main(int argc, char *argv[]) {
     c->disallow_module_loading = !!conf->disallow_module_loading;
 
 #ifdef HAVE_DBUS
+#if defined(__TIZEN__) && defined(SYSTEM_SERVER_LOOKUP)
+	/* TIZEN pulseaudio is running as system mode currently, thus use SYSTEM BUS */
+    if ((server_lookup = pa_dbusobj_server_lookup_new(c))) {
+        if (!(lookup_service_bus = register_dbus_name(c, DBUS_BUS_SYSTEM, "org.PulseAudio1")))
+            goto finish;
+    }
+#else
     if (!conf->system_instance) {
         if ((server_lookup = pa_dbusobj_server_lookup_new(c))) {
             if (!(lookup_service_bus = register_dbus_name(c, DBUS_BUS_SESSION, "org.PulseAudio1")))
                 goto finish;
         }
     }
+#endif
 
     if (start_server)
         server_bus = register_dbus_name(c, conf->system_instance ? DBUS_BUS_SYSTEM : DBUS_BUS_SESSION, "org.pulseaudio.Server");

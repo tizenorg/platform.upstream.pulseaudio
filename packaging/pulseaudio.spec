@@ -212,7 +212,7 @@ cp %{SOURCE1001} .
 export CFLAGS="%{optflags} -fno-strict-aliasing -D__TIZEN__ -D__TIZEN_BT__ -D__TIZEN_LOG__ -DTIZEN_MICRO -DBLUETOOTH_APTX_SUPPORT"
 %if 0%{?sec_build_binary_debug_enable}
 export CFLAGS+=" -DTIZEN_DEBUG_ENABLE"
-export CXXFLAGS="$CXXFLAGS –DTIZEN_DEBUG_ENABLE"
+export CXXFLAGS="$CXXFLAGS -DTIZEN_DEBUG_ENABLE"
 export FFLAGS="$FFLAGS -DTIZEN_DEBUG_ENABLE"
 %endif
 
@@ -367,6 +367,7 @@ fi
 %{_libdir}/pulse-%{version}/modules/libtunnel-manager.so
 %{_libdir}/pulse-%{version}/modules/module-alsa-sink.so
 %{_libdir}/pulse-%{version}/modules/module-alsa-source.so
+%{_libdir}/pulse-%{version}/modules/module-tizenaudio-sink.so
 %{_libdir}/pulse-%{version}/modules/module-always-sink.so
 %{_libdir}/pulse-%{version}/modules/module-console-kit.so
 %{_libdir}/pulse-%{version}/modules/module-device-restore.so

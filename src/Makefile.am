@@ -1253,7 +1253,8 @@ modlibexec_LTLIBRARIES += \
 		module-filter-apply.la \
 		module-filter-heuristics.la \
 		module-role-ducking.la \
-		module-audio-groups.la
+		module-audio-groups.la \
+		module-tizenaudio-sink.la
 
 if HAVE_ESOUND
 modlibexec_LTLIBRARIES += \
@@ -1546,6 +1547,7 @@ SYMDEF_FILES = \
 		module-alsa-sink-symdef.h \
 		module-alsa-source-symdef.h \
 		module-alsa-card-symdef.h \
+		module-tizenaudio-sink-symdef.h \
 		module-coreaudio-detect-symdef.h \
 		module-coreaudio-device-symdef.h \
 		module-solaris-symdef.h \
@@ -1942,6 +1944,11 @@ module_alsa_card_la_SOURCES = modules/alsa/module-alsa-card.c
 module_alsa_card_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_alsa_card_la_LIBADD = $(MODULE_LIBADD) $(ASOUNDLIB_LIBS) libalsa-util.la
 module_alsa_card_la_CFLAGS = $(AM_CFLAGS) $(ASOUNDLIB_CFLAGS)
+
+module_tizenaudio_sink_la_SOURCES = modules/alsa/module-tizenaudio-sink.c
+module_tizenaudio_sink_la_LDFLAGS = $(MODULE_LDFLAGS)
+module_tizenaudio_sink_la_LIBADD = $(MODULE_LIBADD) $(ASOUNDLIB_LIBS) libalsa-util.la
+module_tizenaudio_sink_la_CFLAGS = $(AM_CFLAGS) $(ASOUNDLIB_CFLAGS)
 
 # Solaris
 

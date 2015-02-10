@@ -4077,6 +4077,10 @@ int pa__init(pa_module *m)
         u->audio_mgr.intf.set_mute = dlsym(u->audio_mgr.dl_handle, "audio_set_mute");
         u->audio_mgr.intf.alsa_pcm_open = dlsym(u->audio_mgr.dl_handle, "audio_alsa_pcm_open");
         u->audio_mgr.intf.alsa_pcm_close = dlsym(u->audio_mgr.dl_handle, "audio_alsa_pcm_close");
+        u->audio_mgr.intf.pcm_open = dlsym(u->audio_mgr.dl_handle, "audio_pcm_open");
+        u->audio_mgr.intf.pcm_close = dlsym(u->audio_mgr.dl_handle, "audio_pcm_close");
+        u->audio_mgr.intf.pcm_avail = dlsym(u->audio_mgr.dl_handle, "audio_pcm_avail");
+        u->audio_mgr.intf.pcm_write = dlsym(u->audio_mgr.dl_handle, "audio_pcm_write");
         u->audio_mgr.intf.set_session = dlsym(u->audio_mgr.dl_handle, "audio_set_session");
         u->audio_mgr.intf.set_route = dlsym(u->audio_mgr.dl_handle, "audio_set_route");
         u->audio_mgr.intf.set_mixer_value_string = dlsym(u->audio_mgr.dl_handle, "audio_set_mixer_value_string");

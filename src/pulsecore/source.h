@@ -246,7 +246,9 @@ struct pa_source {
     } thread_info;
 
 #ifdef __TIZEN__
+    pa_hashmap *device_types;
     FILE *dump_fp;
+    void* device_item;
 #endif
 
     void *userdata;

@@ -761,11 +761,11 @@ static int init_stream_map (pa_stream_manager *m) {
 failed:
     if (m->stream_map) {
         if (s->idx_avail_in_devices)
-            pa_idxset_free(s->idx_avail_in_devices);
+            pa_idxset_free(s->idx_avail_in_devices, NULL);
         if (s->idx_avail_out_devices)
-            pa_idxset_free(s->idx_avail_out_devices);
+            pa_idxset_free(s->idx_avail_out_devices, NULL);
         if (s->idx_avail_frameworks)
-            pa_idxset_free(s->idx_avail_frameworks);
+            pa_idxset_free(s->idx_avail_frameworks, NULL);
         pa_hashmap_free(m->stream_map);
     }
     return -1;
@@ -778,11 +778,11 @@ static void deinit_stream_map (pa_stream_manager *m) {
         void *state = NULL;
         PA_HASHMAP_FOREACH(s, m->stream_map, state) {
             if (s->idx_avail_in_devices)
-                pa_idxset_free(s->idx_avail_in_devices);
+                pa_idxset_free(s->idx_avail_in_devices, NULL);
             if (s->idx_avail_out_devices)
-                pa_idxset_free(s->idx_avail_out_devices);
+                pa_idxset_free(s->idx_avail_out_devices, NULL);
             if (s->idx_avail_frameworks)
-                pa_idxset_free(s->idx_avail_frameworks);
+                pa_idxset_free(s->idx_avail_frameworks, NULL);
             pa_xfree(s);
         }
         pa_hashmap_free(m->stream_map);
@@ -1186,7 +1186,7 @@ static void do_notify(notify_command_type command, stream_type type, pa_stream_m
         if (hook_call_data.manual_devices) {
             PA_HASHMAP_FOREACH(d, hook_call_data.manual_devices, state)
                 pa_xfree(d);
-            pa_hashmap_free(hook_call_data.manual_devices, NULL);
+            pa_hashmap_free(hook_call_data.manual_devices);
         }
 #if 0
         {
@@ -1221,7 +1221,7 @@ static void do_notify(notify_command_type command, stream_type type, pa_stream_m
         if (hook_call_data.manual_devices) {
             PA_HASHMAP_FOREACH(d, hook_call_data.manual_devices, state)
                 pa_xfree(d);
-            pa_hashmap_free(hook_call_data.manual_devices, NULL);
+            pa_hashmap_free(hook_call_data.manual_devices);
         }
         break;
     }
@@ -1670,7 +1670,7 @@ void pa_stream_manager_done(pa_stream_manager *m) {
         pa_hook_slot_free(m->source_output_unlink_slot);
 
     if (m->stream_parents)
-        pa_hashmap_free(m->stream_parents, NULL);
+        pa_hashmap_free(m->stream_parents);
 
     deinit_stream_map(m);
 

@@ -312,6 +312,8 @@ struct pa_sink {
 
 #ifdef __TIZEN__
     FILE *dump_fp;
+    pa_hashmap *device_types;
+    void* device_item;
 #endif
 
     void *userdata;

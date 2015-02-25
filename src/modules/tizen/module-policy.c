@@ -42,6 +42,10 @@
 #include <pulsecore/protocol-dbus.h>
 #endif
 
+//#define DEVICE_MANAGER
+#ifdef DEVICE_MANAGER
+#include "device-manager.h"
+#endif
 #include "module-policy-symdef.h"
 #include "tizen-audio.h"
 #include "communicator.h"
@@ -452,9 +456,14 @@ struct userdata {
         pa_hook_slot *comm_hook_select_proper_sink_or_source_slot;
         pa_hook_slot *comm_hook_change_route_slot;
         pa_hook_slot *comm_hook_update_route_options_slot;
+        pa_hook_slot *comm_hook_device_connected_slot;
+        pa_hook_slot *comm_hook_device_disconnected_slot;
     } communicator;
 
     pa_stream_manager *stream_manager;
+#ifdef DEVICE_MANAGER
+    pa_device_manager *device_manager;
+#endif
 };
 
 enum {
@@ -3590,6 +3599,8 @@ static pa_hook_result_t sink_input_put_callback(pa_core *core, pa_sink_input *i,
 
     return PA_HOOK_OK;
 }
+
+#ifndef DEVICE_MANAGER
 /*  Called when new sink is added while sink-input is existing  */
 static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, struct userdata *u)
 {
@@ -3696,6 +3707,8 @@ static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, struct
 
     return PA_HOOK_OK;
 }
+#endif
+
 static void defer_event_cb (pa_mainloop_api *m, pa_defer_event *e, void *userdata)
 {
     struct userdata *u = userdata;
@@ -3863,6 +3876,7 @@ static void subscribe_cb(pa_core *c, pa_subscription_event_type_t t, uint32_t id
     }
 }
 
+#ifndef DEVICE_MANAGER
 static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, void* userdata) {
     struct userdata *u = userdata;
     uint32_t idx;
@@ -3941,6 +3955,7 @@ static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, voi
 
     return PA_HOOK_OK;
 }
+#endif
 
 static pa_hook_result_t sink_unlink_post_hook_callback(pa_core *c, pa_sink *sink, void* userdata) {
     struct userdata *u = userdata;
@@ -4330,6 +4345,16 @@ static pa_hook_result_t route_options_update_hook_cb(pa_core *c, pa_stream_manag
         pa_log("-- option : %s", option_name);
     }
 
+    return PA_HOOK_OK;
+}
+
+static pa_hook_result_t device_connected_hook_cb(pa_core *c, struct device_item *device, struct userdata *u) {
+    pa_log_debug("Device connected hook");
+    return PA_HOOK_OK;
+}
+
+static pa_hook_result_t device_disconnected_hook_cb(pa_core *c, struct device_item *device, struct userdata *u) {
+    pa_log_debug("Device disconnected hook");
     return PA_HOOK_OK;
 }
 
@@ -4907,6 +4932,7 @@ int pa__init(pa_module *m)
     u->source_output_put_slot =
             pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_PUT], PA_HOOK_EARLY+10, (pa_hook_cb_t) source_output_put_callback, u);
 
+#ifndef DEVICE_MANAGER
     if (on_hotplug) {
         /* A little bit later than module-stream-restore */
         u->sink_put_hook_slot =
@@ -4916,6 +4942,7 @@ int pa__init(pa_module *m)
     /* sink unlink comes before sink-input unlink */
     u->sink_unlink_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_UNLINK], PA_HOOK_EARLY, (pa_hook_cb_t) sink_unlink_hook_callback, u);
     u->sink_unlink_post_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_UNLINK_POST], PA_HOOK_EARLY, (pa_hook_cb_t) sink_unlink_post_hook_callback, u);
+#endif
 
     u->sink_input_move_start_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_MOVE_START], PA_HOOK_LATE, (pa_hook_cb_t) sink_input_move_start_cb, u);
     u->sink_input_move_finish_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_MOVE_FINISH], PA_HOOK_LATE, (pa_hook_cb_t) sink_input_move_finish_cb, u);
@@ -5003,10 +5030,15 @@ int pa__init(pa_module *m)
                     PA_HOOK_EARLY, (pa_hook_cb_t) route_change_hook_cb, u);
         u->communicator.comm_hook_update_route_options_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTIONS),
                     PA_HOOK_EARLY, (pa_hook_cb_t) route_options_update_hook_cb, u);
+        u->communicator.comm_hook_device_connected_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_DEVICE_CONNECTED),
+                    PA_HOOK_EARLY, (pa_hook_cb_t) device_connected_hook_cb, u);
+        u->communicator.comm_hook_device_disconnected_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_DEVICE_DISCONNECTED),
+                    PA_HOOK_EARLY, (pa_hook_cb_t) device_disconnected_hook_cb, u);
     }
     u->stream_manager = pa_stream_manager_init(u->core);
-#if 0
-    u->device_manager = pa_device_manager_init(u->core);
+
+#ifdef DEVICE_MANAGER
+    u->device_manager = device_manager_init(u->core);
 #endif
 
     __load_dump_config(u);
@@ -5041,6 +5073,9 @@ void pa__done(pa_module *m)
         return;
 #ifdef HAVE_DBUS
     dbus_deinit(u);
+#endif
+#ifdef DEVICE_MANAGER
+    device_manager_done(u->device_manager);
 #endif
 
     if (u->sink_input_new_hook_slot)
@@ -5079,16 +5114,14 @@ void pa__done(pa_module *m)
     if (u->stream_manager) {
         pa_stream_manager_done(u->stream_manager);
     }
-#if 0
-    if (u->device_manager) {
-        pa_device_manager_done(u->device_manager);
-    }
-#endif
     if (u->communicator.comm) {
         if (u->communicator.comm_hook_change_route_slot)
             pa_hook_slot_free(u->communicator.comm_hook_change_route_slot);
         if (u->communicator.comm_hook_change_route_slot)
             pa_hook_slot_free(u->communicator.comm_hook_update_route_options_slot);
+            pa_hook_slot_free(u->communicator.comm_hook_device_connected_slot);
+        if (u->communicator.comm_hook_device_disconnected_slot)
+            pa_hook_slot_free(u->communicator.comm_hook_device_disconnected_slot);
         pa_communicator_unref(u->communicator.comm);
     }
 

@@ -148,6 +148,7 @@ typedef enum audio_device_param {
     AUDIO_DEVICE_PARAM_MAX,
 } audio_device_param_t;
 
+/*
 enum audio_device_type {
     AUDIO_DEVICE_NONE,
     AUDIO_DEVICE_BUILTIN_SPEAKER,
@@ -164,6 +165,7 @@ enum audio_device_direction_type{
     AUDIO_DEVICE_DIRECTION_IN,
     AUDIO_DEVICE_DIRECTION_OUT
 };
+*/
 
 typedef struct audio_device_param_info {
     audio_device_param_t param;

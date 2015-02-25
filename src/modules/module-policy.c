@@ -2740,6 +2740,34 @@ static pa_bool_t policy_is_available_high_latency(struct userdata *u)
     return true;
 }
 
+static void policy_get_buffer_attr(struct userdata       *u,
+                                   audio_latency_t       latency,
+                                   uint32_t              samplerate,
+                                   audio_sample_format_t format,
+                                   uint32_t              channels,
+                                   uint32_t              *maxlength,
+                                   uint32_t              *tlength,
+                                   uint32_t              *prebuf,
+                                   uint32_t              *minreq,
+                                   uint32_t              *fragsize)
+{
+    assert(u);
+    assert(maxlength);
+    assert(tlength);
+    assert(prebuf);
+    assert(minreq);
+    assert(fragsize);
+
+    pa_log_debug("hal-latency : u->intf.audio_mgr.get_buffer_attr(%p)", u->audio_mgr.intf.get_buffer_attr);
+    if (u->audio_mgr.intf.get_buffer_attr != NULL) {
+        audio_return_t ret = u->audio_mgr.intf.get_buffer_attr(u->audio_mgr.data, latency, samplerate, format, channels, maxlength, tlength, prebuf, minreq, fragsize);
+        if (ret != AUDIO_RET_OK) {
+            pa_log_error("Failed get_buffer_attr() - ret:%d", ret);
+        }
+    }
+
+    return;
+}
 #define EXT_VERSION 1
 
 static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connection *c, uint32_t tag, pa_tagstruct *t) {
@@ -3162,6 +3190,38 @@ static void __set_sink_input_role_type(pa_proplist *p, int gain_type)
 
     return;
 }
+
+static void __add_hal_buffer_attr_by_latency(struct userdata* u, pa_proplist* proplist, pa_sample_spec spec) {
+    assert(proplist);
+
+    int         latency       = 0;
+    uint32_t    maxlength     = -1,
+                tlength       = -1,
+                prebuf        = -1,
+                minreq        = -1,
+                fragsize      = -1;
+    const char* audio_latency = pa_proplist_gets(proplist, PA_PROP_MEDIA_TIZEN_AUDIO_LATENCY);
+
+    if (audio_latency == NULL) {
+        return;
+    }
+
+    pa_log_info("hal-latency - auido_latency : %s", audio_latency);
+
+    latency = atoi(audio_latency);
+    pa_log_info("hal-latency - policy_get_buffer_attr(latency:%d, rate:%d, format:%d, channels:%d)", latency, spec.rate, spec.format, spec.channels);
+    policy_get_buffer_attr(u, latency, spec.rate, spec.format, spec.channels,
+                           &maxlength, &tlength, &prebuf, &minreq, &fragsize);
+
+    pa_log_info("hal-latency - buffer_attr -> (maxlength:%d, tlength:%d, prebuf:%d, minreq:%d, fragsize:%d)", maxlength, tlength, prebuf, minreq, fragsize);
+
+    pa_proplist_setf(proplist, "maxlength", "%d", maxlength);
+    pa_proplist_setf(proplist, "tlength",   "%d", tlength);
+    pa_proplist_setf(proplist, "prebuf",    "%d", prebuf);
+    pa_proplist_setf(proplist, "minreq",    "%d", minreq);
+    pa_proplist_setf(proplist, "fragsize",  "%d", fragsize);
+}
+
 /*  Called when new sink-input is creating  */
 static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_new_data *new_data, struct userdata *u)
 {
@@ -3289,6 +3349,10 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
         }
         __free_audio_info(&audio_info);
     }
+
+    /* get buffer_attr by audio latency */
+    pa_log_info("hal-latency - get buffer attr by audio latency");
+    __add_hal_buffer_attr_by_latency(u, new_data->proplist, new_data->sample_spec);
 
 exit:
     if (s) {
@@ -3915,6 +3979,7 @@ static pa_source* policy_select_proper_source (pa_core *c, const char* policy)
 /*  Called when new source-output is creating  */
 static pa_hook_result_t source_output_new_hook_callback(pa_core *c, pa_source_output_new_data *new_data, struct userdata *u) {
     const char *policy = NULL;
+
     pa_assert(c);
     pa_assert(new_data);
     pa_assert(u);
@@ -3947,6 +4012,10 @@ static pa_hook_result_t source_output_new_hook_callback(pa_core *c, pa_source_ou
     /*new_data->save_source= false;
     new_data->source= policy_select_proper_source (c, policy);*/
     pa_log_debug("[POLICY][%s] set source of source-input to [%s]", __func__, (new_data->source)? new_data->source->name : "null");
+
+    /* get buffer_attr by audio latency */
+    pa_log_info("hal-latency - get buffer attr by audio latency");
+    __add_hal_buffer_attr_by_latency(u, new_data->proplist, new_data->sample_spec);
 
     return PA_HOOK_OK;
 }
@@ -4085,6 +4154,7 @@ int pa__init(pa_module *m)
         u->audio_mgr.intf.set_route = dlsym(u->audio_mgr.dl_handle, "audio_set_route");
         u->audio_mgr.intf.set_mixer_value_string = dlsym(u->audio_mgr.dl_handle, "audio_set_mixer_value_string");
 
+        u->audio_mgr.intf.get_buffer_attr = dlsym(u->audio_mgr.dl_handle, "audio_get_buffer_attr");
         if (u->audio_mgr.intf.init) {
             if (u->audio_mgr.intf.init(&u->audio_mgr.data, (void *)u) != AUDIO_RET_OK) {
                 pa_log_error("audio_mgr init failed");

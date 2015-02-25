@@ -226,6 +226,38 @@ typedef enum audio_gain {
     AUDIO_GAIN_TYPE_MAX,
 } audio_gain_t;
 
+/* audio format */
+typedef enum audio_sample_format {
+    AUDIO_SAMPLE_U8,
+    AUDIO_SAMPLE_ALAW,
+    AUDIO_SAMPLE_ULAW,
+    AUDIO_SAMPLE_S16LE,
+    AUDIO_SAMPLE_S16BE,
+    AUDIO_SAMPLE_FLOAT32LE,
+    AUDIO_SAMPLE_FLOAT32BE,
+    AUDIO_SAMPLE_S32LE,
+    AUDIO_SAMPLE_S32BE,
+    AUDIO_SAMPLE_S24LE,
+    AUDIO_SAMPLE_S24BE,
+    AUDIO_SAMPLE_S24_32LE,
+    AUDIO_SAMPLE_S24_32BE,
+    AUDIO_SAMPLE_MAX,
+    AUDIO_SAMPLE_INVALID = -1
+}   audio_sample_format_t;
+
+/* stream latency */
+typedef enum audio_latency {
+    AUDIO_IN_LATENCY_LOW,
+    AUDIO_IN_LATENCY_MID,
+    AUDIO_IN_LATENCY_HIGH,
+    AUDIO_IN_LATENCY_VOIP,
+    AUDIO_OUT_LATENCY_LOW,
+    AUDIO_OUT_LATENCY_MID,
+    AUDIO_OUT_LATENCY_HIGH,
+    AUDIO_OUT_LATENCY_VOIP,
+    AUDIO_LATENCY_MAX
+}   audio_latency_t;
+
 typedef struct audio_stream_info {
     char *name;
     uint32_t samplerate;
@@ -272,7 +304,7 @@ typedef struct audio_interface {
     audio_return_t (*pcm_avail)(void *pcm_handle);
     audio_return_t (*pcm_write)(void *pcm_handle, const void *buffer, uint32_t frames);
     audio_return_t (*set_mixer_value_string)(void *userdata, const char* ctl, const char* value);
-
+    audio_return_t (*get_buffer_attr)(void *userdata, audio_latency_t latency, uint32_t samplerate, audio_sample_format_t format, uint32_t channels, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
 } audio_interface_t;
 
 int audio_get_revision (void);
@@ -297,4 +329,5 @@ audio_return_t audio_pcm_avail(void *pcm_handle);
 audio_return_t audio_pcm_write(void *pcm_handle, const void *buffer, uint32_t frames);
 audio_return_t audio_set_route (void *userdata, uint32_t session, uint32_t subsession, uint32_t device_in, uint32_t device_out, uint32_t route_flag);
 
+audio_return_t audio_get_buffer_attr(void *userdata, audio_latency_t latency, uint32_t samplerate, audio_sample_format_t format, uint32_t channels, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
 #endif

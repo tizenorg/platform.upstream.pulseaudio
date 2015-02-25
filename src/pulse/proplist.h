@@ -40,6 +40,9 @@ PA_C_DECL_BEGIN
 #define PA_PROP_MEDIA_TIZEN_FADE_RETURN_VOLUME "media.tizen_fade_return_volume"
 /** For streams: the policy to ignore the preset sink rather use a sink picked by module-policy. One of the strings "yes", "no" */
 #define PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK  "media.policy.ignore_preset_sink"
+#define PA_PROP_MEDIA_TIZEN_AUDIO_LATENCY      "media.tizen_audio_latency"
+/** For streams: logic role of this media. One of the strings "auto", "phone" */
+#define PA_PROP_MEDIA_POLICY                "media.policy"
 #endif
 
 /** For streams: localized media name, formatted as UTF-8. E.g. "Guns'N'Roses: Civil War".*/
@@ -73,9 +76,6 @@ PA_C_DECL_BEGIN
 
 /** For streams: logic role of this media. One of the strings "video", "music", "game", "event", "phone", "animation", "production", "a11y", "test" */
 #define PA_PROP_MEDIA_ROLE                     "media.role"
-
-/** For streams: logic role of this media. One of the strings "auto", "phone" */
-#define PA_PROP_MEDIA_POLICY                "media.policy"
 
 /** For streams: the name of a filter that is desired, e.g.\ "echo-cancel" or "equalizer-sink". PulseAudio may choose to not apply the filter if it does not make sense (for example, applying echo-cancellation on a Bluetooth headset probably does not make sense. \since 1.0 */
 #define PA_PROP_FILTER_WANT                    "filter.want"

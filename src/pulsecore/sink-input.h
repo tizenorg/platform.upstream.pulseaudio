@@ -265,6 +265,10 @@ struct pa_sink_input {
         pa_cvolume_ramp_int ramp;
     } thread_info;
 
+#ifdef __TIZEN__
+    FILE *dump_fp;
+#endif
+
     void *userdata;
 };
 

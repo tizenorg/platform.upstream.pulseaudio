@@ -441,12 +441,18 @@ pa_resampler* pa_resampler_new(
         r->have_leftover = &r->leftover_in_to_work;
     }
     r->w_fz = pa_sample_size_of_format(r->work_format) * r->work_channels;
-
+#ifdef __TIZEN_LOG__
+    pa_log_debug("Resampler rate:%d->%d(%s) format:%s->%s(%s) channels:%d->%d(resampling %d)",
+        a->rate, b->rate, pa_resample_method_to_string(r->method),
+        pa_sample_format_to_string(a->format), pa_sample_format_to_string(b->format), pa_sample_format_to_string(r->work_format),
+        a->channels, b->channels, r->work_channels);
+#else
     pa_log_debug("Resampler:");
     pa_log_debug("  rate %d -> %d (method %s)", a->rate, b->rate, pa_resample_method_to_string(r->method));
     pa_log_debug("  format %s -> %s (intermediate %s)", pa_sample_format_to_string(a->format),
                  pa_sample_format_to_string(b->format), pa_sample_format_to_string(r->work_format));
     pa_log_debug("  channels %d -> %d (resampling %d)", a->channels, b->channels, r->work_channels);
+#endif
 
     /* initialize implementation */
     if (init_table[method](r) < 0)

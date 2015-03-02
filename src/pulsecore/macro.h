@@ -46,6 +46,12 @@
 #endif
 #endif
 
+#ifdef __TIZEN__
+typedef int  pa_bool_t;
+#else
+typedef bool pa_bool_t;
+#endif
+
 #if defined(PAGE_SIZE)
 #define PA_PAGE_SIZE ((size_t) PAGE_SIZE)
 #elif defined(PAGESIZE)

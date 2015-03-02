@@ -26,6 +26,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef __TIZEN__
+#include <time.h>
+#include "tizen-audio.h"
+#endif
 
 #include <pulse/utf8.h>
 #include <pulse/xmalloc.h>
@@ -54,6 +58,10 @@ struct volume_factor_entry {
     char *key;
     pa_cvolume volume;
 };
+
+#ifdef __TIZEN__
+#define PA_SINK_INPUT_DUMP_PATH_PREFIX      "/tmp/dump_ap_out_stream"
+#endif
 
 static struct volume_factor_entry *volume_factor_entry_new(const char *key, const pa_cvolume *volume) {
     struct volume_factor_entry *entry;
@@ -576,7 +584,9 @@ int pa_sink_input_new(
 
     reset_callbacks(i);
     i->userdata = NULL;
-
+#ifdef __TIZEN__
+    i->dump_fp = NULL;
+#endif
     if (data->flags & PA_SINK_INPUT_START_RAMP_MUTED)
         pa_cvolume_ramp_int_init(&i->ramp, PA_VOLUME_MUTED, data->sink->sample_spec.channels);
     else
@@ -655,8 +665,13 @@ static void update_n_corked(pa_sink_input *i, pa_sink_input_state_t state) {
 
     if (i->state == PA_SINK_INPUT_CORKED && state != PA_SINK_INPUT_CORKED)
         pa_assert_se(i->sink->n_corked -- >= 1);
-    else if (i->state != PA_SINK_INPUT_CORKED && state == PA_SINK_INPUT_CORKED)
+    else if (i->state != PA_SINK_INPUT_CORKED && state == PA_SINK_INPUT_CORKED) {
+#ifdef __TIZEN__
+        if (i->thread_info.resampler)
+            pa_resampler_reset(i->thread_info.resampler);
+#endif
         i->sink->n_corked++;
+    }
 }
 
 /* Called from main context */
@@ -811,7 +826,13 @@ static void sink_input_free(pa_object *o) {
 
     if (i->thread_info.resampler)
         pa_resampler_free(i->thread_info.resampler);
-
+#ifdef __TIZEN__
+    /* close file for dump pcm */
+    if (i->dump_fp) {
+        fclose(i->dump_fp);
+        i->dump_fp = NULL;
+    }
+#endif
     if (i->format)
         pa_format_info_free(i->format);
 
@@ -1110,6 +1131,39 @@ void pa_sink_input_peek(pa_sink_input *i, size_t slength /* in sink bytes */, pa
         pa_cvolume_mute(volume, i->sink->sample_spec.channels);
     else
         *volume = i->thread_info.soft_volume;
+#ifdef __TIZEN__
+    /* open file for dump pcm */
+    if (i->core->dump_sink_input && !i->dump_fp) {
+        time_t t;
+        char datetime[12];
+        char *dump_path = NULL;
+
+        time(&t);
+        memset(&datetime[0], 0x00, sizeof(datetime));
+        strftime(&datetime[0], sizeof(datetime), "%m%d_%H%M%S", localtime(&t));
+        dump_path = pa_sprintf_malloc("%s_%s_%d_sink%d.pcm", PA_SINK_INPUT_DUMP_PATH_PREFIX, &datetime[0], i->index, i->sink->index);
+
+        if (dump_path) {
+            i->dump_fp = fopen(dump_path, "w");
+            pa_xfree(dump_path);
+        }
+    /* close file for dump pcm when config is changed */
+    } else if (!i->core->dump_sink && i->dump_fp) {
+        fclose(i->dump_fp);
+        i->dump_fp = NULL;
+    }
+
+    /* dump pcm */
+    if (i->dump_fp) {
+        void *ptr;
+
+        ptr = pa_memblock_acquire(chunk->memblock);
+
+        fwrite((uint8_t*) ptr + chunk->index, 1, chunk->length, i->dump_fp);
+
+        pa_memblock_release(chunk->memblock);
+    }
+#endif
 }
 
 /* Called from thread context */
@@ -1167,6 +1221,13 @@ void pa_sink_input_process_rewind(pa_sink_input *i, size_t nbytes /* in sink sam
 
     if (i->thread_info.rewrite_nbytes == (size_t) -1) {
 
+#ifdef __TIZEN__
+        /* rewind pcm */
+        if (i->dump_fp) {
+            fseeko(i->dump_fp, (off_t)pa_memblockq_get_length(i->thread_info.render_memblockq) * (-1), SEEK_CUR);
+        }
+#endif
+
         /* We were asked to drop all buffered data, and rerequest new
          * data from implementor the next time peek() is called */
 
@@ -1187,6 +1248,13 @@ void pa_sink_input_process_rewind(pa_sink_input *i, size_t nbytes /* in sink sam
 
         if (amount > 0) {
             pa_log_debug("Have to rewind %lu bytes on implementor.", (unsigned long) amount);
+
+#ifdef __TIZEN__
+            /* rewind pcm */
+            if (i->dump_fp) {
+                fseeko(i->dump_fp, (off_t)amount * (-1), SEEK_CUR);
+            }
+#endif
 
             /* Tell the implementor */
             if (i->process_rewind)
@@ -1549,6 +1617,15 @@ void pa_sink_input_set_mute(pa_sink_input *i, bool mute, bool save) {
 
     pa_subscription_post(i->core, PA_SUBSCRIPTION_EVENT_SINK_INPUT|PA_SUBSCRIPTION_EVENT_CHANGE, i->index);
     pa_hook_fire(&i->core->hooks[PA_CORE_HOOK_SINK_INPUT_MUTE_CHANGED], i);
+}
+
+/* Called from main context */
+pa_bool_t pa_sink_input_get_mute(pa_sink_input *i) {
+    pa_sink_input_assert_ref(i);
+    pa_assert_ctl_context();
+    pa_assert(PA_SINK_INPUT_IS_LINKED(i->state));
+
+    return i->muted;
 }
 
 /* Called from main thread */
@@ -2163,7 +2240,9 @@ bool pa_sink_input_safe_to_remove(pa_sink_input *i) {
 
     return true;
 }
-
+#ifdef __TIZEN__
+#define SINK_VOIP           "alsa_output.3.analog-stereo"
+#endif
 /* Called from IO context */
 void pa_sink_input_request_rewind(
         pa_sink_input *i,
@@ -2192,10 +2271,46 @@ void pa_sink_input_request_rewind(
     pa_sink_input_assert_io_context(i);
     pa_assert(rewrite || flush);
     pa_assert(!dont_rewind_render || !rewrite);
-
+#ifdef __TIZEN__
+    /*FixMe:Since voip driver dosen't support rewind ,So avoiding rewind for the streams connected
+            to voip Sink Module*/
+    if (i->sink->name && pa_streq(i->sink->name,SINK_VOIP))
+    {
+        pa_log_info("Avoiding rewind for sink-input %d connected to sink %s",i->index,i->sink->name);
+        return;
+    }
+#endif
     /* We don't take rewind requests while we are corked */
     if (i->thread_info.state == PA_SINK_INPUT_CORKED)
         return;
+
+#ifdef __TIZEN__
+    /* FIXME: due to current observation, rewinding with resampler generates noise,
+     * following code will avoid just conflict but we need to investigate more about this */
+    if (i->sink) {
+        pa_log_debug_verbose("sample rate : sink-input [%d], sink [%d], if not same, skip rewind",
+            i->sample_spec.rate, i->sink->sample_spec.rate);
+        if (i->sample_spec.rate != i->sink->sample_spec.rate) {
+            return;
+        }
+    } else {
+        pa_log_warn("sink is not available for sink-input [%d]", i->index);
+    }
+
+    /* FIXME: remove tick noise during playing keysound */
+    {
+        uint32_t gain_type = 0;
+        const char *si_gain_type_str = NULL;
+        if ((si_gain_type_str = pa_proplist_gets(i->proplist, PA_PROP_MEDIA_TIZEN_GAIN_TYPE))) {
+            pa_atou(si_gain_type_str, &gain_type);
+            if(gain_type == AUDIO_GAIN_TYPE_TOUCH) {
+                pa_log_debug_verbose("skip rewind");
+                return; // skip rewind.
+            }
+        }
+    }
+#endif
+
 
     nbytes = PA_MAX(i->thread_info.rewrite_nbytes, nbytes);
 

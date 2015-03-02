@@ -1205,7 +1205,6 @@ modlibexec_LTLIBRARIES += \
 		module-policy.la
 endif
 endif
-
 modlibexec_LTLIBRARIES += \
 		module-cli.la \
 		module-cli-protocol-tcp.la \
@@ -1254,6 +1253,7 @@ modlibexec_LTLIBRARIES += \
 		module-filter-heuristics.la \
 		module-role-ducking.la \
 		module-audio-groups.la \
+		module-sound-player.la \
 		module-tizenaudio-sink.la
 
 if HAVE_ESOUND
@@ -1595,7 +1595,8 @@ SYMDEF_FILES = \
 		module-switch-on-port-available-symdef.h \
 		module-filter-apply-symdef.h \
 		module-filter-heuristics-symdef.h \
-		module-audio-groups-symdef.h
+		module-audio-groups-symdef.h \
+		module-sound-player-symdef.h
 
 if USE_SAMSUNG_POLICY
 SYMDEF_FILES += \
@@ -2301,6 +2302,11 @@ module_policy_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_policy_la_LIBADD = $(AM_LIBADD) $(DBUS_LIBS) $(VCONF_LIBS) $(INIPARSER_LIBS) $(ASOUNDLIB_LIBS) libprotocol-native.la libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la
 module_policy_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS) $(VCONF_CFLAGS) $(INIPARSER_CFLAGS) $(ASOUNDLIB_CFLAGS)
 endif
+
+module_sound_player_la_SOURCES = modules/module-sound-player.c
+module_sound_player_la_LDFLAGS = $(MODULE_LDFLAGS)
+module_sound_player_la_LIBADD = $(MODULE_LIBADD) $(AM_LIBADD) $(DBUS_LIBS)
+module_sound_player_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS)
 
 ###################################
 #        Some minor stuff         #

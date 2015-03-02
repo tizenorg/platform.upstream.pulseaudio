@@ -1945,9 +1945,9 @@ module_alsa_card_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_alsa_card_la_LIBADD = $(MODULE_LIBADD) $(ASOUNDLIB_LIBS) libalsa-util.la
 module_alsa_card_la_CFLAGS = $(AM_CFLAGS) $(ASOUNDLIB_CFLAGS)
 
-module_tizenaudio_sink_la_SOURCES = modules/alsa/module-tizenaudio-sink.c
+module_tizenaudio_sink_la_SOURCES = modules/module-tizenaudio-sink.c
 module_tizenaudio_sink_la_LDFLAGS = $(MODULE_LDFLAGS)
-module_tizenaudio_sink_la_LIBADD = $(MODULE_LIBADD) $(ASOUNDLIB_LIBS) libalsa-util.la
+module_tizenaudio_sink_la_LIBADD = $(MODULE_LIBADD) $(ASOUNDLIB_LIBS)
 module_tizenaudio_sink_la_CFLAGS = $(AM_CFLAGS) $(ASOUNDLIB_CFLAGS)
 
 # Solaris

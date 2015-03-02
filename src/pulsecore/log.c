@@ -93,6 +93,9 @@
 #define ENV_LOG_BACKTRACE_SKIP "PULSE_LOG_BACKTRACE_SKIP"
 #define ENV_LOG_NO_RATELIMIT "PULSE_LOG_NO_RATE_LIMIT"
 #define LOG_MAX_SUFFIX_NUMBER 99
+#ifdef __TIZEN__
+#define ENV_LOG_DLOG_CLIENT "PULSE_LOG_DLOG_CLIENT"
+#endif
 
 static char *ident = NULL; /* in local charset format */
 static pa_log_target target = { PA_LOG_STDERR, NULL };
@@ -107,6 +110,9 @@ static int write_type = 0;
 
 #ifdef HAVE_SYSLOG_H
 static const int level_to_syslog[] = {
+#ifdef __TIZEN_LOG__
+    [PA_LOG_VERBOSE] = LOG_DEBUG,
+#endif
     [PA_LOG_ERROR] = LOG_ERR,
     [PA_LOG_WARN] = LOG_WARNING,
     [PA_LOG_NOTICE] = LOG_NOTICE,
@@ -128,6 +134,9 @@ static const int level_to_journal[] = {
 #endif
 
 static const char level_to_char[] = {
+#ifdef __TIZEN_LOG__
+    [PA_LOG_VERBOSE] = 'D',
+#endif
     [PA_LOG_ERROR] = 'E',
     [PA_LOG_WARN] = 'W',
     [PA_LOG_NOTICE] = 'N',
@@ -322,6 +331,20 @@ static void init_defaults(void) {
             if (maximum_level_override >= PA_LOG_LEVEL_MAX)
                 maximum_level_override = PA_LOG_LEVEL_MAX-1;
         }
+
+#ifdef __TIZEN__
+        // usage : mmf.sh - export PULSE_LOG_DLOG_CLIENT=5
+        if(e = getenv(ENV_LOG_DLOG_CLIENT)) {
+#ifdef USE_DLOG
+	    target_override = PA_LOG_DLOG;
+#else
+	    target_override = PA_LOG_SYSLOG;
+#endif
+            target_override_set = true;
+            maximum_level_override = atoi(e);
+            flags_override |= PA_LOG_PRINT_META;
+        }
+#endif
 
         if (getenv(ENV_LOG_COLORS))
             flags_override |= PA_LOG_COLORS;
@@ -578,6 +601,9 @@ void pa_log_levelv_meta(
 
                 switch (level)
                 {
+#ifdef __TIZEN_LOG__
+                    case PA_LOG_VERBOSE:
+#endif
 					case PA_LOG_DEBUG:
 						SLOG (LOG_DEBUG, DLOG_TAG, "%s%s%s%s",  timestamp, location, t, pa_strempty(bt));
 						break;
@@ -610,6 +636,9 @@ void pa_log_levelv_meta(
 
 				switch (level)
 				{
+#ifdef __TIZEN_LOG__
+                    case PA_LOG_VERBOSE:
+#endif
 					case PA_LOG_DEBUG:
 						SLOG (LOG_DEBUG, DLOG_TAG, "\033[%dm%s%s%s%s\033[0m", COLOR_GREEN, timestamp, location, t, pa_strempty(bt));
 						break;

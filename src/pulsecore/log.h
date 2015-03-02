@@ -53,6 +53,9 @@ typedef enum pa_log_level {
     PA_LOG_NOTICE = 2,    /* Notice messages */
     PA_LOG_INFO   = 3,    /* Info messages */
     PA_LOG_DEBUG  = 4,    /* debug message */
+#ifdef __TIZEN_LOG__
+    PA_LOG_VERBOSE = 5,
+#endif
     PA_LOG_LEVEL_MAX
 } pa_log_level_t;
 
@@ -129,6 +132,15 @@ char *pa_log_target_to_string(const pa_log_target *t);
 
 /* ISO varargs available */
 
+#ifdef __TIZEN_LOG__
+#define pa_log_debug_verbose(...)   pa_log_level_meta(PA_LOG_VERBOSE,  __FILE__, __LINE__, __func__, __VA_ARGS__)
+#define pa_log_info_verbose(...)    pa_log_level_meta(PA_LOG_VERBOSE,  __FILE__, __LINE__, __func__, __VA_ARGS__)
+#define pa_log_info_debug(...)      pa_log_level_meta(PA_LOG_DEBUG,  __FILE__, __LINE__, __func__, __VA_ARGS__)
+#else
+#define pa_log_debug_verbose(...)   pa_log_level_meta(PA_LOG_DEBUG,  __FILE__, __LINE__, __func__, __VA_ARGS__)
+#define pa_log_info_verbose(...)    pa_log_level_meta(PA_LOG_INFO,  __FILE__, __LINE__, __func__, __VA_ARGS__)
+#define pa_log_info_debug(...)      pa_log_level_meta(PA_LOG_INFO,  __FILE__, __LINE__, __func__, __VA_ARGS__)
+#endif
 #define pa_log_debug(...)  pa_log_level_meta(PA_LOG_DEBUG,  __FILE__, __LINE__, __func__, __VA_ARGS__)
 #define pa_log_info(...)   pa_log_level_meta(PA_LOG_INFO,   __FILE__, __LINE__, __func__, __VA_ARGS__)
 #define pa_log_notice(...) pa_log_level_meta(PA_LOG_NOTICE, __FILE__, __LINE__, __func__, __VA_ARGS__)
@@ -146,6 +158,15 @@ PA_GCC_UNUSED static void pa_log_##suffix(const char *format, ...) { \
     va_end(ap); \
 }
 
+#ifdef __TIZEN_LOG__
+LOG_FUNC(debug_verbose, PA_LOG_VERBOSE)
+LOG_FUNC(info_verbose, PA_LOG_VERBOSE)
+LOG_FUNC(info_debug, PA_LOG_DEBUG)
+#else
+LOG_FUNC(debug_verbose, PA_LOG_DEBUG)
+LOG_FUNC(info_verbose, PA_LOG_INFO)
+LOG_FUNC(info_debug, PA_LOG_INFO)
+#endif
 LOG_FUNC(debug, PA_LOG_DEBUG)
 LOG_FUNC(info, PA_LOG_INFO)
 LOG_FUNC(notice, PA_LOG_NOTICE)

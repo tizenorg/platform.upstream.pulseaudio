@@ -439,6 +439,7 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-volume-api.so
 %{_libdir}/pulse-%{version}/modules/module-main-volume-policy.so
 %{_libdir}/pulse-%{version}/modules/module-audio-groups.so
+%{_libdir}/pulse-%{version}/modules/module-sound-player.so
 
 %config(noreplace) /etc/bash_completion.d/pulseaudio-bash-completion.sh
 

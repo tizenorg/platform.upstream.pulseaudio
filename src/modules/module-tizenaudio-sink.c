@@ -97,11 +97,13 @@ static const char* const valid_modargs[] = {
 
 /* Called from IO context */
 static int suspend(struct userdata *u) {
-    void *audio_data = pa_shared_get(u->core, "tizen-audio-data");
-    audio_interface_t *audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
+    void *audio_data;
+    audio_interface_t *audio_intf;
 
     pa_assert(u);
     pa_assert(u->pcm_handle);
+    audio_data = pa_shared_get(u->core, "tizen-audio-data");
+    audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
 
     /* Let's suspend -- we don't call snd_pcm_drain() here since that might
      * take awfully long with our long buffer sizes today. */
@@ -117,13 +119,17 @@ static int suspend(struct userdata *u) {
 /* Called from IO context */
 static int unsuspend(struct userdata *u) {
     pa_sample_spec sample_spec;
-    void *audio_data = pa_shared_get(u->core, "tizen-audio-data");
-    audio_interface_t *audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
+    void *audio_data;
+    audio_interface_t *audio_intf;
 
     pa_assert(u);
     pa_assert(!u->pcm_handle);
 
     pa_log_info("Trying resume...");
+
+    audio_data = pa_shared_get(u->core, "tizen-audio-data");
+    audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
+    sample_spec = u->sink->sample_spec;
 
     if (audio_intf && audio_intf->pcm_open) {
         audio_return_t audio_ret = AUDIO_RET_OK;
@@ -131,9 +137,6 @@ static int unsuspend(struct userdata *u) {
             pa_log("Error opening PCM device %x", audio_ret);
             goto fail;
         }
-    }
-    if(sample_spec.rate != u->sink->sample_spec.rate) {
-        pa_log_warn("Couldn't restore original sample settings.");
     }
     pa_log_info("Trying sw param...");
 

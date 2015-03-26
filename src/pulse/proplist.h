@@ -33,6 +33,15 @@
 
 PA_C_DECL_BEGIN
 
+#ifdef __TIZEN__
+#define PA_PROP_MEDIA_TIZEN_VOLUME_TYPE        "media.tizen_volume_type"
+#define PA_PROP_MEDIA_TIZEN_GAIN_TYPE          "media.tizen_gain_type"
+#define PA_PROP_MEDIA_TIZEN_FADE_STATUS        "media.tizen_fade_status"
+#define PA_PROP_MEDIA_TIZEN_FADE_RETURN_VOLUME "media.tizen_fade_return_volume"
+/** For streams: the policy to ignore the preset sink rather use a sink picked by module-policy. One of the strings "yes", "no" */
+#define PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK  "media.policy.ignore_preset_sink"
+#endif
+
 /** For streams: localized media name, formatted as UTF-8. E.g. "Guns'N'Roses: Civil War".*/
 #define PA_PROP_MEDIA_NAME                     "media.name"
 

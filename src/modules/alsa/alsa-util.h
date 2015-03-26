@@ -45,13 +45,25 @@ int pa_alsa_set_hw_params(
         bool *use_tsched,                  /* modified at return */
         bool require_exact_channel_number);
 
+#ifdef __TIZEN__
+int pa_alsa_set_sw_params(
+        snd_pcm_t *pcm,
+        snd_pcm_uframes_t avail_min,
+        bool period_event,
+        int start_threshold,
+        int sampling_rate );
+#else
 int pa_alsa_set_sw_params(
         snd_pcm_t *pcm,
         snd_pcm_uframes_t avail_min,
         bool period_event);
+#endif
 
 /* Picks a working mapping from the profile set based on the specified ss/map */
 snd_pcm_t *pa_alsa_open_by_device_id_auto(
+#ifdef __TIZEN__
+        pa_core *c,
+#endif
         const char *dev_id,
         char **dev,                       /* modified at return */
         pa_sample_spec *ss,               /* modified at return */
@@ -67,6 +79,9 @@ snd_pcm_t *pa_alsa_open_by_device_id_auto(
 
 /* Uses the specified mapping */
 snd_pcm_t *pa_alsa_open_by_device_id_mapping(
+#ifdef __TIZEN__
+        pa_core *c,
+#endif
         const char *dev_id,
         char **dev,                       /* modified at return */
         pa_sample_spec *ss,               /* modified at return */
@@ -81,6 +96,9 @@ snd_pcm_t *pa_alsa_open_by_device_id_mapping(
 
 /* Opens the explicit ALSA device */
 snd_pcm_t *pa_alsa_open_by_device_string(
+#ifdef __TIZEN__
+        pa_core *c,
+#endif
         const char *dir,
         char **dev,                       /* modified at return */
         pa_sample_spec *ss,               /* modified at return */
@@ -95,6 +113,9 @@ snd_pcm_t *pa_alsa_open_by_device_string(
 
 /* Opens the explicit ALSA device with a fallback list */
 snd_pcm_t *pa_alsa_open_by_template(
+#ifdef __TIZEN__
+        pa_core *c,
+#endif
         char **template,
         const char *dev_id,
         char **dev,                       /* modified at return */
@@ -137,6 +158,9 @@ unsigned int *pa_alsa_get_supported_rates(snd_pcm_t *pcm, unsigned int fallback_
 
 bool pa_alsa_pcm_is_hw(snd_pcm_t *pcm);
 bool pa_alsa_pcm_is_modem(snd_pcm_t *pcm);
+#ifdef __TIZEN__
+pa_bool_t pa_alsa_pcm_is_voip(snd_pcm_t *pcm);
+#endif
 
 const char* pa_alsa_strerror(int errnum);
 
@@ -153,5 +177,9 @@ struct pa_hdmi_eld {
 };
 
 int pa_alsa_get_hdmi_eld(snd_hctl_t *hctl, int device, pa_hdmi_eld *eld);
+
+#ifdef __TIZEN__
+int pa_alsa_set_mixer_control(const char *ctl_name, int val);
+#endif
 
 #endif

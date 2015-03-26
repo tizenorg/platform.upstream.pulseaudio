@@ -643,6 +643,14 @@ PKG_CHECK_MODULES(LIBJSON, [ json-c >= 0.11 ], [],
 
 PKG_CHECK_MODULES(LIBSNDFILE, [ sndfile >= 1.0.20 ])
 
+PKG_CHECK_MODULES(INIPARSER, iniparser)
+AC_SUBST(INIPARSER_CFLAGS)
+AC_SUBST(INIPARSER_LIBS)
+	
+PKG_CHECK_MODULES(VCONF, vconf)
+AC_SUBST(VCONF_CFLAGS)
+AC_SUBST(VCONF_LIBS)
+
 dnl use samsung policy module --------------------------------------------------------
 AC_ARG_ENABLE(samsung-policy, AC_HELP_STRING([--enable-samsung-policy], [using samsung-policy]),
 [
@@ -850,6 +858,8 @@ AS_IF([test "x$HAVE_ALSA" = "x1"],
     ],
     HAVE_ALSA_UCM=0)
 
+AC_SUBST(ASOUNDLIB_CFLAGS)
+AC_SUBST(ASOUNDLIB_LIBS)
 AC_SUBST(HAVE_ALSA)
 AM_CONDITIONAL([HAVE_ALSA], [test "x$HAVE_ALSA" = x1])
 AS_IF([test "x$HAVE_ALSA" = "x1"], AC_DEFINE([HAVE_ALSA], 1, [Have ALSA?]))

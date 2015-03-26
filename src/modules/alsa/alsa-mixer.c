@@ -4280,6 +4280,9 @@ static snd_pcm_t* mapping_open_pcm(pa_alsa_mapping *m,
     try_buffer_size = default_n_fragments * try_period_size;
 
     return pa_alsa_open_by_template(
+#ifdef __TIZEN__
+                              m->ucm_context.ucm->core,
+#endif
                               m->device_strings, dev_id, NULL, &try_ss,
                               &try_map, mode, &try_period_size,
                               &try_buffer_size, 0, NULL, NULL, true);

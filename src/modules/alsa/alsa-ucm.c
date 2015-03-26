@@ -1387,7 +1387,11 @@ static snd_pcm_t* mapping_open_pcm(pa_alsa_ucm_config *ucm, pa_alsa_mapping *m, 
         pa_frame_size(&try_ss);
     try_buffer_size = ucm->core->default_n_fragments * try_period_size;
 
-    pcm = pa_alsa_open_by_device_string(m->device_strings[0], NULL, &try_ss,
+    pcm = pa_alsa_open_by_device_string(
+#ifdef __TIZEN__
+            ucm->core,
+#endif
+	    m->device_strings[0], NULL, &try_ss,
             &try_map, mode, &try_period_size, &try_buffer_size, 0, NULL, NULL, exact_channels);
 
     if (pcm && !exact_channels)

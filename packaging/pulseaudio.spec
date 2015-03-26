@@ -28,6 +28,7 @@ BuildRequires:    pkgconfig(gconf-2.0)
 BuildRequires:    pkgconfig(bluez)
 BuildRequires:    pkgconfig(sbc)
 BuildRequires:    pkgconfig(dbus-1)
+BuildRequires:    pkgconfig(iniparser)
 %if %{with x}
 BuildRequires:    pkgconfig(xi)
 %endif
@@ -206,7 +207,13 @@ echo "%{version}" > .tarball-version
 cp %{SOURCE1001} .
 
 %build
-export CFLAGS="%{optflags} -fno-strict-aliasing"
+export CFLAGS="%{optflags} -fno-strict-aliasing -D__TIZEN__ -D__TIZEN_BT__ -D__TIZEN_LOG__ -DTIZEN_MICRO"
+%if 0%{?sec_build_binary_debug_enable}
+export CFLAGS+=" -DTIZEN_DEBUG_ENABLE"
+export CXXFLAGS="$CXXFLAGS –DTIZEN_DEBUG_ENABLE"
+export FFLAGS="$FFLAGS -DTIZEN_DEBUG_ENABLE"
+%endif
+
 export LD_AS_NEEDED=0
 NOCONFIGURE=yes ./bootstrap.sh
 %configure --prefix=%{_prefix} \

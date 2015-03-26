@@ -54,11 +54,18 @@
 #include <pulsecore/thread-mq.h>
 #include <pulsecore/rtpoll.h>
 #include <pulsecore/time-smoother.h>
+#ifdef __TIZEN__
+#include <pulsecore/shared.h>
+#endif
 
 #include <modules/reserve-wrap.h>
 
 #include "alsa-util.h"
 #include "alsa-sink.h"
+
+#ifdef __TIZEN__
+#include "tizen-audio.h"
+#endif
 
 #define ALSA_SUSPEND_ON_IDLE_TIMEOUT	"0"
 /* #define DEBUG_TIMING */
@@ -95,6 +102,12 @@
 
 #define DEFAULT_REWIND_SAFEGUARD_BYTES (1024U) /* increase safeguard 4x */
 #define DEFAULT_REWIND_SAFEGUARD_USEC (5000) /* increase safeguard ~4x */
+
+#ifdef __TIZEN__
+#define VOIP_MIN_WB_PERIOD_BYTES 640
+#define VOIP_MIN_NB_PERIOD_BYTES 320
+#define VOIP_WIDE_BAND 16000
+#endif
 
 struct userdata {
     pa_core *core;
@@ -163,6 +176,10 @@ struct userdata {
 
     /* ucm context */
     pa_alsa_ucm_mapping_context *ucm_context;
+#ifdef __TIZEN__
+    /* Start threshold */
+    int start_threshold;
+#endif
 };
 
 static void userdata_free(struct userdata *u);
@@ -733,6 +750,15 @@ static int unix_write(struct userdata *u, pa_usec_t *sleep_usec, bool polled, bo
 
         left_to_play = check_left_to_play(u, n_bytes, on_timeout);
         on_timeout = false;
+#ifdef __TIZEN__
+        if (pa_alsa_pcm_is_voip(u->pcm_handle))
+        {
+            size_t actual_n_bytes;
+            actual_n_bytes = (u->sink->sample_spec.rate == VOIP_WIDE_BAND) ? VOIP_MIN_WB_PERIOD_BYTES :VOIP_MIN_NB_PERIOD_BYTES;
+            if(n_bytes > actual_n_bytes)
+               n_bytes = actual_n_bytes;
+        }
+#endif
 
         if (u->use_tsched)
 
@@ -831,6 +857,10 @@ static int unix_write(struct userdata *u, pa_usec_t *sleep_usec, bool polled, bo
 
             n_bytes -= written;
         }
+#ifdef __TIZEN__
+        if (pa_alsa_pcm_is_voip(u->pcm_handle))
+            break;
+#endif
     }
 
     input_underrun = pa_sink_process_input_underruns(u->sink, left_to_play);
@@ -934,6 +964,11 @@ static int build_pollfd(struct userdata *u) {
 
 /* Called from IO context */
 static int suspend(struct userdata *u) {
+#ifdef __TIZEN__
+    void *audio_data = pa_shared_get(u->core, "tizen-audio-data");
+    audio_interface_t *audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
+#endif
+
     pa_assert(u);
     pa_assert(u->pcm_handle);
 
@@ -941,6 +976,11 @@ static int suspend(struct userdata *u) {
 
     /* Let's suspend -- we don't call snd_pcm_drain() here since that might
      * take awfully long with our long buffer sizes today. */
+#ifdef __TIZEN__
+    if (audio_intf && audio_intf->alsa_pcm_close) {
+        audio_intf->alsa_pcm_close(audio_data, u->pcm_handle);
+    } else
+#endif
     snd_pcm_close(u->pcm_handle);
     u->pcm_handle = NULL;
 
@@ -1008,10 +1048,17 @@ static int update_sw_params(struct userdata *u) {
 
     pa_log_debug("setting avail_min=%lu", (unsigned long) avail_min);
 
+#ifdef __TIZEN__
+    if ((err = pa_alsa_set_sw_params(u->pcm_handle, avail_min, !u->use_tsched, u->start_threshold,u->sink->sample_spec.rate)) < 0) {
+        pa_log("Failed to set software parameters: %s", pa_alsa_strerror(err));
+        return err;
+    }
+#else
     if ((err = pa_alsa_set_sw_params(u->pcm_handle, avail_min, !u->use_tsched)) < 0) {
         pa_log("Failed to set software parameters: %s", pa_alsa_strerror(err));
         return err;
     }
+#endif
 
     pa_sink_set_max_request_within_thread(u->sink, u->hwbuf_size - u->hwbuf_unused);
      if (pa_alsa_pcm_is_hw(u->pcm_handle))
@@ -1065,6 +1112,12 @@ static int unsuspend(struct userdata *u) {
     bool b, d;
     snd_pcm_uframes_t period_size, buffer_size;
     char *device_name = NULL;
+#ifdef __TIZEN__
+    int ret = 0;
+    int hdmi_ch_enum_val = 0;
+    void *audio_data = pa_shared_get(u->core, "tizen-audio-data");
+    audio_interface_t *audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
+#endif
 
     pa_assert(u);
     pa_assert(!u->pcm_handle);
@@ -1079,6 +1132,17 @@ static int unsuspend(struct userdata *u) {
         pa_snprintf(device_name, len, "%s,AES0=6", u->device_name);
     }
 
+#ifdef __TIZEN__
+    if (audio_intf && audio_intf->alsa_pcm_open) {
+        audio_return_t audio_ret = AUDIO_RET_OK;
+
+        if (AUDIO_IS_ERROR((audio_ret = audio_intf->alsa_pcm_open(audio_data, (void **)&u->pcm_handle, device_name ? device_name : u->device_name, AUDIO_DIRECTION_OUT,
+            SND_PCM_NONBLOCK | SND_PCM_NO_AUTO_RESAMPLE | SND_PCM_NO_AUTO_CHANNELS | SND_PCM_NO_AUTO_FORMAT)))) {
+            pa_log("Error opening PCM device %s: %x", u->device_name, audio_ret);
+            goto fail;
+        }
+    } else
+#endif
     if ((err = snd_pcm_open(&u->pcm_handle, device_name ? device_name : u->device_name, SND_PCM_STREAM_PLAYBACK,
                             SND_PCM_NONBLOCK|
                             SND_PCM_NO_AUTO_RESAMPLE|
@@ -1094,6 +1158,13 @@ static int unsuspend(struct userdata *u) {
     b = u->use_mmap;
     d = u->use_tsched;
 
+#ifdef __TIZEN__
+    if (pa_streq (u->device_name, "hw:0,1")) {
+        hdmi_ch_enum_val = ss.channels - 2;
+        ret = pa_alsa_set_mixer_control("HDMI_RX Channels", hdmi_ch_enum_val);
+        pa_log_warn("This is HDMI(%s) device, set channelinfo(%d) mixer, ret=%d", u->device_name, hdmi_ch_enum_val, ret);
+    }
+#endif
     if ((err = pa_alsa_set_hw_params(u->pcm_handle, &ss, &period_size, &buffer_size, 0, &b, &d, true)) < 0) {
         pa_log("Failed to set hardware parameters: %s", pa_alsa_strerror(err));
         goto fail;
@@ -1142,6 +1213,11 @@ static int unsuspend(struct userdata *u) {
 
 fail:
     if (u->pcm_handle) {
+#ifdef __TIZEN__
+        if (audio_intf && audio_intf->alsa_pcm_close) {
+            audio_intf->alsa_pcm_close(audio_data, u->pcm_handle);
+        } else
+#endif
         snd_pcm_close(u->pcm_handle);
         u->pcm_handle = NULL;
     }
@@ -1733,6 +1809,9 @@ static void thread_func(void *userdata) {
 
                 if (u->first) {
                     pa_log_info("Starting playback.");
+#ifdef __TIZEN__
+                    if (SND_PCM_STATE_PREPARED == snd_pcm_state(u->pcm_handle))
+#endif
                     snd_pcm_start(u->pcm_handle);
 
                     pa_smoother_resume(u->smoother, pa_rtclock_now(), true);
@@ -2022,6 +2101,9 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
     pa_sink_new_data data;
     pa_alsa_profile_set *profile_set = NULL;
     void *state = NULL;
+#ifdef __TIZEN__
+    int start_threshold;
+#endif
 
     pa_assert(m);
     pa_assert(ma);
@@ -2076,6 +2158,13 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
     period_frames = frag_size/frame_size;
     buffer_frames = buffer_size/frame_size;
     tsched_frames = tsched_size/frame_size;
+
+#ifdef __TIZEN__
+    if(pa_modargs_get_value_s32(ma, "start_threshold", &start_threshold) < 0){
+       pa_log("Failed to parse start_threshold argument.");
+       goto fail;
+    }
+#endif
 
     if (pa_modargs_get_value_boolean(ma, "mmap", &use_mmap) < 0) {
         pa_log("Failed to parse mmap argument.");
@@ -2167,6 +2256,9 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
         }
 
         if (!(u->pcm_handle = pa_alsa_open_by_device_id_mapping(
+#ifdef __TIZEN__
+                      u->core,
+#endif
                       dev_id,
                       &u->device_name,
                       &ss, &map,
@@ -2181,6 +2273,9 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
             goto fail;
 
         if (!(u->pcm_handle = pa_alsa_open_by_device_id_auto(
+#ifdef __TIZEN__
+                      u->core,
+#endif
                       dev_id,
                       &u->device_name,
                       &ss, &map,
@@ -2192,6 +2287,9 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
     } else {
 
         if (!(u->pcm_handle = pa_alsa_open_by_device_string(
+#ifdef __TIZEN__
+                      u->core,
+#endif
                       pa_modargs_get_value(ma, "device", DEFAULT_DEVICE),
                       &u->device_name,
                       &ss, &map,
@@ -2366,6 +2464,11 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
 
     reserve_update(u);
 
+#ifdef __TIZEN__
+    /*Set start Threshold*/
+    u->start_threshold = start_threshold;
+#endif
+
     if (update_sw_params(u) < 0)
         goto fail;
 
@@ -2444,6 +2547,11 @@ fail:
 }
 
 static void userdata_free(struct userdata *u) {
+#ifdef __TIZEN__
+    void *audio_data = pa_shared_get(u->core, "tizen-audio-data");
+    audio_interface_t *audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
+#endif
+
     pa_assert(u);
 
     if (u->sink)
@@ -2473,6 +2581,11 @@ static void userdata_free(struct userdata *u) {
 
     if (u->pcm_handle) {
         snd_pcm_drop(u->pcm_handle);
+#ifdef __TIZEN__
+        if (audio_intf && audio_intf->alsa_pcm_close) {
+            audio_intf->alsa_pcm_close(audio_data, u->pcm_handle);
+        } else
+#endif
         snd_pcm_close(u->pcm_handle);
     }
 

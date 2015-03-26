@@ -94,6 +94,9 @@ static const char* const valid_modargs[] = {
     "deferred_volume_safety_margin",
     "deferred_volume_extra_delay",
     "fixed_latency_range",
+#ifdef __TIZEN__
+    "start_threshold",
+#endif
     NULL
 };
 

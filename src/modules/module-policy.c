@@ -451,7 +451,7 @@ struct userdata {
         pa_communicator *comm;
         pa_hook_slot *comm_hook_select_proper_sink_or_source_slot;
         pa_hook_slot *comm_hook_change_route_slot;
-        pa_hook_slot *comm_hook_update_route_option_slot;
+        pa_hook_slot *comm_hook_update_route_options_slot;
     } communicator;
 
     pa_stream_manager *stream_manager;
@@ -3537,6 +3537,10 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
         __free_audio_info(&audio_info);
     }
 
+    /* get buffer_attr by audio latency */
+    pa_log_info("hal-latency - get buffer attr by audio latency");
+    __add_hal_buffer_attr_by_latency(u, new_data->proplist, new_data->sample_spec);
+
 exit:
     if (s) {
         s_info = pa_strbuf_tostring_free(s);
@@ -3576,9 +3580,6 @@ static pa_hook_result_t sink_input_put_callback(pa_core *core, pa_sink_input *i,
     pa_sink_input_assert_ref(i);
     pa_assert(u);
 
-    /* get buffer_attr by audio latency */
-    pa_log_info("hal-latency - get buffer attr by audio latency");
-    __add_hal_buffer_attr_by_latency(u, i->proplist, i->sample_spec);
 #ifdef PRIMARY_VOLUME
     if ((si_volume_type_str = pa_proplist_gets(i->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE)) &&
         pa_sink_input_get_state(i) != PA_SINK_INPUT_CORKED /* if sink-input is created by pulsesink, sink-input init state is cork.*/) {
@@ -4242,32 +4243,58 @@ static pa_hook_result_t source_output_unlink_post_hook_callback(pa_core *c, pa_s
 }
 
 static pa_hook_result_t select_proper_sink_or_source_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_select *data, struct userdata *u) {
-    pa_log("select_proper_sink_or_source_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)", data, data->stream_type, data->stream_role, data->route_type);
-    int i = 0;
-    for (i = 0; i < data->device_list_len; i++)
-        pa_log(" - device : type[%s], direction[%d], id[%d]", data->device_list[i].type, data->device_list[i].direction, data->device_list[i].id);
+    pa_log("select_proper_sink_or_source_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
+            data, data->stream_type, data->stream_role, data->route_type);
+    uint32_t idx = 0;
+    void *state = NULL;
+    const char *device_type = NULL;
+    /* devices */
+    if ((data->route_type == STREAM_ROUTE_TYPE_AUTO || data->route_type == STREAM_ROUTE_TYPE_AUTO_ALL) && data->avail_devices) {
+        /* In case of AUTO routing, use idxset for avail device */
+        PA_IDXSET_FOREACH(device_type, data->avail_devices, idx) {
+            pa_log("-- device[%u] : type(%s)", idx, device_type);
+        }
+    } else if (data->route_type == STREAM_ROUTE_TYPE_MANUAL && data->manual_devices) {
+        /* In case of MANUAL routing, use hashmap for manual_devices */
+        device *device = NULL;
+        PA_HASHMAP_FOREACH(device, data->manual_devices, state) {
+            pa_log("-- device: type(%s), id(%i)", device->type, device->id);
+        }
+    }
     return PA_HOOK_OK;
 }
 
 static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_route *data, struct userdata *u) {
-    pa_log("route_change_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)", data, data->stream_type, data->stream_role, data->route_type);
-    int i = 0;
-    for (i = 0; i < data->device_list_len; i++)
-        pa_log(" - device : type[%s], direction[%d], id[%d]", data->device_list[i].type, data->device_list[i].direction, data->device_list[i].id);
+    pa_log("route_change_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
+            data, data->stream_type, data->stream_role, data->route_type);
+    uint32_t idx = 0;
+    void *state = NULL;
+    const char *device_type = NULL;
+    uint32_t *stream_idx;
+
+    /* streams */
+    if (data->streams) {
+        PA_IDXSET_FOREACH(stream_idx, data->streams, idx) {
+            pa_log("-- stream[%u]: idx(%u)", idx, *stream_idx);
+        }
+    }
+    /* devices */
+    if ((data->route_type == STREAM_ROUTE_TYPE_AUTO || data->route_type == STREAM_ROUTE_TYPE_AUTO_ALL) && data->avail_devices) {
+        /* In case of AUTO routing, use idxset for avail device */
+        state = NULL;
+        PA_IDXSET_FOREACH(device_type, data->avail_devices, idx) {
+            pa_log("-- device[%u]: type(%s)", idx, device_type);
+        }
+    } else if (data->route_type == STREAM_ROUTE_TYPE_MANUAL && data->manual_devices) {
+        /* In case of MANUAL routing, use hashmap for manual_devices */
+        state = NULL;
+        device *device = NULL;
+        PA_HASHMAP_FOREACH(device, data->manual_devices, state) {
+            pa_log("-- device: type(%s), id(%i)", device->type, device->id);
+        }
+    }
+
 #if 0
-    /* from stream manager */
-    typedef struct _device {
-        int device_type;
-        int direction;
-        int id;
-    } device;
-    typedef struct _hook_call_data_for_route {
-        stream_type stream_type;
-        char *stream_role;
-        device *device_list;
-        int device_list_len;
-        pa_sample_spec sample_spec;
-    } pa_stream_manager_hook_data_for_route;
     typedef struct device_info {
         int32_t type;
         int32_t direction;
@@ -4292,11 +4319,17 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
     return PA_HOOK_OK;
 }
 
-static pa_hook_result_t route_option_update_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_option *data, struct userdata *u) {
-    pa_log("route_option_update_hook_cb is called. (%p), stream_role(%d), option_list_len(%d)", data, data->stream_role, data->option_list_len);
+static pa_hook_result_t route_options_update_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_options *data, struct userdata *u) {
+    pa_log("route_options_update_hook_cb is called. (%p), stream_role(%s), route_options(%p), num_of_options(%d)",
+            data, data->stream_role, data->route_options, pa_idxset_size(data->route_options));
+    void *state = NULL;
+    const char *option_name = NULL;
     int i = 0;
-    for (i = 0; i < data->option_list_len; i++)
-        pa_log(" - idx[%d] : option(%s)", data->option_list[i]);
+
+    while (data->route_options && (option_name = pa_idxset_iterate(data->route_options, &state, NULL))) {
+        pa_log("-- option : %s", option_name);
+    }
+
     return PA_HOOK_OK;
 }
 
@@ -4968,8 +5001,8 @@ int pa__init(pa_module *m)
                     PA_HOOK_EARLY, (pa_hook_cb_t) select_proper_sink_or_source_hook_cb, u);
         u->communicator.comm_hook_change_route_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_CHANGE_ROUTE),
                     PA_HOOK_EARLY, (pa_hook_cb_t) route_change_hook_cb, u);
-        u->communicator.comm_hook_update_route_option_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTION),
-                    PA_HOOK_EARLY, (pa_hook_cb_t) route_option_update_hook_cb, u);
+        u->communicator.comm_hook_update_route_options_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTIONS),
+                    PA_HOOK_EARLY, (pa_hook_cb_t) route_options_update_hook_cb, u);
     }
     u->stream_manager = pa_stream_manager_init(u->core);
 #if 0
@@ -5055,7 +5088,7 @@ void pa__done(pa_module *m)
         if (u->communicator.comm_hook_change_route_slot)
             pa_hook_slot_free(u->communicator.comm_hook_change_route_slot);
         if (u->communicator.comm_hook_change_route_slot)
-            pa_hook_slot_free(u->communicator.comm_hook_update_route_option_slot);
+            pa_hook_slot_free(u->communicator.comm_hook_update_route_options_slot);
         pa_communicator_unref(u->communicator.comm);
     }
 

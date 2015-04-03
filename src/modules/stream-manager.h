@@ -17,35 +17,35 @@ typedef enum stream_route_type {
 
 typedef struct _device {
     char *type;
-    int direction;
     int id;
 } device;
 
 typedef struct _hook_call_data_for_select {
-    stream_type stream_type;
     char *stream_role;
+    stream_type stream_type;
     stream_route_type route_type;
-    device *device_list;
-    int device_list_len;
     pa_sink **proper_sink;
     pa_source **proper_source;
     pa_sample_spec sample_spec;
+    pa_idxset *avail_devices;
+    pa_hashmap *manual_devices;
 } pa_stream_manager_hook_data_for_select;
 
 typedef struct _hook_call_data_for_route {
-    stream_type stream_type;
     char *stream_role;
+    stream_type stream_type;
     stream_route_type route_type;
-    device *device_list;
-    int device_list_len;
     pa_sample_spec sample_spec;
+    pa_idxset *route_options;
+    pa_idxset *avail_devices;
+    pa_hashmap *manual_devices;
+    pa_idxset *streams;
 } pa_stream_manager_hook_data_for_route;
 
-typedef struct _hook_call_data_for_option {
+typedef struct _hook_call_data_for_options {
     char *stream_role;
-    char **option_list;
-    int option_list_len;
-} pa_stream_manager_hook_data_for_option;
+    pa_idxset *route_options;
+} pa_stream_manager_hook_data_for_options;
 
 pa_stream_manager* pa_stream_manager_init(pa_core *c);
 void pa_stream_manager_done(pa_stream_manager* m);

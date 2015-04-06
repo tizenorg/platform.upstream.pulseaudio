@@ -176,7 +176,7 @@ pulseaudio_SOURCES = \
 		daemon/ltdl-bind-now.c daemon/ltdl-bind-now.h \
 		daemon/main.c
 
-pulseaudio_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) $(CAP_CFLAGS) $(DBUS_CFLAGS)
+pulseaudio_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) $(CAP_CFLAGS) $(DBUS_CFLAGS) -fPIC -pie
 pulseaudio_LDADD = $(AM_LDADD) libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la $(LIBLTDL) $(CAP_LIBS)
 # This is needed because automake doesn't properly expand the foreach below
 pulseaudio_DEPENDENCIES = libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la $(PREOPEN_LIBS)
@@ -228,12 +228,12 @@ endif
 
 pacat_SOURCES = utils/pacat.c
 pacat_LDADD = $(AM_LDADD) libpulse.la libpulsecommon-@PA_MAJORMINOR@.la $(LIBSNDFILE_LIBS)
-pacat_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS)
+pacat_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) -fPIC -pie
 pacat_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 pactl_SOURCES = utils/pactl.c
 pactl_LDADD = $(AM_LDADD) libpulse.la libpulsecommon-@PA_MAJORMINOR@.la $(LIBSNDFILE_LIBS)
-pactl_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS)
+pactl_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) -fPIC -pie
 pactl_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 pasuspender_SOURCES = utils/pasuspender.c
@@ -242,7 +242,7 @@ pasuspender_CFLAGS = $(AM_CFLAGS)
 pasuspender_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 pacmd_SOURCES = utils/pacmd.c
-pacmd_CFLAGS = $(AM_CFLAGS)
+pacmd_CFLAGS = $(AM_CFLAGS) -fPIC -pie
 pacmd_LDADD = $(AM_LDADD) libpulse.la libpulsecommon-@PA_MAJORMINOR@.la
 pacmd_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
@@ -457,7 +457,7 @@ mcalign_test_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 pacat_simple_SOURCES = tests/pacat-simple.c
 pacat_simple_LDADD = $(AM_LDADD) libpulse.la libpulse-simple.la
-pacat_simple_CFLAGS = $(AM_CFLAGS)
+pacat_simple_CFLAGS = $(AM_CFLAGS) -fPIC -pie
 pacat_simple_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 parec_simple_SOURCES = tests/parec-simple.c

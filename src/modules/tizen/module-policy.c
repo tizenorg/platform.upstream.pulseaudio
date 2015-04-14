@@ -3431,6 +3431,7 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
     pa_strbuf *s = NULL;
     const char *rate_str = NULL;
     const char *ch_str = NULL;
+    const char *format_str = NULL;
     char *s_info = NULL;
 
     pa_assert(c);
@@ -3455,7 +3456,10 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
         if (req_format && req_format->plist) {
             rate_str = pa_proplist_gets(req_format->plist, PA_PROP_FORMAT_RATE);
             ch_str = pa_proplist_gets(req_format->plist, PA_PROP_FORMAT_CHANNELS);
-            pa_log_info("req rate = %s, req ch = %s", rate_str, ch_str);
+            if (pa_format_info_get_prop_string(req_format, PA_PROP_FORMAT_SAMPLE_FORMAT, &format_str)==0)
+                new_data->sample_spec.format = pa_parse_sample_format(format_str);
+
+            pa_log_info("req rate = %s, req ch = %s, req format = %s", rate_str, ch_str, format_str);
 
             if (ch_str)
                 new_data->sample_spec.channels = atoi (ch_str);

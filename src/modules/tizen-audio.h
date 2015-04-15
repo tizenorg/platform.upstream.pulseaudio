@@ -4,8 +4,6 @@
 /***
   This file is part of PulseAudio.
 
-  Copyright 2013 Hyunseok Lee <hs7388.lee@samsung.com>
-
   PulseAudio is free software; you can redistribute it and/or modify
   it under the terms of the GNU Lesser General Public License as
   published by the Free Software Foundation; either version 2.1 of the
@@ -84,9 +82,8 @@ typedef enum audio_session_command {
 
 /* Direction */
 typedef enum audio_direction {
-    AUDIO_DIRECTION_NONE,
-    AUDIO_DIRECTION_IN,                 /**< Capture */
     AUDIO_DIRECTION_OUT,                /**< Playback */
+    AUDIO_DIRECTION_IN,                 /**< Capture */
 } audio_direction_t;
 
 
@@ -200,21 +197,21 @@ typedef struct audio_device_info {
 } audio_device_info_t;
 
 typedef struct device_info {
-    int32_t type;
-    int32_t direction;
-    int32_t id;
+    char *type;
+    uint32_t direction;
+    uint32_t id;
 } device_info_t;
 
 typedef struct audio_route_info {
     char *role;
-    device_info_t *device_infos;
-    int32_t num_of_devices;
+    device_info_t **device_infos;
+    uint32_t num_of_devices;
 } audio_route_info_t;
 
 typedef struct audio_route_option {
     char *role;
     char **options;
-    int32_t num_of_options;
+    uint32_t num_of_options;
 } audio_route_option_t;
 
 /* Stream */
@@ -298,7 +295,7 @@ typedef struct audio_stream_info {
     char *name;
     uint32_t samplerate;
     uint8_t channels;
-    uint32_t volume_type;
+    char *volume_type;
     uint32_t gain_type;
 } audio_stream_info_t ;
 
@@ -323,14 +320,12 @@ typedef struct audio_interface {
     audio_return_t (*deinit)(void **userdata);
     audio_return_t (*reset)(void **userdata);
     audio_return_t (*set_callback)(void *userdata, audio_cb_interface_t *cb_interface);
-    audio_return_t (*get_volume_level_max)(void *userdata, uint32_t volume_type, uint32_t *level);
-    audio_return_t (*get_volume_level)(void *userdata, uint32_t volume_type, uint32_t *level);
-    audio_return_t (*get_volume_value)(void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t level, double *value);
-    audio_return_t (*set_volume_level)(void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t level);
-    audio_return_t (*set_volume_value)(void *userdata, audio_info_t *info, uint32_t volume_type, double* value);
-    audio_return_t (*get_gain_value)(void *userdata, audio_info_t *info, uint32_t volume_type, double *value);
-    audio_return_t (*get_mute)(void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t direction, uint32_t *mute);
-    audio_return_t (*set_mute)(void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t direction, uint32_t mute);
+    audio_return_t (*get_volume_level_max)(void *userdata, const char* volume_type, uint32_t direction, uint32_t *level);
+    audio_return_t (*get_volume_level)(void *userdata, const char* volume_type, uint32_t direction, uint32_t *level);
+    audio_return_t (*set_volume_level)(void *userdata, const char* volume_type, uint32_t direction, uint32_t level);
+    audio_return_t (*get_volume_value)(void *userdata, audio_info_t *info, const char *volume_type, uint32_t direction, uint32_t level, double *value);
+    audio_return_t (*get_mute)(void *userdata, const char *volume_type, uint32_t direction, uint32_t *mute);
+    audio_return_t (*set_mute)(void *userdata, const char *volume_type, uint32_t direction, uint32_t mute);
     audio_return_t (*set_session)(void *userdata, uint32_t session, uint32_t subsession, uint32_t cmd);
     audio_return_t (*set_route)(void *userdata, uint32_t session, uint32_t subsession, uint32_t device_in, uint32_t device_out, uint32_t route_flag);
     audio_return_t (*do_route)(void *userdata, audio_route_info_t *info);
@@ -341,7 +336,6 @@ typedef struct audio_interface {
     audio_return_t (*pcm_close)(void *userdata, void *pcm_handle);
     audio_return_t (*pcm_avail)(void *pcm_handle);
     audio_return_t (*pcm_write)(void *pcm_handle, const void *buffer, uint32_t frames);
-    audio_return_t (*set_mixer_value_string)(void *userdata, const char* ctl, const char* value);
     audio_return_t (*get_buffer_attr)(void *userdata, audio_latency_t latency, uint32_t samplerate, audio_sample_format_t format, uint32_t channels, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
 } audio_interface_t;
 
@@ -350,14 +344,12 @@ audio_return_t audio_init (void **userdata, void *platform_data);
 audio_return_t audio_deinit (void **userdata);
 audio_return_t audio_reset (void **userdata);
 audio_return_t audio_set_callback (void *userdata, audio_cb_interface_t *cb_interface);
-audio_return_t audio_get_volume_level_max (void *userdata, uint32_t volume_type, uint32_t *level);
-audio_return_t audio_get_volume_level (void *userdata, uint32_t volume_type, uint32_t *level);
-audio_return_t audio_get_volume_value (void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t level, double *value);
-audio_return_t audio_set_volume_level (void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t level);
-audio_return_t audio_set_volume_value (void *userdata, audio_info_t *info, uint32_t volume_type, double* value);
-audio_return_t audio_get_gain_value (void *userdata, audio_info_t *info, uint32_t volume_type, double *value);
-audio_return_t audio_get_mute (void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t direction, uint32_t *mute);
-audio_return_t audio_set_mute (void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t direction, uint32_t mute);
+audio_return_t audio_get_volume_level_max (void *userdata, const char* volume_type, uint32_t direction, uint32_t *level);
+audio_return_t audio_get_volume_level (void *userdata, const char *volume_type, uint32_t direction, uint32_t *level);
+audio_return_t audio_set_volume_level (void *userdata, const char *volume_type, uint32_t direction, uint32_t level);
+audio_return_t audio_get_volume_value (void *userdata, audio_info_t *info, const char *volume_type, uint32_t direction, uint32_t level, double *value);
+audio_return_t audio_get_mute (void *userdata, const char *volume_type, uint32_t direction, uint32_t *mute);
+audio_return_t audio_set_mute (void *userdata, const char *volume_type, uint32_t direction, uint32_t mute);
 audio_return_t audio_set_session (void *userdata, uint32_t session, uint32_t subsession, uint32_t cmd);
 audio_return_t audio_do_route (void *userdata, audio_route_info_t *info);
 audio_return_t audio_update_route_option (void *userdata, audio_route_option_t *option);
@@ -368,6 +360,5 @@ audio_return_t audio_pcm_close (void *userdata, void *pcm_handle);
 audio_return_t audio_pcm_avail(void *pcm_handle);
 audio_return_t audio_pcm_write(void *pcm_handle, const void *buffer, uint32_t frames);
 audio_return_t audio_set_route (void *userdata, uint32_t session, uint32_t subsession, uint32_t device_in, uint32_t device_out, uint32_t route_flag);
-
 audio_return_t audio_get_buffer_attr(void *userdata, audio_latency_t latency, uint32_t samplerate, audio_sample_format_t format, uint32_t channels, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
 #endif

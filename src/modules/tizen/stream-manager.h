@@ -2,18 +2,14 @@
 #define foostreammanagerfoo
 #include <pulsecore/core.h>
 
+#include "stream-manager-priv.h"
+
 typedef struct _stream_manager pa_stream_manager;
 
 typedef enum _stream_type {
     STREAM_SINK_INPUT,
     STREAM_SOURCE_OUTPUT,
 } stream_type;
-
-typedef enum stream_route_type {
-    STREAM_ROUTE_TYPE_AUTO,     /* the policy of decision device(s) is automatic and it's routing path is particular to one device */
-    STREAM_ROUTE_TYPE_AUTO_ALL, /* the policy of decision device(s) is automatic and it's routing path can be several devices */
-    STREAM_ROUTE_TYPE_MANUAL,   /* the policy of decision device(s) is manual */
-} stream_route_type;
 
 typedef struct _device {
     char *type;

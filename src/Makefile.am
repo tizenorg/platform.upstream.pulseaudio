@@ -2298,12 +2298,12 @@ module_rygel_media_server_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS)
 
 if USE_SAMSUNG_POLICY
 module_policy_la_SOURCES = \
-       modules/tizen/module-policy.c   \
-       modules/tizen/communicator.c    \
-       modules/tizen/communicator.h    \
-       modules/tizen/stream-manager.c  \
-       modules/tizen/stream-manager.h  \
-       modules/tizen/device-manager.c
+        modules/tizen/module-policy.c   \
+        modules/tizen/communicator.c modules/tizen/communicator.h   \
+        modules/tizen/hal-manager.c modules/tizen/hal-manager.h   \
+        modules/tizen/stream-manager.c modules/tizen/stream-manager.h modules/tizen/stream-manager-priv.h   \
+        modules/tizen/stream-manager-volume.c modules/tizen/stream-manager-volume.h modules/tizen/stream-manager-volume-priv.h   \
+        modules/tizen/device-manager.c modules/tizen/device-manager.h
 module_policy_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_policy_la_LIBADD = $(AM_LIBADD) $(DBUS_LIBS) $(VCONF_LIBS) $(INIPARSER_LIBS) $(LIBJSON_LIBS) $(ASOUNDLIB_LIBS) libprotocol-native.la libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la
 module_policy_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS) $(VCONF_CFLAGS) $(INIPARSER_CFLAGS) $(LIBJSON_CFLAGS) $(ASOUNDLIB_CFLAGS)

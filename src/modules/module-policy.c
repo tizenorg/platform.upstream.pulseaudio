@@ -46,7 +46,9 @@
 #endif
 
 //To be changed
-#define VCONFKEY_SOUND_CAPTURE_STATUS "memory/private/sound/CaptureStatus"
+#ifndef VCONFKEY_SOUND_CAPTURE_STATUS
+#define VCONFKEY_SOUND_CAPTURE_STATUS "memory/Sound/SoundCaptureStatus"
+#endif
 #define VCONFKEY_CALL_NOISE_REDUCTION_STATE_BOOL "memory/private/call/NoiseReduction"
 #define VCONFKEY_CALL_EXTRA_VOLUME_STATE_BOOL "memory/private/call/ExtraVolume"
 #define VCONFKEY_CALL_WBAMR_STATE_BOOL "memory/private/call/WBAMRState"
@@ -392,7 +394,7 @@ static const char *__get_device_out_str(uint32_t device_out)
         default:                                        return "invalid";
     }
 }
-#if 0
+
 static void __load_dump_config(struct userdata *u)
 {
     dictionary * dict = NULL;
@@ -423,7 +425,7 @@ static void __load_dump_config(struct userdata *u)
         pa_log_warn("vconf_set_int %s=%x failed", PA_DUMP_VCONF_KEY, vconf_dump);
     }
 }
-#endif
+
 static inline pa_bool_t __is_mute_policy(void)
 {
     int sound_status = 1;
@@ -2001,9 +2003,7 @@ static audio_return_t policy_reset(struct userdata *u)
     audio_return_t audio_ret = AUDIO_RET_OK;
 
     pa_log_debug("reset");
-#if 0
     __load_dump_config(u);
-#endif
     if (u->audio_mgr.intf.reset) {
         if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.reset(&u->audio_mgr.data)))) {
             pa_log_error("audio_mgr reset failed");
@@ -4104,9 +4104,7 @@ int pa__init(pa_module *m)
     } else {
         pa_log_error("open audio_mgr failed :%s", dlerror());
     }
-#if 0
     __load_dump_config(u);
- #endif
 	pa_log_info("policy module is loaded\n");
 
 	if (ma)

@@ -26,6 +26,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef __TIZEN__
+#include <time.h>
+#endif
 
 #include <pulse/format.h>
 #include <pulse/utf8.h>
@@ -63,10 +66,82 @@ struct source_message_set_port {
     int ret;
 };
 
+#ifdef __TIZEN__
+//#define PA_DUMP_SOURCE_FOR_EACH_SUSPEND
+#define PA_DUMP_SOURCE_PATH_PREFIX            "/tmp/dump_pa_source"
+#endif
+
 static void source_free(pa_object *o);
 
 static void pa_source_volume_change_push(pa_source *s);
 static void pa_source_volume_change_flush(pa_source *s);
+
+#ifdef __TIZEN__
+static void __toggle_open_close_n_write_dump_source(pa_source *s, pa_memchunk *target)
+{
+
+    /* open file for dump pcm */
+    if (s->core->dump_source && !s->dump_fp) {
+        char *dump_path = NULL, *dump_path_surfix = NULL;
+        const char *s_device_api_str;
+#ifdef PA_DUMP_SOURCE_FOR_EACH_SUSPEND
+        time_t t;
+        char datetime[12];
+
+        time(&t);
+        memset(&datetime[0], 0x00, sizeof(datetime));
+        strftime(&datetime[0], sizeof(datetime), "%m%d_%H%M%S", localtime(&t));
+#endif
+
+        if ((s_device_api_str = pa_proplist_gets(s->proplist, PA_PROP_DEVICE_API))) {
+            if (pa_streq(s_device_api_str, "alsa")) {
+                const char *card_idx_str, *device_idx_str;
+                uint32_t card_idx = 0, device_idx = 0;
+
+                if ((card_idx_str = pa_proplist_gets(s->proplist, "alsa.card")))
+                    pa_atou(card_idx_str, &card_idx);
+                if ((device_idx_str = pa_proplist_gets(s->proplist, "alsa.device")))
+                    pa_atou(device_idx_str, &device_idx);
+                dump_path_surfix = pa_sprintf_malloc("alsa_%d_%d.pcm", card_idx, device_idx);
+            } else if (pa_streq(s_device_api_str, "bluez")) {
+                dump_path_surfix = pa_sprintf_malloc("bluez.pcm");
+            }
+        }
+        if (!dump_path_surfix) {
+            dump_path_surfix = pa_sprintf_malloc("idx_%d.pcm", s->index);
+        }
+
+#ifdef PA_DUMP_SOURCE_FOR_EACH_SUSPEND
+        dump_path = pa_sprintf_malloc("%s_%s_%s", PA_DUMP_SOURCE_PATH_PREFIX, &datetime[0], dump_path_surfix);
+#else
+        dump_path = pa_sprintf_malloc("%s_%s", PA_DUMP_SOURCE_PATH_PREFIX, dump_path_surfix);
+#endif
+
+        if (dump_path) {
+            s->dump_fp = fopen(dump_path, "w");
+            pa_log_info("pa_source dump started:%s", dump_path);
+            pa_xfree(dump_path);
+        }
+        if (dump_path_surfix)
+            pa_xfree(dump_path_surfix);
+    /* close file for dump pcm when config is changed */
+    } else if (!s->core->dump_source && s->dump_fp) {
+        fclose(s->dump_fp);
+        s->dump_fp = NULL;
+    }
+
+    /* dump pcm */
+    if (s->dump_fp) {
+        void *ptr;
+
+        ptr = pa_memblock_acquire(target->memblock);
+
+        fwrite((uint8_t*) ptr + target->index, 1, target->length, s->dump_fp);
+
+        pa_memblock_release(target->memblock);
+    }
+}
+#endif
 
 pa_source_new_data* pa_source_new_data_init(pa_source_new_data *data) {
     pa_assert(data);
@@ -306,6 +381,9 @@ pa_source* pa_source_new(
 
     s->save_volume = data->save_volume;
     s->save_muted = data->save_muted;
+#ifdef __TIZEN__
+    s->dump_fp = NULL;
+#endif
 
     pa_silence_memchunk_get(
             &core->silence_cache,
@@ -682,7 +760,13 @@ static void source_free(pa_object *o) {
 
     if (s->ports)
         pa_hashmap_free(s->ports);
-
+#ifdef __TIZEN__
+    /* close file for dump pcm */
+    if (s->dump_fp) {
+        fclose(s->dump_fp);
+        s->dump_fp = NULL;
+    }
+#endif
     pa_xfree(s);
 }
 
@@ -755,6 +839,10 @@ void pa_source_set_mixer_dirty(pa_source *s, bool is_dirty) {
 
 /* Called from main context */
 int pa_source_suspend(pa_source *s, bool suspend, pa_suspend_cause_t cause) {
+#ifdef __TIZEN__
+    int ret = 0;
+#endif
+
     pa_source_assert_ref(s);
     pa_assert_ctl_context();
     pa_assert(PA_SOURCE_IS_LINKED(s->state));
@@ -789,14 +877,44 @@ int pa_source_suspend(pa_source *s, bool suspend, pa_suspend_cause_t cause) {
         }
     }
 
-    if ((pa_source_get_state(s) == PA_SOURCE_SUSPENDED) == !!s->suspend_cause)
+    if ((pa_source_get_state(s) == PA_SOURCE_SUSPENDED) == !!s->suspend_cause) {
+#ifdef __TIZEN__
+        if (cause == PA_SUSPEND_INTERNAL) {
+            /* Clear suspend by switch after manual suspend */
+            s->suspend_cause &= ~cause;
+        }
+#endif
         return 0;
+    }
 
     pa_log_debug("Suspend cause of source %s is 0x%04x, %s", s->name, s->suspend_cause, s->suspend_cause ? "suspending" : "resuming");
+
+#ifdef __TIZEN__
+#ifdef PA_DUMP_SOURCE_FOR_EACH_SUSPEND
+    /* close file for dump pcm */
+    if (suspend && s->dump_in_fp) {
+        fclose(s->dump_in_fp);
+        s->dump_in_fp = NULL;
+    }
+    if (suspend && s->dump_out_fp) {
+        fclose(s->dump_out_fp);
+        s->dump_out_fp = NULL;
+    }
+#endif
+    if (s->suspend_cause) {
+        ret = source_set_state(s, PA_SOURCE_SUSPENDED);
+        if (ret == 0 && cause == PA_SUSPEND_INTERNAL) {
+            /* Clear suspend by switch after manual suspend */
+            s->suspend_cause &= ~cause;
+        }
+        return ret;
+    } else
+#else
 
     if (s->suspend_cause)
         return source_set_state(s, PA_SOURCE_SUSPENDED);
     else
+#endif /* __TIZEN__ */
         return source_set_state(s, pa_source_used_by(s) ? PA_SOURCE_RUNNING : PA_SOURCE_IDLE);
 }
 
@@ -896,6 +1014,13 @@ void pa_source_process_rewind(pa_source *s, size_t nbytes) {
 
     pa_log_debug("Processing rewind...");
 
+#ifdef __TIZEN__
+    /* rewind pcm */
+    if (s->dump_fp) {
+        fseeko(s->dump_fp, (off_t)nbytes * (-1), SEEK_CUR);
+    }
+#endif
+
     PA_HASHMAP_FOREACH(o, s->thread_info.outputs, state) {
         pa_source_output_assert_ref(o);
         pa_source_output_process_rewind(o, nbytes);
@@ -914,6 +1039,10 @@ void pa_source_post(pa_source*s, const pa_memchunk *chunk) {
 
     if (s->thread_info.state == PA_SOURCE_SUSPENDED)
         return;
+
+#ifdef __TIZEN__
+    __toggle_open_close_n_write_dump_source(s, chunk);
+#endif
 
     if (s->thread_info.soft_muted || !pa_cvolume_is_norm(&s->thread_info.soft_volume)) {
         pa_memchunk vchunk = *chunk;
@@ -956,6 +1085,10 @@ void pa_source_post_direct(pa_source*s, pa_source_output *o, const pa_memchunk *
 
     if (s->thread_info.state == PA_SOURCE_SUSPENDED)
         return;
+
+#ifdef __TIZEN__
+    __toggle_open_close_n_write_dump_source(s, chunk);
+#endif
 
     if (s->thread_info.soft_muted || !pa_cvolume_is_norm(&s->thread_info.soft_volume)) {
         pa_memchunk vchunk = *chunk;

@@ -310,6 +310,10 @@ struct pa_sink {
         pa_cvolume_ramp_int ramp;
     } thread_info;
 
+#ifdef __TIZEN__
+    FILE *dump_fp;
+#endif
+
     void *userdata;
 };
 

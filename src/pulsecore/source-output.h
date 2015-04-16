@@ -212,6 +212,9 @@ struct pa_source_output {
 
         pa_sink_input *direct_on_input;       /* may be NULL */
     } thread_info;
+#ifdef __TIZEN__
+    FILE *dump_fp;
+#endif
 
     void *userdata;
 };

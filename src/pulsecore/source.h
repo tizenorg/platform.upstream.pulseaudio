@@ -245,6 +245,10 @@ struct pa_source {
         int32_t volume_change_extra_delay;
     } thread_info;
 
+#ifdef __TIZEN__
+    FILE *dump_fp;
+#endif
+
     void *userdata;
 };
 

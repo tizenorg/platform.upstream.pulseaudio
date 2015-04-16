@@ -199,6 +199,13 @@ struct pa_core {
 
     /* hooks */
     pa_hook hooks[PA_CORE_HOOK_MAX];
+
+#ifdef __TIZEN__
+    pa_bool_t dump_sink;
+    pa_bool_t dump_sink_input;
+    pa_bool_t dump_source;
+    pa_bool_t dump_source_output;
+#endif
 };
 
 PA_DECLARE_PUBLIC_CLASS(pa_core);

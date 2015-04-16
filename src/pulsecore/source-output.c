@@ -26,6 +26,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __TIZEN__
+#include <time.h>
+#endif
 
 #include <pulse/utf8.h>
 #include <pulse/xmalloc.h>
@@ -48,6 +51,10 @@ PA_DEFINE_PUBLIC_CLASS(pa_source_output, pa_msgobject);
 
 static void source_output_free(pa_object* mo);
 static void set_real_ratio(pa_source_output *o, const pa_cvolume *v);
+
+#ifdef __TIZEN__
+#define PA_SOURCE_OUTPUT_DUMP_PATH_PREFIX      "/tmp/dump_pa_source_output"
+#endif
 
 pa_source_output_new_data* pa_source_output_new_data_init(pa_source_output_new_data *data) {
     pa_assert(data);
@@ -513,6 +520,9 @@ int pa_source_output_new(
 
     reset_callbacks(o);
     o->userdata = NULL;
+#ifdef __TIZEN__
+    o->dump_fp = NULL;
+#endif
 
     o->thread_info.state = o->state;
     o->thread_info.attached = false;
@@ -701,6 +711,14 @@ static void source_output_free(pa_object* mo) {
 
     if (o->thread_info.resampler)
         pa_resampler_free(o->thread_info.resampler);
+
+#ifdef __TIZEN__
+    /* close file for dump pcm */
+    if (o->dump_fp) {
+        fclose(o->dump_fp);
+        o->dump_fp = NULL;
+    }
+#endif
 
     if (o->format)
         pa_format_info_free(o->format);
@@ -901,6 +919,38 @@ void pa_source_output_push(pa_source_output *o, const pa_memchunk *chunk) {
         pa_memblock_unref(qchunk.memblock);
         pa_memblockq_drop(o->thread_info.delay_memblockq, qchunk.length);
     }
+
+#ifdef __TIZEN__
+    /* open file for dump pcm */
+    if (o->core->dump_source_output && !o->dump_fp) {
+        time_t t;
+        char datetime[12];
+        char *dump_path = NULL;
+
+        time(&t);
+        memset(&datetime[0], 0x00, sizeof(datetime));
+        strftime(&datetime[0], sizeof(datetime), "%m%d_%H%M%S", localtime(&t));
+        dump_path = pa_sprintf_malloc("%s_%s_%d_source%d.pcm", PA_SOURCE_OUTPUT_DUMP_PATH_PREFIX, &datetime[0], o->index, o->source->index);
+
+        if (dump_path) {
+            o->dump_fp = fopen(dump_path, "w");
+            pa_xfree(dump_path);
+        }
+    /* close file for dump pcm when config is changed */
+    } else if (!o->core->dump_source_output && o->dump_fp) {
+        fclose(o->dump_fp);
+        o->dump_fp = NULL;
+    }
+
+    /* dump pcm */
+    if (o->dump_fp) {
+        void *ptr;
+
+        ptr = pa_memblock_acquire(chunk->memblock);
+        fwrite((uint8_t*) ptr + chunk->index, 1, chunk->length, o->dump_fp);
+        pa_memblock_release(chunk->memblock);
+    }
+#endif
 }
 
 /* Called from thread context */
@@ -921,6 +971,12 @@ void pa_source_output_process_rewind(pa_source_output *o, size_t nbytes /* in so
             nbytes = pa_resampler_result(o->thread_info.resampler, nbytes);
 
         pa_log_debug("Have to rewind %lu bytes on implementor.", (unsigned long) nbytes);
+#ifdef __TIZEN__
+        /* rewind pcm */
+        if (o->dump_fp) {
+            fseeko(o->dump_fp, (off_t)nbytes * (-1), SEEK_CUR);
+        }
+#endif
 
         if (nbytes > 0)
             o->process_rewind(o, nbytes);

@@ -46,7 +46,9 @@
 #endif
 
 //To be changed
-#define VCONFKEY_SOUND_CAPTURE_STATUS "memory/private/sound/CaptureStatus"
+#ifndef VCONFKEY_SOUND_CAPTURE_STATUS
+#define VCONFKEY_SOUND_CAPTURE_STATUS "memory/Sound/SoundCaptureStatus"
+#endif
 #define VCONFKEY_CALL_NOISE_REDUCTION_STATE_BOOL "memory/private/call/NoiseReduction"
 #define VCONFKEY_CALL_EXTRA_VOLUME_STATE_BOOL "memory/private/call/ExtraVolume"
 #define VCONFKEY_CALL_WBAMR_STATE_BOOL "memory/private/call/WBAMRState"
@@ -124,7 +126,7 @@ static const char* const valid_modargs[] = {
 #define HIGH_LATENCY_API    "high-latency"
 #define NULL_SOURCE         "source.null"
 #define ALSA_SAUDIOVOIP_CARD "saudiovoip"
-#define MONO_KEY 			VCONFKEY_SETAPPL_ACCESSIBILITY_MONO_AUDIO
+#define MONO_KEY			VCONFKEY_SETAPPL_ACCESSIBILITY_MONO_AUDIO
 
 /* Sink Identify Macros */
 #define sink_is_hdmi(sink) !strncmp(sink->name, SINK_HDMI, strlen(SINK_HDMI))
@@ -392,7 +394,7 @@ static const char *__get_device_out_str(uint32_t device_out)
         default:                                        return "invalid";
     }
 }
-#if 0
+
 static void __load_dump_config(struct userdata *u)
 {
     dictionary * dict = NULL;
@@ -423,7 +425,7 @@ static void __load_dump_config(struct userdata *u)
         pa_log_warn("vconf_set_int %s=%x failed", PA_DUMP_VCONF_KEY, vconf_dump);
     }
 }
-#endif
+
 static inline pa_bool_t __is_mute_policy(void)
 {
     int sound_status = 1;
@@ -775,7 +777,7 @@ static pa_sink* policy_select_proper_sink (struct userdata *u, const char* polic
 			sink = (is_mono)? policy_get_sink_by_name (c, SINK_MONO_BT) : def;
 		} else if (policy_is_usb_alsa(def)) {
 			sink = def;
-  		} else if (sink_is_hdmi(def)) {
+		} else if (sink_is_hdmi(def)) {
 #ifdef TIZEN_MICRO
             sink = def;
 #else
@@ -2001,9 +2003,7 @@ static audio_return_t policy_reset(struct userdata *u)
     audio_return_t audio_ret = AUDIO_RET_OK;
 
     pa_log_debug("reset");
-#if 0
     __load_dump_config(u);
-#endif
     if (u->audio_mgr.intf.reset) {
         if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.reset(&u->audio_mgr.data)))) {
             pa_log_error("audio_mgr reset failed");
@@ -3226,7 +3226,7 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
                 pa_strnull(pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_NAME)));
 #endif
     } else {
-	
+
 	/* Set proper sink to sink-input */
     pa_sink* new_sink = policy_select_proper_sink(u, policy, NULL, u->is_mono);
     if(new_sink != new_data->sink)
@@ -3390,22 +3390,22 @@ static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, struct
         const char *policy = NULL;
 
         if (si->sink == sink)
-        	continue;
+			continue;
 
         /* Skip this if it is already in the process of being moved
          * anyway */
         if (!si->sink)
-            continue;
+			continue;
 
         /* It might happen that a stream and a sink are set up at the
            same time, in which case we want to make sure we don't
            interfere with that */
         if (!PA_SINK_INPUT_IS_LINKED(pa_sink_input_get_state(si)))
-            continue;
+			continue;
 
 		/* Get role (if role is filter, skip it) */
         if (policy_is_filter(si))
-        	continue;
+			continue;
 
 		/* Check policy */
 		if (!(policy = pa_proplist_gets(si->proplist, PA_PROP_MEDIA_POLICY))) {
@@ -3502,15 +3502,15 @@ static void subscribe_cb(pa_core *c, pa_subscription_event_type_t t, uint32_t id
     /* We only handle server changes */
     if (t == (PA_SUBSCRIPTION_EVENT_SERVER|PA_SUBSCRIPTION_EVENT_CHANGE)) {
 
-    	def = pa_namereg_get_default_sink(c);
+		def = pa_namereg_get_default_sink(c);
 		if (def == NULL) {
 			pa_log_warn("[POLICY][%s] pa_namereg_get_default_sink() returns null", __func__);
 			return;
 		}
-    	pa_log_debug("[POLICY][%s] trying to move stream to current default sink = [%s]", __func__, def->name);
+		pa_log_debug("[POLICY][%s] trying to move stream to current default sink = [%s]", __func__, def->name);
 
-    	/* Iterate each sink inputs to decide whether we should move to new DEFAULT sink */
-    	PA_IDXSET_FOREACH(si, c->sink_inputs, idx2) {
+		/* Iterate each sink inputs to decide whether we should move to new DEFAULT sink */
+		PA_IDXSET_FOREACH(si, c->sink_inputs, idx2) {
 			const char *policy = NULL;
 
 			if (!si->sink)
@@ -3561,7 +3561,7 @@ static void subscribe_cb(pa_core *c, pa_subscription_event_type_t t, uint32_t id
 				pa_log_debug("[POLICY][%s] Moving sink-input[%d] from [%s] to [%s]", __func__, si->index, si->sink->name, sink_to_move->name);
 				pa_sink_input_move_to(si, sink_to_move, false);
 			}
-    	}
+		}
         pa_log_info("All moved to proper sink finished!!!!");
     } else if (t == (PA_SUBSCRIPTION_EVENT_SINK|PA_SUBSCRIPTION_EVENT_CHANGE)) {
         if ((sink_cur = pa_idxset_get_by_index(c->sinks, idx))) {
@@ -3621,7 +3621,7 @@ static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, voi
 	}
 
 	pa_log_debug ("[POLICY][%s] SINK unlinked ================================ sink [%s][%d], bt_off_idx was [%d]",
-	    		__func__, sink->name, sink->index,u->bt_off_idx);
+				__func__, sink->name, sink->index,u->bt_off_idx);
 
 	u->bt_off_idx = sink->index;
 	pa_log_debug ("[POLICY][%s] bt_off_idx is set to [%d]", __func__, u->bt_off_idx);
@@ -3658,7 +3658,7 @@ static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, voi
     /* Unload mono_combine sink */
     if (u->module_mono_combined) {
         pa_module_unload(u->module->core, u->module_mono_combined, true);
-    	u->module_mono_combined = NULL;
+		u->module_mono_combined = NULL;
     }
 
 	/* Unload combine sink */
@@ -3711,7 +3711,7 @@ static pa_hook_result_t sink_input_move_start_cb(pa_core *core, pa_sink_input *i
        return PA_HOOK_OK;
 
     pa_log_debug ("[POLICY][%s]  sink_input_move_start_cb -------------------------------------- sink-input [%d] was sink [%s][%d] : Trying to mute!!!",
-    		__func__, i->index, i->sink->name, i->sink->index);
+			__func__, i->index, i->sink->name, i->sink->index);
     if (AUDIO_IS_ERROR((audio_ret = policy_set_mute(u, i->index, (uint32_t)-1, AUDIO_DIRECTION_OUT, 1)))) {
         pa_log_warn("policy_set_mute(1) for stream[%d] returns error:0x%x", i->index, audio_ret);
     }
@@ -3729,8 +3729,8 @@ static pa_hook_result_t sink_input_move_finish_cb(pa_core *core, pa_sink_input *
        return PA_HOOK_OK;
 
     pa_log_debug("[POLICY][%s] sink_input_move_finish_cb -------------------------------------- sink-input [%d], sink [%s][%d], bt_off_idx [%d] : %s",
-    		__func__, i->index, i->sink->name, i->sink->index, u->bt_off_idx,
-    		(u->bt_off_idx == -1)? "Trying to un-mute!!!!" : "skip un-mute...");
+			__func__, i->index, i->sink->name, i->sink->index, u->bt_off_idx,
+			(u->bt_off_idx == -1)? "Trying to un-mute!!!!" : "skip un-mute...");
 
     /* If sink input move is caused by bt sink unlink, then skip un-mute operation */
     /* If sink input move is caused by bt sink unlink, then skip un-mute operation */
@@ -3854,7 +3854,7 @@ static pa_hook_result_t sink_state_changed_hook_cb(pa_core *c, pa_object *o, str
 }
 /* Select source for given condition */
 static pa_source* policy_select_proper_source (pa_core *c, const char* policy)
-{    
+{
 	pa_source* source = NULL;
 	pa_source* def = NULL;
 	pa_source* source_null;
@@ -4100,13 +4100,11 @@ int pa__init(pa_module *m)
             cb_interface.unload_device = __unload_device_callback;
             u->audio_mgr.intf.set_callback(u->audio_mgr.data, &cb_interface);
         }
-        
+
     } else {
         pa_log_error("open audio_mgr failed :%s", dlerror());
     }
-#if 0
     __load_dump_config(u);
- #endif
 	pa_log_info("policy module is loaded\n");
 
 	if (ma)
@@ -4154,7 +4152,7 @@ void pa__done(pa_module *m)
     }
     if (u->source_output_new_hook_slot)
         pa_hook_slot_free(u->source_output_new_hook_slot);
-		
+
 	/* Deinit audio mgr & unload library */
     if (u->audio_mgr.intf.deinit) {
         if (u->audio_mgr.intf.deinit(&u->audio_mgr.data) != AUDIO_RET_OK) {

@@ -1530,8 +1530,11 @@ static uint8_t a2dp_default_bitpool(uint8_t freq, uint8_t mode) {
 
                 case SBC_CHANNEL_MODE_STEREO:
                 case SBC_CHANNEL_MODE_JOINT_STEREO:
+#if defined(__TIZEN_BT__) && defined(ADJUST_ANDROID_BITPOOL)
+                    return 35;
+#else
                     return 53;
-
+#endif
                 default:
                     pa_log_warn("Invalid channel mode %u", mode);
                     return 53;

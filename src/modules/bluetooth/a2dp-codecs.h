@@ -26,7 +26,9 @@
 #define A2DP_CODEC_MPEG12		0x01
 #define A2DP_CODEC_MPEG24		0x02
 #define A2DP_CODEC_ATRAC		0x03
-
+#ifdef __TIZEN_BT__
+#define A2DP_CODEC_VENDOR               0xFF
+#endif
 #define A2DP_CODEC_NON_A2DP		0xFF
 #define SBC_SAMPLING_FREQ_16000		(1 << 3)
 #define SBC_SAMPLING_FREQ_32000		(1 << 2)
@@ -65,7 +67,12 @@
 #define MPEG_SAMPLING_FREQ_44100	(1 << 1)
 #define MPEG_SAMPLING_FREQ_48000	1
 
+
+#if defined(__TIZEN_BT__) && defined(ADJUST_ANDROID_BITPOOL)
+#define MAX_BITPOOL 35
+#else
 #define MAX_BITPOOL 64
+#endif
 #define MIN_BITPOOL 2
 
 /*#define APTX_CHANNEL_MODE_STEREO			2 */

@@ -37,6 +37,9 @@
 #include "hfaudioagent.h"
 
 #include "bluez5-util.h"
+#ifdef BLUETOOTH_APTX_SUPPORT
+#include <dlfcn.h>
+#endif
 
 #define BLUEZ_SERVICE "org.bluez"
 #define BLUEZ_ADAPTER_INTERFACE BLUEZ_SERVICE ".Adapter1"
@@ -91,6 +94,56 @@ struct pa_bluetooth_discovery {
     hf_audio_agent_data *hf_audio_agent;
     PA_LLIST_HEAD(pa_dbus_pending, pending);
 };
+
+#ifdef BLUETOOTH_APTX_SUPPORT
+static void *aptx_handle = NULL;
+
+int pa_unload_aptx(void)
+{
+	if (aptx_handle == NULL) {
+		pa_log_warn("Unable to unload apt-X library");
+		return -1;
+	}
+
+	dlclose(aptx_handle);
+	aptx_handle = NULL;
+
+	pa_log_debug("unloaded apt-X library successfully");
+	return 0;
+}
+
+int pa_load_aptx(const char *aptx_lib_name)
+{
+	char* lib_path = NULL ;
+
+        if(aptx_lib_name == NULL)
+		return -1;
+
+        lib_path = pa_sprintf_malloc("%s/%s", PA_DLSEARCHPATH, aptx_lib_name);
+
+	if (!lib_path)
+		return -1;
+
+	pa_log_info("aptx_lib_path = [%s]", lib_path);
+
+	aptx_handle = dlopen(lib_path, RTLD_LAZY);
+	if (aptx_handle == NULL) {
+		pa_log_warn("Unable to load apt-X library [%s]", dlerror());
+		pa_xfree(lib_path);
+		return -1;
+	}
+
+	pa_log_debug("loaded apt-X library successfully");
+	pa_xfree(lib_path);
+
+	return 0;
+}
+
+void* pa_aptx_get_handle(void)
+{
+	return aptx_handle;
+}
+#endif
 
 static pa_dbus_pending* send_and_add_to_pending(pa_bluetooth_discovery *y, DBusMessage *m,
                                                                   DBusPendingCallNotifyFunction func, void *call_data) {
@@ -290,6 +343,25 @@ bool pa_bluetooth_device_any_transport_connected(const pa_bluetooth_device *d) {
     return false;
 }
 
+#ifdef __TIZEN_BT__
+bool pa_bluetooth_device_sink_transport_connected(const pa_bluetooth_device *d) {
+    unsigned i;
+
+    pa_assert(d);
+
+    if (d->device_info_valid != 1)
+        return false;
+
+    for (i = 0; i < PA_BLUETOOTH_PROFILE_COUNT; i++)
+        if (d->transports[i] &&
+	     d->transports[i]->profile == PA_BLUETOOTH_PROFILE_A2DP_SINK &&
+	     d->transports[i]->state != PA_BLUETOOTH_TRANSPORT_STATE_DISCONNECTED)
+            return true;
+
+    return false;
+}
+#endif
+
 static int transport_state_from_string(const char* value, pa_bluetooth_transport_state_t *state) {
     pa_assert(value);
     pa_assert(state);
@@ -366,7 +438,12 @@ static pa_bluetooth_device* device_create(pa_bluetooth_discovery *y, const char 
     d = pa_xnew0(pa_bluetooth_device, 1);
     d->discovery = y;
     d->path = pa_xstrdup(path);
+
+#ifdef __TIZEN_BT__
+    d->uuids = pa_hashmap_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
+#else
     d->uuids = pa_hashmap_new_full(pa_idxset_string_hash_func, pa_idxset_string_compare_func, NULL, pa_xfree);
+#endif
 
     pa_hashmap_put(y->devices, d->path, d);
 
@@ -733,8 +810,22 @@ static void register_endpoint(pa_bluetooth_discovery *y, const char *path, const
     pa_dbus_append_basic_variant_dict_entry(&d, "Codec", DBUS_TYPE_BYTE, &codec);
 
     if (pa_streq(uuid, PA_BLUETOOTH_UUID_A2DP_SOURCE) || pa_streq(uuid, PA_BLUETOOTH_UUID_A2DP_SINK)) {
-        a2dp_sbc_t capabilities;
-
+#ifdef __TIZEN_BT__
+    if (codec == A2DP_CODEC_SBC) {
+	a2dp_sbc_t capabilities;
+	capabilities.channel_mode = SBC_CHANNEL_MODE_MONO | SBC_CHANNEL_MODE_DUAL_CHANNEL | SBC_CHANNEL_MODE_STEREO |
+					SBC_CHANNEL_MODE_JOINT_STEREO;
+	capabilities.frequency = SBC_SAMPLING_FREQ_16000 | SBC_SAMPLING_FREQ_32000 | SBC_SAMPLING_FREQ_44100 |
+					SBC_SAMPLING_FREQ_48000;
+	capabilities.allocation_method = SBC_ALLOCATION_SNR | SBC_ALLOCATION_LOUDNESS;
+	capabilities.subbands = SBC_SUBBANDS_4 | SBC_SUBBANDS_8;
+	capabilities.block_length = SBC_BLOCK_LENGTH_4 | SBC_BLOCK_LENGTH_8 | SBC_BLOCK_LENGTH_12 | SBC_BLOCK_LENGTH_16;
+	capabilities.min_bitpool = MIN_BITPOOL;
+	capabilities.max_bitpool = MAX_BITPOOL;
+	pa_dbus_append_basic_array_variant_dict_entry(&d, "Capabilities", DBUS_TYPE_BYTE, &capabilities, sizeof(capabilities));
+    }
+#else
+		a2dp_sbc_t capabilities;
         capabilities.channel_mode = SBC_CHANNEL_MODE_MONO | SBC_CHANNEL_MODE_DUAL_CHANNEL | SBC_CHANNEL_MODE_STEREO |
                                     SBC_CHANNEL_MODE_JOINT_STEREO;
         capabilities.frequency = SBC_SAMPLING_FREQ_16000 | SBC_SAMPLING_FREQ_32000 | SBC_SAMPLING_FREQ_44100 |
@@ -746,7 +837,8 @@ static void register_endpoint(pa_bluetooth_discovery *y, const char *path, const
         capabilities.max_bitpool = MAX_BITPOOL;
 
         pa_dbus_append_basic_array_variant_dict_entry(&d, "Capabilities", DBUS_TYPE_BYTE, &capabilities, sizeof(capabilities));
-    }
+#endif /* __TIZEN_BT__ */
+	}
 
     dbus_message_iter_close_container(&i, &d);
 
@@ -795,8 +887,9 @@ static void parse_interfaces_and_properties(pa_bluetooth_discovery *y, DBusMessa
                 return;
 
             register_endpoint(y, path, A2DP_SOURCE_ENDPOINT, PA_BLUETOOTH_UUID_A2DP_SOURCE);
+#ifndef __TIZEN_BT__
             register_endpoint(y, path, A2DP_SINK_ENDPOINT, PA_BLUETOOTH_UUID_A2DP_SINK);
-
+#endif
         } else if (pa_streq(interface, BLUEZ_DEVICE_INTERFACE)) {
 
             if ((d = pa_hashmap_get(y->devices, path))) {
@@ -935,10 +1028,10 @@ static DBusHandlerResult filter_cb(DBusConnection *bus, DBusMessage *m, void *us
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     } else if (dbus_message_is_signal(m, "org.freedesktop.DBus.ObjectManager", "InterfacesAdded")) {
         DBusMessageIter arg_i;
-
+#ifndef __TIZEN_BT__
         if (!y->objects_listed)
             return DBUS_HANDLER_RESULT_NOT_YET_HANDLED; /* No reply received yet from GetManagedObjects */
-
+#endif
         if (!dbus_message_iter_init(m, &arg_i) || !pa_streq(dbus_message_get_signature(m), "oa{sa{sv}}")) {
             pa_log_error("Invalid signature found in InterfacesAdded");
             goto fail;
@@ -986,8 +1079,10 @@ static DBusHandlerResult filter_cb(DBusConnection *bus, DBusMessage *m, void *us
         DBusMessageIter arg_i;
         const char *iface;
 
+#ifndef __TIZEN_BT__
         if (!y->objects_listed)
             return DBUS_HANDLER_RESULT_NOT_YET_HANDLED; /* No reply received yet from GetManagedObjects */
+#endif
 
         if (!dbus_message_iter_init(m, &arg_i) || !pa_streq(dbus_message_get_signature(m), "sa{sv}as")) {
             pa_log_error("Invalid signature found in PropertiesChanged");
@@ -1063,7 +1158,11 @@ static uint8_t a2dp_default_bitpool(uint8_t freq, uint8_t mode) {
 
                 case SBC_CHANNEL_MODE_STEREO:
                 case SBC_CHANNEL_MODE_JOINT_STEREO:
+#if defined(__TIZEN_BT__) && defined(ADJUST_ANDROID_BITPOOL)
+                    return 35;
+#else
                     return 53;
+#endif
             }
 
             pa_log_warn("Invalid channel mode %u", mode);
@@ -1111,6 +1210,9 @@ static DBusMessage *endpoint_set_configuration(DBusConnection *conn, DBusMessage
     pa_bluetooth_device *d;
     pa_bluetooth_transport *t;
     const char *sender, *path, *endpoint_path, *dev_path = NULL, *uuid = NULL;
+#ifdef __TIZEN_BT__
+    uint8_t codec = 0;
+#endif
     const uint8_t *config = NULL;
     int size = 0;
     pa_bluetooth_profile_t p = PA_BLUETOOTH_PROFILE_OFF;
@@ -1170,6 +1272,15 @@ static DBusMessage *endpoint_set_configuration(DBusConnection *conn, DBusMessage
                 pa_log_error("UUID %s of transport %s incompatible with endpoint %s", uuid, path, endpoint_path);
                 goto fail;
             }
+#ifdef __TIZEN_BT__
+        } else if (pa_streq(key, "Codec")) {
+	    if (var != DBUS_TYPE_BYTE) {
+		pa_log_error("Property %s of wrong type %c", key, (char)var);
+		goto fail;
+	    }
+
+	    dbus_message_iter_get_basic(&value, &codec);
+#endif
         } else if (pa_streq(key, "Device")) {
             if (var != DBUS_TYPE_OBJECT_PATH) {
                 pa_log_error("Property %s of wrong type %c", key, (char)var);
@@ -1256,6 +1367,11 @@ static DBusMessage *endpoint_set_configuration(DBusConnection *conn, DBusMessage
     dbus_message_unref(r);
 
     d->transports[p] = t = pa_bluetooth_transport_new(d, sender, path, p, config, size);
+#ifdef __TIZEN_BT__
+    t->codec = codec;
+    d->transports[p] = t;
+#endif
+
     t->acquire = bluez5_transport_acquire_cb;
     t->release = bluez5_transport_release_cb;
     pa_bluetooth_transport_put(t);
@@ -1575,8 +1691,11 @@ pa_bluetooth_discovery* pa_bluetooth_discovery_get(pa_core *c) {
     y->matches_added = true;
 
     endpoint_init(y, PA_BLUETOOTH_PROFILE_A2DP_SINK);
+
+#ifndef __TIZEN_BT__
     endpoint_init(y, PA_BLUETOOTH_PROFILE_A2DP_SOURCE);
     y->hf_audio_agent = hf_audio_agent_init(c);
+#endif
 
     get_managed_objects(y);
 
@@ -1618,8 +1737,10 @@ void pa_bluetooth_discovery_unref(pa_bluetooth_discovery *y) {
         pa_hashmap_free(y->transports);
     }
 
+#ifndef __TIZEN_BT__
     if (y->hf_audio_agent)
         hf_audio_agent_done(y->hf_audio_agent);
+#endif
 
     if (y->connection) {
 
@@ -1643,8 +1764,10 @@ void pa_bluetooth_discovery_unref(pa_bluetooth_discovery *y) {
             dbus_connection_remove_filter(pa_dbus_connection_get(y->connection), filter_cb, y);
 
         endpoint_done(y, PA_BLUETOOTH_PROFILE_A2DP_SINK);
-        endpoint_done(y, PA_BLUETOOTH_PROFILE_A2DP_SOURCE);
 
+#ifndef __TIZEN_BT__
+        endpoint_done(y, PA_BLUETOOTH_PROFILE_A2DP_SOURCE);
+#endif
         pa_dbus_connection_unref(y->connection);
     }
 

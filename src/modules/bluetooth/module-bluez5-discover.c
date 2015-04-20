@@ -28,7 +28,9 @@
 #include <pulsecore/macro.h>
 #include <pulsecore/module.h>
 #include <pulsecore/shared.h>
-
+#ifdef __TIZEN_BT__
+#include <pulsecore/modargs.h>
+#endif
 #include "bluez5-util.h"
 
 #include "module-bluez5-discover-symdef.h"
@@ -36,7 +38,20 @@
 PA_MODULE_AUTHOR("João Paulo Rechi Vita");
 PA_MODULE_DESCRIPTION("Detect available BlueZ 5 Bluetooth audio devices and load BlueZ 5 Bluetooth audio drivers");
 PA_MODULE_VERSION(PACKAGE_VERSION);
+#ifdef __TIZEN_BT__
+PA_MODULE_USAGE("sco_sink=<name of sink> "
+					"sco_source=<name of source> "
+);
+#endif
 PA_MODULE_LOAD_ONCE(true);
+
+#ifdef __TIZEN_BT__
+static const char* const valid_modargs[] = {
+    "sco_sink",
+    "sco_source",
+    NULL
+};
+#endif
 
 struct userdata {
     pa_module *module;
@@ -64,7 +79,20 @@ static pa_hook_result_t device_connection_changed_cb(pa_bluetooth_discovery *y, 
     if (!module_loaded && pa_bluetooth_device_any_transport_connected(d)) {
         /* a new device has been connected */
         pa_module *m;
-        char *args = pa_sprintf_malloc("path=%s", d->path);
+
+#ifdef __TIZEN_BT__
+	char *args = pa_sprintf_malloc("address=\"%s\" path=\"%s\"", d->address, d->path);
+#else
+	char *args = pa_sprintf_malloc("path=%s", d->path);
+#endif
+
+#ifdef __TIZEN_BT__
+	if (pa_bluetooth_device_sink_transport_connected(d) == true) {
+		char *tmp = pa_sprintf_malloc("%s profile=\"a2dp_sink\"", args);
+		pa_xfree(args);
+		args = tmp;
+	}
+#endif
 
         pa_log_debug("Loading module-bluez5-device %s", args);
         m = pa_module_load(u->module->core, "module-bluez5-device", args);

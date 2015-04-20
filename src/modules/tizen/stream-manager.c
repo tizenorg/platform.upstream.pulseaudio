@@ -48,10 +48,15 @@
 #define ARR_ARG_MAX  32
 #define STREAM_MANAGER_OBJECT_PATH "/org/pulseaudio/Ext/StreamManager"
 #define STREAM_MANAGER_INTERFACE   "org.pulseaudio.Ext.StreamManager"
-#define STREAM_MANAGER_METHOD_NAME_GET_STREAM_INFO    "GetStreamInfo"
-#define STREAM_MANAGER_METHOD_NAME_GET_STREAM_LIST    "GetStreamList"
-#define STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_DEVICES      "SetStreamRouteDevices"
-#define STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTIONS      "SetStreamRouteOptions"
+#define STREAM_MANAGER_METHOD_NAME_GET_STREAM_INFO            "GetStreamInfo"
+#define STREAM_MANAGER_METHOD_NAME_GET_STREAM_LIST            "GetStreamList"
+#define STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_DEVICES   "SetStreamRouteDevices"
+#define STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTIONS   "SetStreamRouteOptions"
+#define STREAM_MANAGER_METHOD_NAME_SET_VOLUME_LEVEL           "SetVolumeLevel"
+#define STREAM_MANAGER_METHOD_NAME_GET_VOLUME_LEVEL           "GetVolumeLevel"
+#define STREAM_MANAGER_METHOD_NAME_GET_VOLUME_MAX_LEVEL       "GetVolumeMaxLevel"
+#define STREAM_MANAGER_METHOD_NAME_SET_VOLUME_MUTE            "SetVolumeMute"
+#define STREAM_MANAGER_METHOD_NAME_GET_VOLUME_MUTE            "GetVolumeMute"
 
 static DBusHandlerResult method_handler_for_vt(DBusConnection *c, DBusMessage *m, void *userdata);
 static DBusHandlerResult handle_introspect(DBusConnection *conn, DBusMessage *msg, void *userdata);
@@ -60,12 +65,22 @@ static void handle_get_stream_info(DBusConnection *conn, DBusMessage *msg, void 
 static void handle_get_stream_list(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_set_stream_route_devices(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_set_stream_route_options(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_set_volume_level(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_get_volume_level(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_get_volume_max_level(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_set_volume_mute(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_get_volume_mute(DBusConnection *conn, DBusMessage *msg, void *userdata);
 
 enum method_handler_index {
     METHOD_HANDLER_GET_STREAM_INFO,
     METHOD_HANDLER_GET_STREAM_LIST,
     METHOD_HANDLER_SET_STREAM_ROUTE_DEVICES,
     METHOD_HANDLER_SET_STREAM_ROUTE_OPTIONS,
+    METHOD_HANDLER_SET_VOLUME_LEVEL,
+    METHOD_HANDLER_GET_VOLUME_LEVEL,
+    METHOD_HANDLER_GET_VOLUME_MAX_LEVEL,
+    METHOD_HANDLER_SET_VOLUME_MUTE,
+    METHOD_HANDLER_GET_VOLUME_MUTE,
     METHOD_HANDLER_MAX
 };
 
@@ -84,7 +99,27 @@ static pa_dbus_arg_info set_stream_route_devices_args[]  = { { "parent_id", "u",
 static pa_dbus_arg_info set_stream_route_options_args[]  = { { "parent_id", "u", "in" },
                                                               { "options", "as", "in" },
                                                             { "ret_msg", "s", "out" } };
-static char* signature_args_for_in[] = { "s", "", "uasas", "uas"};
+static pa_dbus_arg_info set_volume_level_args[]  = { { "io_direction", "s", "in" },
+                                                             { "type", "s", "in" },
+                                                            { "level", "u", "in" },
+                                                       { "ret_msg", "s", "out" } };
+static pa_dbus_arg_info get_volume_level_args[]  = { { "io_direction", "s", "in" },
+                                                             { "type", "s", "in" },
+                                                           { "level", "u", "out" },
+                                                       { "ret_msg", "s", "out" } };
+static pa_dbus_arg_info get_volume_max_level_args[]  = { { "io_direction", "s", "in" },
+                                                                 { "type", "s", "in" },
+                                                               { "level", "u", "out" },
+                                                           { "ret_msg", "s", "out" } };
+static pa_dbus_arg_info set_volume_mute_args[]  = { { "io_direction", "s", "in" },
+                                                             { "type", "s", "in" },
+                                                           { "on/off", "u", "in" },
+                                                       { "ret_msg", "s", "out" } };
+static pa_dbus_arg_info get_volume_mute_args[]  = { { "io_direction", "s", "in" },
+                                                            { "type", "s", "in" },
+                                                         { "on/off", "u", "out" },
+                                                      { "ret_msg", "s", "out" } };
+static char* signature_args_for_in[] = { "s", "", "uasas", "uas", "ssu", "ss", "ss", "ssu", "ss"};
 
 static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
     [METHOD_HANDLER_GET_STREAM_INFO] = {
@@ -106,7 +141,32 @@ static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
         .method_name = STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTIONS,
         .arguments = set_stream_route_options_args,
         .n_arguments = sizeof(set_stream_route_options_args) / sizeof(pa_dbus_arg_info),
-        .receive_cb = handle_set_stream_route_options }
+        .receive_cb = handle_set_stream_route_options },
+    [METHOD_HANDLER_SET_VOLUME_LEVEL] = {
+        .method_name = STREAM_MANAGER_METHOD_NAME_SET_VOLUME_LEVEL,
+        .arguments = set_volume_level_args,
+        .n_arguments = sizeof(set_volume_level_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_set_volume_level },
+    [METHOD_HANDLER_GET_VOLUME_LEVEL] = {
+        .method_name = STREAM_MANAGER_METHOD_NAME_GET_VOLUME_LEVEL,
+        .arguments = get_volume_level_args,
+        .n_arguments = sizeof(get_volume_level_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_get_volume_level },
+    [METHOD_HANDLER_GET_VOLUME_MAX_LEVEL] = {
+        .method_name = STREAM_MANAGER_METHOD_NAME_GET_VOLUME_MAX_LEVEL,
+        .arguments = get_volume_max_level_args,
+        .n_arguments = sizeof(get_volume_max_level_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_get_volume_max_level },
+    [METHOD_HANDLER_SET_VOLUME_MUTE] = {
+        .method_name = STREAM_MANAGER_METHOD_NAME_SET_VOLUME_MUTE,
+        .arguments = set_volume_mute_args,
+        .n_arguments = sizeof(set_volume_mute_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_set_volume_mute },
+    [METHOD_HANDLER_GET_VOLUME_MUTE] = {
+        .method_name = STREAM_MANAGER_METHOD_NAME_GET_VOLUME_MUTE,
+        .arguments = get_volume_mute_args,
+        .n_arguments = sizeof(get_volume_mute_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_get_volume_mute },
 };
 
 const char* stream_manager_dbus_ret_str[] = {"STREAM_MANAGER_RETURN_OK","STREAM_MANAGER_RETURN_ERROR"};
@@ -155,6 +215,36 @@ static pa_dbus_interface_info stream_manager_interface_info = {
     "  <method name=\"STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTIONS\">"\
     "   <arg name=\"parent_id\" direction=\"in\" type=\"u\"/>"               \
     "   <arg name=\"options\" direction=\"in\" type=\"as\"/>"                \
+    "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
+    "  </method>"                                                            \
+    "  <method name=\"STREAM_MANAGER_METHOD_NAME_SET_VOLUME_LEVEL\">"        \
+    "   <arg name=\"io_direction\" direction=\"in\" type=\"s\"/>"            \
+    "   <arg name=\"type\" direction=\"in\" type=\"s\"/>"                    \
+    "   <arg name=\"level\" direction=\"in\" type=\"u\"/>"                   \
+    "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
+    "  </method>"                                                            \
+    "  <method name=\"STREAM_MANAGER_METHOD_NAME_GET_VOLUME_LEVEL\">"        \
+    "   <arg name=\"io_direction\" direction=\"in\" type=\"s\"/>"            \
+    "   <arg name=\"type\" direction=\"in\" type=\"s\"/>"                    \
+    "   <arg name=\"level\" direction=\"out\" type=\"u\"/>"                  \
+    "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
+    "  </method>"                                                            \
+    "  <method name=\"STREAM_MANAGER_METHOD_NAME_GET_VOLUME_MAX_LEVEL\">"    \
+    "   <arg name=\"io_direction\" direction=\"in\" type=\"s\"/>"            \
+    "   <arg name=\"type\" direction=\"in\" type=\"s\"/>"                    \
+    "   <arg name=\"level\" direction=\"out\" type=\"u\"/>"                  \
+    "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
+    "  </method>"                                                            \
+    "  <method name=\"STREAM_MANAGER_METHOD_NAME_SET_VOLUME_MUTE\">"         \
+    "   <arg name=\"io_direction\" direction=\"in\" type=\"s\"/>"            \
+    "   <arg name=\"type\" direction=\"in\" type=\"s\"/>"                    \
+    "   <arg name=\"on/off\" direction=\"in\" type=\"u\"/>"                  \
+    "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
+    "  </method>"                                                            \
+    "  <method name=\"STREAM_MANAGER_METHOD_NAME_GET_VOLUME_MUTE\">"         \
+    "   <arg name=\"io_direction\" direction=\"in\" type=\"s\"/>"            \
+    "   <arg name=\"type\" direction=\"in\" type=\"s\"/>"                    \
+    "   <arg name=\"on/off\" direction=\"out\" type=\"u\"/>"                 \
     "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
     "  </method>"                                                            \
     " </interface>"                                                          \
@@ -330,7 +420,6 @@ static void handle_get_stream_list(DBusConnection *conn, DBusMessage *msg, void 
     stream_list list;
     DBusMessage *reply = NULL;
     DBusMessageIter msg_iter;
-    DBusMessageIter variant_iter;
     pa_stream_manager *m = (pa_stream_manager*)userdata;
     pa_assert(conn);
     pa_assert(msg);
@@ -407,7 +496,7 @@ static void handle_set_stream_route_devices(DBusConnection *conn, DBusMessage *m
                                        DBUS_TYPE_ARRAY, DBUS_TYPE_STRING, &in_device_list, &list_len_in,
                                        DBUS_TYPE_ARRAY, DBUS_TYPE_STRING, &out_device_list, &list_len_out,
                                        DBUS_TYPE_INVALID));
-    pa_log_info("handle_set_stream_route_devices(), id(%u), in_device_list(%p):length(%d), out_device_list(%p):length(%d)",
+    pa_log_info("handle_set_stream_route_devices(), id[%u], in_device_list[%p]:length[%d], out_device_list[%p]:length[%d]",
             id, in_device_list, list_len_in, out_device_list, list_len_out);
 
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
@@ -442,7 +531,7 @@ static void handle_set_stream_route_devices(DBusConnection *conn, DBusMessage *m
         }
         pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
     } else {
-        pa_log_error("could not find matching client for this parent_id(%d)", id);
+        pa_log_error("could not find matching client for this parent_id[%u]", id);
         pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
     }
 
@@ -466,7 +555,7 @@ static void handle_set_stream_route_options(DBusConnection *conn, DBusMessage *m
                                        DBUS_TYPE_UINT32, &id,
                                        DBUS_TYPE_ARRAY, DBUS_TYPE_STRING, &option_list, &list_len,
                                        DBUS_TYPE_INVALID));
-    pa_log_info("handle_set_stream_route_options(), option_list(%p), list_len(%d)", option_list, list_len);
+    pa_log_info("handle_set_stream_route_options(), option_list[%p], list_len[%d]", option_list, list_len);
 
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
 
@@ -495,10 +584,217 @@ static void handle_set_stream_route_options(DBusConnection *conn, DBusMessage *m
         }
         pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
     } else {
-        pa_log_error("could not find matching client for this parent_id(%d)", id);
+        pa_log_error("could not find matching client for this parent_id[%u]", id);
         pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
     }
 
+    pa_assert_se(dbus_connection_send(conn, reply, NULL));
+    dbus_message_unref(reply);
+}
+
+static void handle_set_volume_level(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    const char *direction = NULL;
+    const char *type = NULL;
+    uint32_t level = 0;
+    stream_type stream_type = STREAM_SINK_INPUT;
+
+    DBusMessage *reply = NULL;
+    pa_stream_manager *m = (pa_stream_manager*)userdata;
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(m);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL,
+                                       DBUS_TYPE_STRING, &direction,
+                                       DBUS_TYPE_STRING, &type,
+                                       DBUS_TYPE_UINT32, &level,
+                                       DBUS_TYPE_INVALID));
+    pa_log_info("handle_set_volume_level(), direction[%s], type[%s], level[%u]", direction, type, level);
+
+    pa_assert_se((reply = dbus_message_new_method_return(msg)));
+
+    if (pa_streq(direction, "in"))
+        stream_type = STREAM_SOURCE_OUTPUT;
+    else if (pa_streq(direction, "out"))
+        stream_type = STREAM_SINK_INPUT;
+    else {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+        goto FAILURE;
+    }
+
+    if (pa_stream_manager_volume_set_level(m, stream_type, type, level))
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+    else
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
+
+FAILURE:
+    pa_assert_se(dbus_connection_send(conn, reply, NULL));
+    dbus_message_unref(reply);
+}
+
+static void handle_get_volume_level(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    const char *direction = NULL;
+    const char *type = NULL;
+    uint32_t level = 0;
+    stream_type stream_type = STREAM_SINK_INPUT;
+    DBusMessage *reply = NULL;
+    pa_stream_manager *m = (pa_stream_manager*)userdata;
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(m);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL,
+                                       DBUS_TYPE_STRING, &direction,
+                                       DBUS_TYPE_STRING, &type,
+                                       DBUS_TYPE_INVALID));
+    pa_log_info("handle_get_volume_level(), direction(%s), type(%s)", direction, type);
+
+    pa_assert_se((reply = dbus_message_new_method_return(msg)));
+
+    if (pa_streq(direction, "in"))
+        stream_type = STREAM_SOURCE_OUTPUT;
+    else if (pa_streq(direction, "out"))
+        stream_type = STREAM_SINK_INPUT;
+    else {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, 0, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+        goto FAILURE;
+    }
+
+    if (pa_stream_manager_volume_get_level(m, stream_type, type, &level)) {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, 0, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+    } else {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, &level, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
+    }
+
+FAILURE:
+    pa_assert_se(dbus_connection_send(conn, reply, NULL));
+    dbus_message_unref(reply);
+}
+
+static void handle_get_volume_max_level(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    const char *direction = NULL;
+    const char *type = NULL;
+    uint32_t level = 0;
+    stream_type stream_type = STREAM_SINK_INPUT;
+
+    DBusMessage *reply = NULL;
+    pa_stream_manager *m = (pa_stream_manager*)userdata;
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(m);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL,
+                                       DBUS_TYPE_STRING, &direction,
+                                       DBUS_TYPE_STRING, &type,
+                                       DBUS_TYPE_INVALID));
+    pa_log_info("handle_get_volume_max_level(), direction[%s], type[%s]", direction, type);
+
+    pa_assert_se((reply = dbus_message_new_method_return(msg)));
+
+    if (pa_streq(direction, "in"))
+        stream_type = STREAM_SOURCE_OUTPUT;
+    else if (pa_streq(direction, "out"))
+        stream_type = STREAM_SINK_INPUT;
+    else {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, 0, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+        goto FAILURE;
+    }
+
+    if (pa_stream_manager_volume_get_max_level(m, stream_type, type, &level)) {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, 0, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+    } else {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, &level, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
+    }
+FAILURE:
+    pa_assert_se(dbus_connection_send(conn, reply, NULL));
+    dbus_message_unref(reply);
+}
+
+static void handle_set_volume_mute(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    const char *direction = NULL;
+    const char *type = NULL;
+    uint32_t do_mute = 0;
+    stream_type stream_type = STREAM_SINK_INPUT;
+
+    DBusMessage *reply = NULL;
+    pa_stream_manager *m = (pa_stream_manager*)userdata;
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(m);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL,
+                                       DBUS_TYPE_STRING, &direction,
+                                       DBUS_TYPE_STRING, &type,
+                                       DBUS_TYPE_UINT32, &do_mute,
+                                       DBUS_TYPE_INVALID));
+    pa_log_info("handle_set_volume_mute(), direction[%s], type[%s], do_mute[%u]", direction, type, do_mute);
+
+    pa_assert_se((reply = dbus_message_new_method_return(msg)));
+
+    if (pa_streq(direction, "in"))
+        stream_type = STREAM_SOURCE_OUTPUT;
+    else if (pa_streq(direction, "out"))
+        stream_type = STREAM_SINK_INPUT;
+    else {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+        goto FAILURE;
+    }
+
+    if (pa_stream_manager_volume_set_mute(m, stream_type, type, (pa_bool_t)do_mute))
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+    else
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
+
+FAILURE:
+    pa_assert_se(dbus_connection_send(conn, reply, NULL));
+    dbus_message_unref(reply);
+}
+
+static void handle_get_volume_mute(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    const char *direction = NULL;
+    const char *type = NULL;
+    uint32_t is_muted = 0;
+    stream_type stream_type = STREAM_SINK_INPUT;
+
+    DBusMessage *reply = NULL;
+    pa_stream_manager *m = (pa_stream_manager*)userdata;
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(m);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL,
+                                       DBUS_TYPE_STRING, &direction,
+                                       DBUS_TYPE_STRING, &type,
+                                       DBUS_TYPE_INVALID));
+    pa_log_info("handle_get_volume_mute(), direction[%s], type[%s]", direction, type);
+
+    pa_assert_se((reply = dbus_message_new_method_return(msg)));
+
+    if (pa_streq(direction, "in"))
+        stream_type = STREAM_SOURCE_OUTPUT;
+    else if (pa_streq(direction, "out"))
+        stream_type = STREAM_SINK_INPUT;
+    else {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, 0, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+        goto FAILURE;
+    }
+
+    if (pa_stream_manager_volume_get_mute(m, stream_type, type, (uint32_t*)&is_muted)) {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, 0, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+    } else {
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_UINT32, &is_muted, DBUS_TYPE_INVALID));
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
+    }
+
+FAILURE:
     pa_assert_se(dbus_connection_send(conn, reply, NULL));
     dbus_message_unref(reply);
 }
@@ -513,7 +809,7 @@ static DBusHandlerResult handle_methods(DBusConnection *conn, DBusMessage *msg, 
 
     for (idx = 0; idx < METHOD_HANDLER_MAX; idx++) {
         if (dbus_message_is_method_call(msg, STREAM_MANAGER_INTERFACE, method_handlers[idx].method_name )) {
-            pa_log_debug("Message signature %s, Expected %s", dbus_message_get_signature(msg), signature_args_for_in[idx]);
+            pa_log_debug("Message signature [%s] (Expected [%s])", dbus_message_get_signature(msg), signature_args_for_in[idx]);
             if (pa_streq(dbus_message_get_signature(msg), signature_args_for_in[idx])) {
                 method_handlers[idx].receive_cb(conn, msg, userdata);
                 return DBUS_HANDLER_RESULT_HANDLED;
@@ -1448,7 +1744,7 @@ static pa_hook_result_t sink_input_put_cb(pa_core *core, pa_sink_input *i, pa_st
         pa_atou(si_volume_type_str, &volume_type);
         _set_primary_volume(m, (void*)i, volume_type, true);
 #endif
-        /* Update volume */
+        /* Update volume-level */
         v = pa_hashmap_get(m->volume_map.out_volumes, si_volume_type_str);
         if (v && v->idx_volume_values) {
             volume_ret = set_volume_level_by_idx(m, STREAM_SINK_INPUT, i->index, v->current_level);
@@ -1456,6 +1752,7 @@ static pa_hook_result_t sink_input_put_cb(pa_core *core, pa_sink_input *i, pa_st
                 pa_log_error("failed to set_volume_level_by_idx(), stream_type(%d), idx(%u), level(%f), ret(0x%x)",
                         STREAM_SINK_INPUT, i->index, v->current_level, volume_ret);
         }
+        /* Update volume-mute */
     }
 
     return PA_HOOK_OK;
@@ -1563,6 +1860,7 @@ static pa_hook_result_t source_output_put_cb(pa_core *core, pa_source_output *o,
     _set_primary_volume(m, (void*)o, AUDIO_PRIMARY_VOLUME_TYPE_MAX/*source-output use PRIMARY_MAX*/, true);
 #endif
     if ((si_volume_type_str = pa_proplist_gets(o->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE))) {
+        /* Update volume-level */
         v = pa_hashmap_get(m->volume_map.in_volumes, si_volume_type_str);
         if (v && v->idx_volume_values) {
             volume_ret = set_volume_level_by_idx(m, STREAM_SOURCE_OUTPUT, o->index, v->current_level);
@@ -1570,6 +1868,7 @@ static pa_hook_result_t source_output_put_cb(pa_core *core, pa_source_output *o,
                 pa_log_error("failed to set_volume_level_by_idx(), stream_type(%d), idx(%u), level(%f), ret(0x%x)",
                         STREAM_SOURCE_OUTPUT, o->index, v->current_level, volume_ret);
         }
+        /* Update volume-mute */
     }
 
     return PA_HOOK_OK;

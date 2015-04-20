@@ -136,20 +136,6 @@ pa_operation *pa_ext_policy_play_sample (
         pa_ext_policy_play_sample_cb_t cb,
         void *userdata);
 
-#ifdef BURST_SHOT
-/* make one sink-input and then push burst cam-shutter sound. */
-pa_operation *pa_ext_policy_play_sample_continuously (
-        pa_context *c,
-        const char *name,
-        int start, /* start/stop */
-        uint32_t volume_type,
-        uint32_t gain_type,
-        uint32_t volume_level,
-        pa_usec_t interval, /* timeout_cb interval */
-        pa_ext_policy_play_sample_cb_t cb,
-        void *userdata);
-#endif
-
 /** Enable the mono mode. \since 0.9.21 */
 pa_operation *pa_ext_policy_set_mono (
         pa_context *c,

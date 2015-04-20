@@ -29,6 +29,10 @@
 #include <arpa/inet.h>
 #include <sbc/sbc.h>
 
+#ifdef BLUETOOTH_APTX_SUPPORT
+#include <dlfcn.h>
+#endif
+
 #include <pulse/rtclock.h>
 #include <pulse/timeval.h>
 
@@ -69,6 +73,10 @@ PA_MODULE_USAGE("path=<device object path>");
 
 static const char* const valid_modargs[] = {
     "path",
+#ifdef __TIZEN_BT__
+    "address",
+    "profile",
+#endif
     NULL
 };
 
@@ -92,7 +100,12 @@ typedef struct sbc_info {
     uint16_t seq_num;                    /* Cumulative packet sequence */
     uint8_t min_bitpool;
     uint8_t max_bitpool;
-
+#ifdef __TIZEN_BT__
+#ifdef BLUETOOTH_APTX_SUPPORT
+    pa_bool_t aptx_initialized;          /* Keep track if the encoder is initialized */
+    void *aptx;                          /* aptx Codec data */
+#endif
+#endif
     void* buffer;                        /* Codec transfer buffer */
     size_t buffer_size;                  /* Size of the buffer */
 } sbc_info_t;
@@ -108,6 +121,10 @@ struct userdata {
     pa_bluetooth_device *device;
     pa_bluetooth_transport *transport;
     bool transport_acquired;
+
+#ifdef __TIZEN_BT__
+    bool transport_suspended_by_remote;
+#endif
 
     pa_card *card;
     pa_sink *sink;
@@ -135,6 +152,10 @@ struct userdata {
     pa_memchunk write_memchunk;
     pa_sample_spec sample_spec;
     struct sbc_info sbc_info;
+
+#ifdef __TIZEN_BT__
+    pa_modargs *modargs;
+#endif
 };
 
 typedef enum pa_bluetooth_form_factor {
@@ -218,6 +239,44 @@ static const char *form_factor_to_string(pa_bluetooth_form_factor_t ff) {
 
     pa_assert_not_reached();
 }
+
+#ifdef __TIZEN_BT__
+#ifdef BLUETOOTH_APTX_SUPPORT
+void* (*aptx_new)(short endian);
+int (*aptx_encode)(void* _state, void* _pcmL, void* _pcmR, void* _buffer);
+
+const char *aptx_new_name = "NewAptxEnc";
+const char *aptx_encode_name = "aptxbtenc_encodestereo";
+
+static pa_bool_t pa_load_aptx_sym(void *handle )
+{
+	if (!handle)
+		return false;
+
+	aptx_new = (void* (*)(short endian))dlsym(handle, aptx_new_name);
+
+	if (aptx_new) {
+	    pa_log_debug("Load Symbol(%s)", aptx_new_name);
+        } else {
+	    pa_log_debug("Fail to Load Symbol(%s)", aptx_new_name);
+	    return false;
+	}
+
+	aptx_encode = (int (*)(void* _state, void* _pcmL, void* _pcmR,
+                                void* _buffer))
+                      dlsym(handle, "aptxbtenc_encodestereo");
+
+	if (aptx_encode) {
+	    pa_log_debug("Load Symbol(%s)", aptx_encode_name);
+        } else {
+	    pa_log_debug("Fail to Load Symbol(%s)", aptx_encode_name);
+	    return false;
+        }
+
+	return true;
+}
+#endif
+#endif
 
 /* Run from main thread */
 static void connect_ports(struct userdata *u, void *new_data, pa_direction_t direction) {
@@ -544,6 +603,142 @@ static int a2dp_process_render(struct userdata *u) {
     return ret;
 }
 
+#ifdef BLUETOOTH_APTX_SUPPORT
+/* Run from IO thread */
+static int a2dp_aptx_process_render(struct userdata *u) {
+    struct sbc_info *a2dp;
+    size_t nbytes;
+    void *d;
+    const void *p;
+    size_t to_write, to_encode;
+    int ret = 0;
+
+    int pcmL[4],pcmR[4];
+    int i=0;
+    const short *mybuffer;
+
+    pa_assert(u);
+    pa_assert(u->profile == PA_BLUETOOTH_PROFILE_A2DP_SINK);
+    pa_assert(u->sink);
+
+    /* First, render some data */
+    if (!u->write_memchunk.memblock)
+        pa_sink_render_full(u->sink, u->write_block_size, &u->write_memchunk);
+
+    pa_assert(u->write_memchunk.length == u->write_block_size);
+
+    a2dp_prepare_buffer(u);
+
+    a2dp = &u->sbc_info;
+
+    /* Try to create a packet of the full MTU */
+    p = (const uint8_t*) pa_memblock_acquire(u->write_memchunk.memblock) + u->write_memchunk.index;
+    to_encode = u->write_memchunk.length;
+
+    d = (uint8_t*) a2dp->buffer ;
+    to_write = a2dp->buffer_size;
+
+    while (PA_LIKELY(to_encode > 0 && to_write > 0)) {
+        size_t written;
+        ssize_t encoded;
+
+        mybuffer=(uint8_t *)p;
+
+        for (i = 0; i < 4; i += 1) {
+           pcmL[i] = mybuffer[2*i];
+           pcmR[i] = mybuffer[2*i+1];
+        }
+	/*(8 audio samples)16 bytes of audo data encoded to 4 bytes*/
+	aptx_encode(a2dp->aptx, pcmL, pcmR, (short*)d);
+
+        encoded=16;
+        written=4;
+
+        pa_assert_fp((size_t) encoded <= to_encode);
+        pa_assert_fp((size_t) written <= to_write);
+
+        p = (const uint8_t*) p + encoded;
+        to_encode -= encoded;
+
+        d = (uint8_t*) d + written;
+        to_write -= written;
+
+    }
+
+    pa_memblock_release(u->write_memchunk.memblock);
+
+    pa_assert(to_encode == 0);
+
+    PA_ONCE_BEGIN {
+        pa_log_debug("Using APTX encoder implementation");
+    } PA_ONCE_END;
+
+    nbytes = (uint8_t*) d - (uint8_t*) a2dp->buffer;
+
+    for (;;) {
+        ssize_t l;
+
+        l = pa_write(u->stream_fd, a2dp->buffer, nbytes, &u->stream_write_type);
+
+        pa_assert(l != 0);
+
+        if (l < 0) {
+
+            if (errno == EINTR)
+                /* Retry right away if we got interrupted */
+                continue;
+
+            else if (errno == EAGAIN)
+                /* Hmm, apparently the socket was not writable, give up for now */
+                break;
+
+            pa_log_error("Failed to write data to socket: %s", pa_cstrerror(errno));
+            ret  = -1;
+            break;
+        }
+
+        pa_assert((size_t) l <= nbytes);
+
+        if ((size_t) l != nbytes) {
+            pa_log_warn("Wrote memory block to socket only partially! %llu written, wanted to write %llu.",
+                        (unsigned long long) l,
+                        (unsigned long long) nbytes);
+            ret = -1;
+            break;
+        }
+
+        u->write_index += (uint64_t) u->write_memchunk.length;
+        pa_memblock_unref(u->write_memchunk.memblock);
+        pa_memchunk_reset(&u->write_memchunk);
+
+        ret = 1;
+
+        break;
+    }
+
+    return ret;
+}
+
+/* Run from IO thread */
+static int a2dp_process_null_render(struct userdata *u) {
+    pa_assert(u);
+    pa_assert(u->profile == PA_BLUETOOTH_PROFILE_A2DP_SINK);
+    pa_assert(u->sink);
+
+    /* First, render some data */
+    if (!u->write_memchunk.memblock)
+        pa_sink_render_full(u->sink, u->write_block_size, &u->write_memchunk);
+
+    pa_assert(u->write_memchunk.length == u->write_block_size);
+
+    u->write_index += (uint64_t) u->write_memchunk.length;
+    pa_memblock_unref(u->write_memchunk.memblock);
+    pa_memchunk_reset(&u->write_memchunk);
+
+    return 1;
+}
+#endif
+
 /* Run from IO thread */
 static int a2dp_process_push(struct userdata *u) {
     int ret = 0;
@@ -750,6 +945,10 @@ static int transport_acquire(struct userdata *u, bool optional) {
         return -1;
 
     u->transport_acquired = true;
+
+#ifdef __TIZEN_BT__
+    u->transport_suspended_by_remote = false;
+#endif
     pa_log_info("Transport %s acquired: fd %d", u->transport->path, u->stream_fd);
 
     return 0;
@@ -768,6 +967,12 @@ static void transport_release(struct userdata *u) {
 
     u->transport_acquired = false;
 
+#ifdef __TIZEN_BT__
+    /* The below code would be less effect for most of case */
+    if (u->transport_suspended_by_remote)
+        pa_log_info("Released by remote suspend request");
+#endif
+
     if (u->profile == PA_BLUETOOTH_PROFILE_HEADSET_AUDIO_GATEWAY) {
         u->transport->state = PA_BLUETOOTH_TRANSPORT_STATE_IDLE;
         pa_asyncmsgq_post(pa_thread_mq_get()->outq, PA_MSGOBJECT(u->msg), BLUETOOTH_MESSAGE_TRANSPORT_STATE_CHANGED, u, 0,
@@ -782,7 +987,11 @@ static void transport_config_mtu(struct userdata *u) {
     if (u->profile == PA_BLUETOOTH_PROFILE_HEADSET_HEAD_UNIT || u->profile == PA_BLUETOOTH_PROFILE_HEADSET_AUDIO_GATEWAY) {
         u->read_block_size = u->read_link_mtu;
         u->write_block_size = u->write_link_mtu;
+#ifdef __TIZEN_BT__
+    } else if(u->sbc_info.sbc_initialized) {
+#else
     } else {
+#endif
         u->read_block_size =
             (u->read_link_mtu - sizeof(struct rtp_header) - sizeof(struct rtp_payload))
             / u->sbc_info.frame_length * u->sbc_info.codesize;
@@ -994,7 +1203,15 @@ static int sink_process_msg(pa_msgobject *o, int code, void *data, int64_t offse
                 case PA_SINK_RUNNING:
                     if (u->sink->thread_info.state != PA_SINK_SUSPENDED)
                         break;
-
+#ifdef __TIZEN_BT__
+		    /* Wait until PA_BLUETOOTH_TRANSPORT_IDLE */
+		    if ((u->transport != NULL) && (u->transport->state ==
+						PA_BLUETOOTH_TRANSPORT_STATE_IDLE))
+                        pa_log_info("This is good time for(%d)",
+                                        (pa_sink_state_t) PA_PTR_TO_UINT(data));
+		    else
+                        pa_log_info("Wait for PA_BLUETOOTH_TRANSPORT_STATE_IDLE");
+#endif
                     /* Resume the device if the source was suspended as well */
                     if (!u->source || !PA_SOURCE_IS_OPENED(u->source->thread_info.state)) {
                         if (transport_acquire(u, false) < 0)
@@ -1357,10 +1574,29 @@ static void thread_func(void *userdata) {
 
                     if (u->write_index <= 0)
                         u->started_at = pa_rtclock_now();
-
-                    if (u->profile == PA_BLUETOOTH_PROFILE_A2DP_SINK) {
+#ifdef __TIZEN_BT__
+                    if ((u->profile == PA_BLUETOOTH_PROFILE_A2DP_SINK) &&
+                                           !u->transport_suspended_by_remote) {
+			if(u->sbc_info.sbc_initialized) {
+			    if ((n_written = a2dp_process_render(u)) < 0)
+				goto io_fail;
+			}
+#ifdef BLUETOOTH_APTX_SUPPORT 
+			else {
+			    if ((n_written = a2dp_aptx_process_render(u)) < 0)
+				goto io_fail;
+			}
+#endif
+                    } else if ((u->profile == PA_BLUETOOTH_PROFILE_A2DP_SINK) &&
+                                           u->transport_suspended_by_remote) {
+#ifdef BLUETOOTH_APTX_SUPPORT 
+                        a2dp_process_null_render(u);
+#endif
+#else
+                    if (u->profile == PA_BLUETOOTH_PROFILE_A2DP_SINK ) {
                         if ((n_written = a2dp_process_render(u)) < 0)
                             goto io_fail;
+#endif
                     } else {
                         if ((n_written = sco_process_render(u)) < 0)
                             goto io_fail;
@@ -1728,7 +1964,7 @@ static pa_card_profile *create_card_profile(struct userdata *u, const char *uuid
     if (pa_streq(uuid, PA_BLUETOOTH_UUID_A2DP_SINK)) {
 	/* TODO: Change this profile's name to a2dp_sink, to reflect the remote
          * device's role and be consistent with the a2dp source profile */
-        cp = pa_card_profile_new("a2dp", _("High Fidelity Playback (A2DP Sink)"), sizeof(pa_bluetooth_profile_t));
+        cp = pa_card_profile_new("a2dp_sink", _("High Fidelity Playback (A2DP Sink)"), sizeof(pa_bluetooth_profile_t));
         cp->priority = 10;
         cp->n_sinks = 1;
         cp->n_sources = 0;
@@ -1738,6 +1974,7 @@ static pa_card_profile *create_card_profile(struct userdata *u, const char *uuid
 
         p = PA_CARD_PROFILE_DATA(cp);
         *p = PA_BLUETOOTH_PROFILE_A2DP_SINK;
+#ifndef __TIZEN_BT__
     } else if (pa_streq(uuid, PA_BLUETOOTH_UUID_A2DP_SOURCE)) {
         cp = pa_card_profile_new("a2dp_source", _("High Fidelity Capture (A2DP Source)"), sizeof(pa_bluetooth_profile_t));
         cp->priority = 10;
@@ -1777,6 +2014,7 @@ static pa_card_profile *create_card_profile(struct userdata *u, const char *uuid
 
         p = PA_CARD_PROFILE_DATA(cp);
         *p = PA_BLUETOOTH_PROFILE_HEADSET_AUDIO_GATEWAY;
+#endif
     }
 
     if (cp && u->device->transports[*p])
@@ -1837,6 +2075,9 @@ static int add_card(struct userdata *u) {
     pa_bluetooth_profile_t *p;
     const char *uuid;
     void *state;
+#ifdef __TIZEN_BT__
+    const char *default_profile;
+#endif
 
     pa_assert(u);
     pa_assert(u->device);
@@ -1889,6 +2130,17 @@ static int add_card(struct userdata *u) {
     *p = PA_BLUETOOTH_PROFILE_OFF;
     pa_hashmap_put(data.profiles, cp->name, cp);
     pa_card_new_data_set_profile(&data, "off");
+
+#ifdef __TIZEN_BT__
+    if ((default_profile = pa_modargs_get_value(u->modargs, "profile", NULL))) {
+	pa_log_debug("default_profile: %s", default_profile);
+
+        if (pa_hashmap_get(data.profiles, default_profile))
+            pa_card_new_data_set_profile(&data, default_profile);
+        else
+            pa_log_warn("Profile '%s' not valid or not supported by device.", default_profile);
+    }
+#endif
 
     u->card = pa_card_new(u->core, &data);
     pa_card_new_data_done(&data);
@@ -1948,6 +2200,9 @@ static void handle_transport_state_change(struct userdata *u, struct pa_bluetoot
         if (u->sink) {
             pa_log_debug("Resuming sink %s because its transport state changed to playing", u->sink->name);
 
+#ifdef __TIZEN_BT__
+            u->transport_suspended_by_remote = false;
+#endif
             /* FIXME: See the previous comment. */
             pa_sink_suspend(u->sink, false, PA_SUSPEND_IDLE|PA_SUSPEND_USER);
         }
@@ -1967,7 +2222,13 @@ static void handle_transport_state_change(struct userdata *u, struct pa_bluetoot
 
         if (u->sink) {
             pa_log_debug("Suspending sink %s because the remote end closed the stream", u->sink->name);
+#ifdef __TIZEN_BT__
+	    /* if we change PA state as Suspend, PA client application
+	     * such as music app would face lock-up */
+            u->transport_suspended_by_remote = true;
+#else
             pa_sink_suspend(u->sink, true, PA_SUSPEND_USER);
+#endif
         }
     }
 }
@@ -2037,6 +2298,11 @@ int pa__init(pa_module* m) {
         goto fail;
     }
 
+#ifdef __TIZEN_BT__
+    u->sample_spec = m->core->default_sample_spec;
+    u->modargs = ma;
+#endif
+
     if (!(path = pa_modargs_get_value(ma, "path", NULL))) {
         pa_log_error("Failed to get device path from module arguments");
         goto fail;
@@ -2054,7 +2320,9 @@ int pa__init(pa_module* m) {
         goto fail;
     }
 
+#ifndef __TIZEN_BT__
     pa_modargs_free(ma);
+#endif
 
     u->device_connection_changed_slot =
         pa_hook_connect(pa_bluetooth_discovery_hook(u->discovery, PA_BLUETOOTH_HOOK_DEVICE_CONNECTION_CHANGED),
@@ -2067,6 +2335,9 @@ int pa__init(pa_module* m) {
     if (add_card(u) < 0)
         goto fail;
 
+#ifdef __TIZEN_BT__
+    pa_modargs_free(ma);
+#endif
     if (!(u->msg = pa_msgobject_new(bluetooth_msg)))
         goto fail;
 

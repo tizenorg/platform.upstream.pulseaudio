@@ -108,6 +108,9 @@ void pa_bluetooth_transport_put(pa_bluetooth_transport *t);
 void pa_bluetooth_transport_free(pa_bluetooth_transport *t);
 
 bool pa_bluetooth_device_any_transport_connected(const pa_bluetooth_device *d);
+#ifdef __TIZEN_BT__
+bool pa_bluetooth_device_sink_transport_connected(const pa_bluetooth_device *d);
+#endif
 
 pa_bluetooth_device* pa_bluetooth_discovery_get_device_by_path(pa_bluetooth_discovery *y, const char *path);
 pa_bluetooth_device* pa_bluetooth_discovery_get_device_by_address(pa_bluetooth_discovery *y, const char *remote, const char *local);
@@ -119,4 +122,12 @@ const char *pa_bluetooth_profile_to_string(pa_bluetooth_profile_t profile);
 pa_bluetooth_discovery* pa_bluetooth_discovery_get(pa_core *core);
 pa_bluetooth_discovery* pa_bluetooth_discovery_ref(pa_bluetooth_discovery *y);
 void pa_bluetooth_discovery_unref(pa_bluetooth_discovery *y);
+
+/*
+#ifdef BLUETOOTH_APTX_SUPPORT
+int pa_load_aptx(const char *aptx_lib_name);
+int pa_unload_aptx(void);
+void* pa_aptx_get_handle(void);
+#endif
+*/
 #endif

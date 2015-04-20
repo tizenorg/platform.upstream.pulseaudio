@@ -332,9 +332,6 @@ static pa_dbus_interface_info policy_interface_info = {
 /* Vconf Keys */
 #define DEFAULT_BOOTING_SOUND_PATH "/usr/share/keysound/poweron.ogg"
 #define VCONF_BOOTING "memory/private/sound/booting"
-#ifdef BURST_SHOT
-#define VCONF_SOUND_BURSTSHOT "memory/private/sound/burstshot"
-#endif
 
 /* boot sound */
 #define BOOTING_SOUND_SAMPLE "booting"
@@ -456,7 +453,6 @@ enum {
 enum {
     SUBCOMMAND_TEST,
     SUBCOMMAND_PLAY_SAMPLE,
-    SUBCOMMAND_PLAY_SAMPLE_CONTINUOUSLY,
     SUBCOMMAND_MONO,
     SUBCOMMAND_BALANCE,
     SUBCOMMAND_MUTEALL,
@@ -1862,251 +1858,7 @@ static uint32_t __get_route_flag(struct userdata *u) {
 
     return route_flag;
 }
-#ifdef BURST_SHOT
 
-#define BURST_SOUND_DEFAULT_TIME_INTERVAL (0.09 * PA_USEC_PER_SEC)
-static void __play_audio_sample_timeout_cb(pa_mainloop_api *m, pa_time_event *e, const struct timeval *t, void *userdata)
-{
-    struct userdata* u = (struct userdata*)userdata;
-    pa_usec_t interval = u->audio_sample_userdata.time_interval;
-    pa_usec_t now = 0ULL;
-
-    pa_assert(m);
-    pa_assert(e);
-    pa_assert(u);
-
-    pa_mutex_lock(u->audio_sample_userdata.mutex);
-
-    /* These checks are added to avoid server crashed on unpredictable situation*/
-    if ((u->audio_sample_userdata.time_event == NULL) ||
-       (u->audio_sample_userdata.i == NULL) ||
-       (u->audio_sample_userdata.q == NULL)) {
-        pa_log_error("Timer should not have fired with this condition time_event=%p i=%p q=%p",
-            u->audio_sample_userdata.time_event, u->audio_sample_userdata.i, u->audio_sample_userdata.q);
-
-        if (u->audio_sample_userdata.time_event != NULL) {
-            pa_core_rttime_restart(u->core, e, PA_USEC_INVALID);
-            u->core->mainloop->time_free(u->audio_sample_userdata.time_event);
-            u->audio_sample_userdata.time_event = NULL;
-        }
-        if (u->audio_sample_userdata.count > 1) {
-            if (u->audio_sample_userdata.i != NULL) {
-                pa_sink_input_set_mute(u->audio_sample_userdata.i, true, true);
-                pa_sink_input_unlink(u->audio_sample_userdata.i);
-            }
-            if (u->audio_sample_userdata.q != NULL) {
-                pa_memblockq_free(u->audio_sample_userdata.q);
-                u->audio_sample_userdata.q = NULL;
-            }
-        }
-        if (u->audio_sample_userdata.i != NULL) {
-            pa_sink_input_unref(u->audio_sample_userdata.i);
-            u->audio_sample_userdata.i = NULL;
-        }
-        u->audio_sample_userdata.is_running = false;
-    } else if (u->audio_sample_userdata.is_running) {
-        // calculate timer boosting
-        pa_log_info("- shot count = %d, memq len = %d ", u->audio_sample_userdata.count,
-                    pa_memblockq_get_length(u->audio_sample_userdata.q));
-        if (u->audio_sample_userdata.factor > 1ULL)
-            interval = u->audio_sample_userdata.time_interval / u->audio_sample_userdata.factor;
-
-        if (u->audio_sample_userdata.count == 0) {
-            // 5. first post data
-            pa_sink_input_put(u->audio_sample_userdata.i);
-        } else {
-            // 5. post data
-            if (pa_memblockq_push(u->audio_sample_userdata.q, &u->audio_sample_userdata.e->memchunk) < 0) {
-                pa_log_error("memory push fail cnt(%d), factor(%llu), interval(%llu)",
-                    u->audio_sample_userdata.count, u->audio_sample_userdata.factor, u->audio_sample_userdata.time_interval);
-                pa_assert(0);
-            }
-        }
-        u->audio_sample_userdata.count++;
-
-        pa_rtclock_now_args(&now);
-        pa_core_rttime_restart(u->core, e, now + interval);
-        if (u->audio_sample_userdata.factor > 1ULL)
-            u->audio_sample_userdata.factor -= 1ULL;
-    } else {
-        pa_core_rttime_restart(u->core, e, PA_USEC_INVALID);
-        u->core->mainloop->time_free(u->audio_sample_userdata.time_event);
-        u->audio_sample_userdata.time_event = NULL;
-
-        /* FIXME: How memblockq is freed when count is 1? */
-        // fading. but should be emitted first shutter sound totally.
-        if (u->audio_sample_userdata.count > 1) {
-            pa_sink_input_set_mute(u->audio_sample_userdata.i, true, true);
-            pa_sink_input_unlink(u->audio_sample_userdata.i);
-
-            pa_memblockq_free(u->audio_sample_userdata.q);
-            u->audio_sample_userdata.q = NULL;
-        }
-        pa_sink_input_unref(u->audio_sample_userdata.i);
-        u->audio_sample_userdata.i = NULL;
-        pa_log_info("sample shot clear!!");
-
-        /* Clear Burst vconf */
-        vconf_set_int (VCONF_SOUND_BURSTSHOT, 0);
-    }
-    pa_mutex_unlock(u->audio_sample_userdata.mutex);
-}
-
-/* It will be moved to module-sound-player */
-static audio_return_t policy_play_sample_continuously(struct userdata *u, pa_native_connection *c, const char *name, pa_usec_t interval,
-    uint32_t volume_type, uint32_t gain_type, uint32_t volume_level, uint32_t *stream_idx)
-{
-    audio_return_t audio_ret = AUDIO_RET_OK;
-    pa_proplist *p = 0;
-    pa_sink *sink = NULL;
-    audio_info_t audio_info;
-    double volume_linear = 1.0f;
-    pa_client *client = pa_native_connection_get_client(c);
-
-    pa_scache_entry *e;
-    pa_bool_t pass_volume = true;
-    pa_proplist *merged =0;
-    pa_sink_input *i = NULL;
-    pa_memblockq *q = NULL;
-    pa_memchunk silence;
-    pa_cvolume r;
-    pa_usec_t now = 0ULL;
-    const char *volume_str = NULL;
-
-    if (!u->audio_sample_userdata.mutex)
-        u->audio_sample_userdata.mutex = pa_mutex_new(false, false);
-
-    pa_mutex_lock(u->audio_sample_userdata.mutex);
-
-    pa_assert(u->audio_sample_userdata.is_running == false); // allow one instace.
-
-    memset(&audio_info, 0x00, sizeof(audio_info_t));
-
-    p = pa_proplist_new();
-
-    /* Set volume type of stream */
-    pa_proplist_setf(p, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE, "%d", volume_type);
-    /* Set gain type of stream */
-    pa_proplist_setf(p, PA_PROP_MEDIA_TIZEN_GAIN_TYPE, "%d", gain_type);
-    /* Set policy */
-    pa_proplist_setf(p, PA_PROP_MEDIA_POLICY, "%s", volume_type == AUDIO_VOLUME_TYPE_FIXED ? POLICY_PHONE : POLICY_AUTO);
-
-    pa_proplist_update(p, PA_UPDATE_MERGE, client->proplist);
-
-    sink = pa_namereg_get_default_sink(u->core);
-
-    /* FIXME : Add gain_type parameter to API like volume_type */
-    audio_info.stream.gain_type = gain_type;
-    __convert_volume_type_to_string(volume_type, &volume_str);
-    if (pa_hal_manager_get_volume_value(u->hal_manager, &audio_info, volume_str, STREAM_SINK_INPUT, volume_level, &volume_linear))
-        goto exit;
-    pa_log_debug("play_sample_continuously volume_type:%d volume_str:%s", volume_type, volume_str);
-
-   /*
-    1. load cam-shutter sample
-    2. create memchunk using sample.
-    3. create sink_input(cork mode)
-    4. set timer
-    5. post data(sink-input put or push memblockq)
-    */
-
-    //  1. load cam-shutter sample
-    merged = pa_proplist_new();
-
-    if (!(e = pa_namereg_get(u->core, name, PA_NAMEREG_SAMPLE)))
-        goto exit;
-
-    pa_proplist_sets(merged, PA_PROP_MEDIA_NAME, name);
-    pa_proplist_sets(merged, PA_PROP_EVENT_ID, name);
-    /* Set policy for selecting sink */
-    pa_proplist_sets(merged, PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK, "yes");
-
-    if (e->lazy && !e->memchunk.memblock) {
-        pa_channel_map old_channel_map = e->channel_map;
-
-        if (pa_sound_file_load(u->core->mempool, e->filename, &e->sample_spec, &e->channel_map, &e->memchunk, merged) < 0)
-            goto exit;
-
-        pa_subscription_post(u->core, PA_SUBSCRIPTION_EVENT_SAMPLE_CACHE|PA_SUBSCRIPTION_EVENT_CHANGE, e->index);
-
-        if (e->volume_is_set) {
-            if (pa_cvolume_valid(&e->volume))
-                pa_cvolume_remap(&e->volume, &old_channel_map, &e->channel_map);
-            else
-                pa_cvolume_reset(&e->volume, e->sample_spec.channels);
-        }
-    }
-
-    if (!e->memchunk.memblock)
-        goto exit;
-
-    if (e->volume_is_set && PA_VOLUME_IS_VALID(pa_sw_volume_from_linear(volume_linear))) {
-        pa_cvolume_set(&r, e->sample_spec.channels, pa_sw_volume_from_linear(volume_linear));
-        pa_sw_cvolume_multiply(&r, &r, &e->volume);
-    } else if (e->volume_is_set)
-        r = e->volume;
-    else if (PA_VOLUME_IS_VALID(pa_sw_volume_from_linear(volume_linear)))
-        pa_cvolume_set(&r, e->sample_spec.channels, pa_sw_volume_from_linear(volume_linear));
-    else
-        pass_volume = false;
-
-    pa_proplist_update(merged, PA_UPDATE_MERGE, e->proplist);
-    pa_proplist_update(p, PA_UPDATE_MERGE, merged);
-
-    if (e->lazy)
-        time(&e->last_used_time);
-
-    // 2. create memchunk using sample.
-    pa_silence_memchunk_get(&sink->core->silence_cache, sink->core->mempool, &silence, &e->sample_spec, 0);
-    q = pa_memblockq_new("pa_play_memchunk() q", 0, e->memchunk.length * 35, 0, &e->sample_spec, 1, 1, 0, &silence);
-    pa_memblock_unref(silence.memblock);
-
-    pa_assert_se(pa_memblockq_push(q, &e->memchunk) >= 0);
-
-    // 3. create sink_input(cork mode)
-    if (!(i = pa_memblockq_sink_input_new(sink, &e->sample_spec, &e->channel_map, q, pass_volume ? &r : NULL,
-        p, PA_SINK_INPUT_NO_CREATE_ON_SUSPEND|PA_SINK_INPUT_KILL_ON_SUSPEND)))
-        goto exit;
-
-    // 4. set timer
-    u->audio_sample_userdata.e = e;
-    u->audio_sample_userdata.i = i;
-    u->audio_sample_userdata.q = q;
-    u->audio_sample_userdata.time_interval = interval == (pa_usec_t)0 ? BURST_SOUND_DEFAULT_TIME_INTERVAL : interval;
-    u->audio_sample_userdata.is_running = true;
-    u->audio_sample_userdata.factor = 4ULL; // for memory block boosting
-    u->audio_sample_userdata.count = 0;
-
-    pa_rtclock_now_args(&now); // doesn't use arm barrel shiter. SBF
-    pa_log_warn("now(%llu), start interval(%llu)", now, interval / u->audio_sample_userdata.factor);
-    u->audio_sample_userdata.factor -= 1ULL;
-    u->audio_sample_userdata.time_event = pa_core_rttime_new(u->core, now, __play_audio_sample_timeout_cb, u);
-
-exit:
-    if (p)
-        pa_proplist_free(p);
-    if (merged)
-        pa_proplist_free(merged);
-    if (q && (u->audio_sample_userdata.is_running == false))
-        pa_memblockq_free(q);
-
-    pa_mutex_unlock(u->audio_sample_userdata.mutex);
-
-    return audio_ret;
-}
-
-static void  policy_stop_sample_continuously(struct userdata *u)
-{
-    if (u->audio_sample_userdata.time_event) {
-        pa_mutex_lock(u->audio_sample_userdata.mutex);
-        pa_assert(u->audio_sample_userdata.is_running);
-        u->audio_sample_userdata.is_running = false;
-        pa_mutex_unlock(u->audio_sample_userdata.mutex);
-        pa_log_info("timeout_cb called (%d) times", u->audio_sample_userdata.count);
-    }
-}
-
-#endif
 /* It will be moved to module-sound-player */
 static audio_return_t policy_play_sample(struct userdata *u, pa_native_connection *c, const char *name, uint32_t volume_type, uint32_t gain_type, uint32_t volume_level, uint32_t *stream_idx)
 {
@@ -2502,7 +2254,7 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
         pa_tagstruct_getu32(t, &volume_type);
 
         __convert_volume_type_to_string(volume_type, &volume_str);
-        pa_stream_manager_volume_get_level_max(u->stream_manager, STREAM_SINK_INPUT, volume_str, &volume_level);
+        pa_stream_manager_volume_get_max_level(u->stream_manager, STREAM_SINK_INPUT, volume_str, &volume_level);
 
         pa_tagstruct_putu32(reply, volume_level);
         break;
@@ -2536,24 +2288,7 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
 
         __convert_volume_type_to_string(volume_type, &volume_str);
         pa_stream_manager_volume_set_level(u->stream_manager, STREAM_SINK_INPUT, volume_str, volume_level);
-        break;
-    }
-    /* it will be removed soon */
-    case SUBCOMMAND_GET_MUTE: {
-        uint32_t stream_idx = PA_INVALID_INDEX;
-        uint32_t volume_type = 0;
-        uint32_t direction = 0;
-        uint32_t mute = 0;
-        const char *volume_str = NULL;
 
-        pa_tagstruct_getu32(t, &stream_idx);
-        pa_tagstruct_getu32(t, &volume_type);
-        pa_tagstruct_getu32(t, &direction);
-
-        __convert_volume_type_to_string(volume_type, &volume_str);
-        pa_stream_manager_volume_get_mute(u, STREAM_SINK_INPUT, volume_str, &mute);
-
-        pa_tagstruct_putu32(reply, mute);
         break;
     }
     /* it will be removed soon */

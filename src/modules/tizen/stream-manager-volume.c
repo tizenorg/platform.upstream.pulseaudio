@@ -529,6 +529,12 @@ int init_volume_map (pa_stream_manager *m) {
             pa_log_debug("type(%s), current level(%u)", volume_type, v->current_level);
         }
     }
+#if 0
+    /* Apply initial output volume mute from vconf volume mute */
+    {
+
+    }
+#endif
 #ifdef PRIMARY_VOLUME
     vconf_set_int (VCONFKEY_SOUND_PRIMARY_VOLUME_TYPE, -1);
 #endif
@@ -576,14 +582,14 @@ void deinit_volume_map (pa_stream_manager *m) {
     return;
 }
 
-int32_t pa_stream_manager_volume_get_level_max(pa_stream_manager *m, stream_type stream_type, const char *volume_type, uint32_t *volume_level) {
+int32_t pa_stream_manager_volume_get_max_level(pa_stream_manager *m, stream_type stream_type, const char *volume_type, uint32_t *volume_level) {
     int32_t ret = 0;
     pa_assert(m);
     pa_assert(volume_type);
 
-    pa_log_info("pa_stream_manager_volume_get_level_max, type:%s level:%u", volume_type, *volume_level);
-
     ret = get_volume_level_by_type(m, GET_VOLUME_MAX_LEVEL, stream_type, volume_type, volume_level);
+
+    pa_log_info("pa_stream_manager_volume_get_max_level, type:%s max_level:%u, ret:%d", volume_type, *volume_level, ret);
 
     return ret;
 }
@@ -593,9 +599,9 @@ int32_t pa_stream_manager_volume_get_level(pa_stream_manager *m, stream_type str
     pa_assert(m);
     pa_assert(volume_type);
 
-    pa_log_info("pa_stream_manager_volume_get_current_level, type:%s level:%u", volume_type, *volume_level);
-
     ret = get_volume_level_by_type(m, GET_VOLUME_CURRENT_LEVEL, stream_type, volume_type, volume_level);
+
+    pa_log_info("pa_stream_manager_volume_get_level, type:%s level:%u, ret:%d", volume_type, *volume_level, ret);
 
     return ret;
 }
@@ -605,9 +611,9 @@ int32_t pa_stream_manager_volume_set_level(pa_stream_manager *m, stream_type str
     pa_assert(m);
     pa_assert(volume_type);
 
-    pa_log_info("pa_stream_manager_volume_set_level, type:%s level:%u", volume_type, volume_level);
-
     ret = set_volume_level_by_type(m, stream_type, volume_type, volume_level);
+
+    pa_log_info("	pa_stream_manager_volume_set_level, type:%s level:%u, ret:%d", volume_type, volume_level, ret);
 
     return ret;
 }
@@ -657,7 +663,8 @@ int32_t pa_stream_manager_volume_get_mute(pa_stream_manager *m, stream_type stre
         }
     }
 
-    pa_log_info("get mute stream_type:%d, volume_type:%s mute:%d", stream_type, volume_type, *mute);
+    pa_log_info("pa_stream_manager_volume_get_mute, stream_type:%d volume_type:%s mute:%d", stream_type, volume_type, *mute);
+
     return 0;
 }
 
@@ -691,7 +698,7 @@ int32_t pa_stream_manager_volume_set_mute(pa_stream_manager *m, stream_type stre
                 pa_source_output_set_mute((pa_source_output*)s, mute, TRUE);
     }
 
-    pa_log_info("set mute stream_type:%d, volume_type:%s, mute:%d", stream_type, volume_type, mute);
+    pa_log_info("pa_stream_manager_volume_set_mute, stream_type:%d volume_type:%s mute:%d", stream_type, volume_type, mute);
 
     return 0;
 }
@@ -714,7 +721,7 @@ int32_t pa_stream_manager_volume_get_mute_by_idx(pa_stream_manager *m, stream_ty
     if (!s)
         ret = -1;
 
-    pa_log_info("get mute stream_type:%d stream_idx:%u mute:%d, ret:%d", stream_type, stream_idx, *mute, ret);
+    pa_log_info("pa_stream_manager_volume_get_mute_by_idx, stream_type:%d stream_idx:%u mute:%d, ret:%d", stream_type, stream_idx, *mute, ret);
 
     return ret;
 }
@@ -725,7 +732,7 @@ int32_t pa_stream_manager_volume_set_mute_by_idx(pa_stream_manager *m, stream_ty
     uint32_t idx = 0;
     const char *volume_type_str;
 
-    pa_log_info("set mute stream_type:%d stream_idx:%u mute:%d", stream_type, stream_idx, mute);
+    pa_log_info("pa_stream_manager_volume_set_mute_by_idx, stream_type:%d stream_idx:%u mute:%d", stream_type, stream_idx, mute);
 
     if (stream_idx != (uint32_t)-1) {
         if ((s = pa_idxset_get_by_index((stream_type==STREAM_SINK_INPUT)?m->core->sink_inputs:m->core->source_outputs, stream_idx))) {

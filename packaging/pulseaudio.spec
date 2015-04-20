@@ -11,7 +11,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          9
+Release:          10
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -216,6 +216,14 @@ export CXXFLAGS="$CXXFLAGS -DTIZEN_DEBUG_ENABLE"
 export FFLAGS="$FFLAGS -DTIZEN_DEBUG_ENABLE"
 %endif
 
+%if "%{?tizen_profile_name}" == "wearable"
+	echo "tizen profile werable"
+	export CFLAGS+=" -DTIZEN_MICRO -DPM_ASYNC -DPRIMARY_VOLUME -DADJUST_ANDROID_BITPOOL"
+%else if "%{?tizen_profile_name}" == "mobile"
+	echo "tizen profile mobile"
+	export CFLAGS+=" -DTIZEN_MOBILE -DPM_ASYNC -DPRIMARY_VOLUME"
+%endif
+
 export LD_AS_NEEDED=0
 NOCONFIGURE=yes ./bootstrap.sh
 %configure --prefix=%{_prefix} \
@@ -303,6 +311,8 @@ fi
 if [ $1 -eq 0 ] ; then
 # Package removal, not upgrade
 systemctl --no-reload --user --global disable pulseaudio.socket > /dev/null 2>&1 || :
+/usr/bin/vconftool set -t int memory/private/sound/pcm_dump 0 -g 29 -f -i -s system::vconf_multimedia
+
 fi
 
 %postun -p /sbin/ldconfig

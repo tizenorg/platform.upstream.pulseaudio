@@ -305,6 +305,7 @@ static int32_t set_volume_level_by_type(pa_stream_manager *m, stream_type stream
     double volume_linear = 1.0f;
     uint32_t idx = 0;
     const char *volume_type_str = NULL;
+    const char *modifier_gain = NULL;
     void *s = NULL;
     pa_assert(m);
     pa_assert(volume_type);
@@ -328,13 +329,22 @@ static int32_t set_volume_level_by_type(pa_stream_manager *m, stream_type stream
 
     PA_IDXSET_FOREACH(s, stream_type==STREAM_SINK_INPUT?m->core->sink_inputs:m->core->source_outputs, idx) {
         if ((volume_type_str = pa_proplist_gets(stream_type==STREAM_SINK_INPUT?((pa_sink_input*)s)->proplist:((pa_source_output*)s)->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE))) {
-            /* do nothing */
+            /* Get modifier for gain */
+            modifier_gain = pa_proplist_gets(stream_type==STREAM_SINK_INPUT?((pa_sink_input*)s)->proplist:((pa_source_output*)s)->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE);
         } else {
             continue;
         }
         /* Update volume level of stream if it has requested the volume type */
         if (pa_streq(volume_type_str, volume_type)) {
             pa_cvolume cv;
+            if (modifier_gain) {
+                double *modifier_gain_value = NULL;
+                modifier_gain_value = pa_hashmap_get((stream_type==STREAM_SINK_INPUT)?m->volume_map.out_modifier_gains:m->volume_map.in_modifier_gains, modifier_gain);
+                if (modifier_gain_value) {
+                    volume_linear *= (*modifier_gain_value);
+                    pa_log_info("set_volume_level_by_type() : apply the modifier for the gain value(%s=>%f), result volume_linear(%f)", modifier_gain, *modifier_gain_value, volume_linear);
+                }
+            }
             pa_cvolume_set(&cv, stream_type==STREAM_SINK_INPUT?((pa_sink_input*)s)->sample_spec.channels:((pa_source_output*)s)->sample_spec.channels, pa_sw_volume_from_linear(volume_linear));
             if (stream_type == STREAM_SINK_INPUT)
                 pa_sink_input_set_volume((pa_sink_input*)s, &cv, TRUE, TRUE);
@@ -355,12 +365,14 @@ int32_t set_volume_level_by_idx(pa_stream_manager *m, stream_type stream_type, u
     pa_cvolume cv;
     double volume_linear = 1.0f;
     const char *volume_type_str = NULL;
+    const char *modifier_gain = NULL;
 
     pa_assert(m);
 
     s = pa_idxset_get_by_index(stream_type==STREAM_SINK_INPUT?m->core->sink_inputs:m->core->source_outputs, idx);
     if ((volume_type_str = pa_proplist_gets(stream_type==STREAM_SINK_INPUT?((pa_sink_input*)s)->proplist:((pa_source_output*)s)->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE))) {
-        /* do nothing */
+        /* Get modifier for gain */
+        modifier_gain = pa_proplist_gets(stream_type==STREAM_SINK_INPUT?((pa_sink_input*)s)->proplist:((pa_source_output*)s)->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE);
     } else
         return -1;
 
@@ -375,6 +387,14 @@ int32_t set_volume_level_by_idx(pa_stream_manager *m, stream_type stream_type, u
             return -1;
 
     if (!get_volume_value(m, stream_type, is_hal_volume, volume_type_str, volume_level, &volume_linear)) {
+        if (modifier_gain) {
+            double *modifier_gain_value = NULL;
+            modifier_gain_value = pa_hashmap_get((stream_type==STREAM_SINK_INPUT)?m->volume_map.out_modifier_gains:m->volume_map.in_modifier_gains, modifier_gain);
+            if (modifier_gain_value) {
+                volume_linear *= (*modifier_gain_value);
+                pa_log_info("set_volume_level_by_idx() : apply the modifier for the gain value(%s=>%f), result volume_linear(%f)", modifier_gain, *modifier_gain_value, volume_linear);
+            }
+        }
         pa_cvolume_set(&cv, (stream_type==STREAM_SINK_INPUT)?((pa_sink_input*)s)->sample_spec.channels:((pa_source_output*)s)->sample_spec.channels, pa_sw_volume_from_linear(volume_linear));
         if (stream_type == STREAM_SINK_INPUT)
             pa_sink_input_set_volume((pa_sink_input*)s, &cv, TRUE, TRUE);

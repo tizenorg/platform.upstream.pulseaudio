@@ -54,35 +54,46 @@ PA_MODULE_AUTHOR("Sangchul Lee");
 PA_MODULE_DESCRIPTION("Sound Player module");
 PA_MODULE_VERSION(PACKAGE_VERSION);
 PA_MODULE_LOAD_ONCE(TRUE);
-PA_MODULE_USAGE("ipc_type=<pipe or dbus>");
 
 #ifdef HAVE_DBUS
 #define ARR_ARG_MAX  32
 #define SOUND_PLAYER_OBJECT_PATH "/org/pulseaudio/Ext/SoundPlayer"
 #define SOUND_PLAYER_INTERFACE   "org.pulseaudio.Ext.SoundPlayer"
 #define SOUND_PLAYER_METHOD_NAME_SIMPLE_PLAY      "SimplePlay"
+#define SOUND_PLAYER_METHOD_NAME_SAMPLE_PLAY      "SamplePlay"
 
 static DBusHandlerResult method_handler_for_vt(DBusConnection *c, DBusMessage *m, void *userdata);
 static DBusHandlerResult handle_introspect(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static DBusHandlerResult handle_methods(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_simple_play(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_sample_play(DBusConnection *conn, DBusMessage *msg, void *userdata);
 
 enum method_handler_index {
     METHOD_HANDLER_SIMPLE_PLAY,
+    METHOD_HANDLER_SAMPLE_PLAY,
     METHOD_HANDLER_MAX
 };
 
 static pa_dbus_arg_info simple_play_args[]    = { { "uri", "s", "in" },
-                                                 { "volume_conf", "i", "in" } };
+                                                 { "role", "s", "in" },
+                                         { "volume_gain", "s", "in" }};
+static pa_dbus_arg_info sample_play_args[]    = { { "sample_name", "s", "in" },
+                                                         { "role", "s", "in" },
+                                                 { "volume_gain", "s", "in" }};
 
-static char* signature_args_for_in[] = { "si" };
+static char* signature_args_for_in[] = { "sss", "sss" };
 
 static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
     [METHOD_HANDLER_SIMPLE_PLAY] = {
         .method_name = SOUND_PLAYER_METHOD_NAME_SIMPLE_PLAY,
         .arguments = simple_play_args,
         .n_arguments = sizeof(simple_play_args) / sizeof(pa_dbus_arg_info),
-        .receive_cb = handle_simple_play }
+        .receive_cb = handle_simple_play },
+    [METHOD_HANDLER_SAMPLE_PLAY] = {
+        .method_name = SOUND_PLAYER_METHOD_NAME_SAMPLE_PLAY,
+        .arguments = sample_play_args,
+        .n_arguments = sizeof(sample_play_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_sample_play }
 };
 
 #ifdef USE_DBUS_PROTOCOL
@@ -100,13 +111,19 @@ static pa_dbus_interface_info sound_player_interface_info = {
 
 #else
 
-#define SOUND_PLAYER_INTROSPECT_XML                                       \
+#define SOUND_PLAYER_INTROSPECT_XML                                     \
     DBUS_INTROSPECT_1_0_XML_DOCTYPE_DECL_NODE                           \
     "<node>"                                                            \
-    " <interface name=\"SOUND_PLAYER_INTERFACE\">"                        \
-    "  <method name=\"SOUND_PLAYER_METHOD_NAME_SIMPLE_PLAY\">"            \
+    " <interface name=\"SOUND_PLAYER_INTERFACE\">"                      \
+    "  <method name=\"SOUND_PLAYER_METHOD_NAME_SIMPLE_PLAY\">"          \
     "   <arg name=\"uri\" direction=\"in\" type=\"s\"/>"                \
-    "   <arg name=\"volume_conf\" direction=\"in\" type=\"i\"/>"        \
+    "   <arg name=\"role\" direction=\"in\" type=\"s\"/>"               \
+    "   <arg name=\"volume_gain\" direction=\"in\" type=\"s\"/>"        \
+    "  </method>"                                                       \
+    "  <method name=\"SOUND_PLAYER_METHOD_NAME_SAMPLE_PLAY\">"          \
+    "   <arg name=\"sample_name\" direction=\"in\" type=\"s\"/>"        \
+    "   <arg name=\"role\" direction=\"in\" type=\"s\"/>"               \
+    "   <arg name=\"volume_gain\" direction=\"in\" type=\"s\"/>"        \
     "  </method>"                                                       \
     " </interface>"                                                     \
     " <interface name=\"org.freedesktop.DBus.Introspectable\">"         \
@@ -121,11 +138,6 @@ static pa_dbus_interface_info sound_player_interface_info = {
 
 static void io_event_callback(pa_mainloop_api *io, pa_io_event *e, int fd, pa_io_event_flags_t events, void*userdata);
 
-static const char* const valid_modargs[] = {
-    "ipc_type",
-    NULL,
-};
-
 struct userdata {
     int fd;
     pa_io_event *io;
@@ -139,64 +151,55 @@ struct userdata {
 #endif
 };
 
-#define FILE_FULL_PATH 1024        /* File path lenth */
+#define FILE_FULL_PATH 1024        /* File path length */
+#define ROLE_NAME_LEN 64                /* Role name length */
+#define VOLUME_GAIN_TYPE_LEN 64    /* Volume gain type length */
 
 struct ipc_data {
     char filename[FILE_FULL_PATH];
-    int volume_config;
+    char role[ROLE_NAME_LEN];
+    char volume_gain_type[VOLUME_GAIN_TYPE_LEN];
 };
 
 #define KEYTONE_PATH        "/tmp/keytone"  /* Keytone pipe path */
 #define KEYTONE_GROUP       6526            /* Keytone group : assigned by security */
 #define DEFAULT_IPC_TYPE    IPC_TYPE_PIPE
-#define AUDIO_VOLUME_CONFIG_TYPE(vol) (vol & 0x00FF)
-#define AUDIO_VOLUME_CONFIG_GAIN(vol) (vol & 0xFF00)
-
-#define MAX_GAIN_TYPE  4
-static const char* get_str_gain_type[MAX_GAIN_TYPE] =
-{
-    "GAIN_TYPE_DEFAULT",
-    "GAIN_TYPE_DIALER",
-    "GAIN_TYPE_TOUCH",
-    "GAIN_TYPE_OTHERS"
-};
 
 #define MAX_NAME_LEN 256
-static int _simple_play(struct userdata *u, const char *file_path, uint32_t volume_config) {
+static int _simple_play(struct userdata *u, const char *file_path, const char *role, const char *vol_gain_type) {
     int ret = 0;
     pa_sink *sink = NULL;
     pa_proplist *p;
     const char *name_prefix = "SIMPLE_PLAY";
-    double volume_linear = 1.0f;
-    int volume_type =  AUDIO_VOLUME_CONFIG_TYPE(volume_config);
-    int volume_gain =  AUDIO_VOLUME_CONFIG_GAIN(volume_config)>>8;
+
     char name[MAX_NAME_LEN] = {0};
 
-    uint32_t stream_idx;
+    uint32_t stream_idx = 0;
     uint32_t play_idx = 0;
 
     p = pa_proplist_new();
 
-    /* Set role type of stream, temporarily fixed */
-    /* Later on, we need to get it from an argument */
-    pa_proplist_sets(p, PA_PROP_MEDIA_ROLE, "system");
-    /* Set volume type of stream */
-    pa_proplist_setf(p, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE, "%d", volume_type);
-    /* Set gain type of stream */
-    pa_proplist_setf(p, PA_PROP_MEDIA_TIZEN_GAIN_TYPE, "%d", volume_gain);
+    /* Set role type of stream */
+    if (role)
+        pa_proplist_sets(p, PA_PROP_MEDIA_ROLE, role);
+
+    /* Set volume gain type of stream */
+    if (vol_gain_type)
+        pa_proplist_sets(p, PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE, vol_gain_type);
+
     /* Set policy type of stream */
     pa_proplist_sets(p, PA_PROP_MEDIA_POLICY, "auto");
     /* Set policy for selecting sink */
     pa_proplist_sets(p, PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK, "yes");
     sink = pa_namereg_get_default_sink(u->module->core);
 
-    pa_log_debug("volume_config[type:0x%x,gain:0x%x[%s]]", volume_type, volume_gain,
-                 volume_gain > (MAX_GAIN_TYPE-2) ? get_str_gain_type[MAX_GAIN_TYPE-1]: get_str_gain_type[volume_gain]);
+    pa_log_debug("role[%s], volume_gain_type[%s]", role, vol_gain_type);
     snprintf(name, sizeof(name)-1, "%s_%s", name_prefix, file_path);
     play_idx = pa_scache_get_id_by_name(u->module->core, name);
     if (play_idx != PA_IDXSET_INVALID) {
         pa_log_debug("found cached index [%u] for name [%s]", play_idx, file_path);
     } else {
+        /* for more precision, need to update volume value here */
         if ((ret = pa_scache_add_file_lazy(u->module->core, name, file_path, &play_idx)) != 0) {
             pa_log_error("failed to add file [%s]", file_path);
             goto exit;
@@ -211,6 +214,49 @@ static int _simple_play(struct userdata *u, const char *file_path, uint32_t volu
         goto exit;
     }
     pa_log_debug("pa_scache_play_item() end");
+
+exit:
+    pa_proplist_free(p);
+    return ret;
+}
+
+static int _sample_play(struct userdata *u, const char *sample_name, const char *role, const char *vol_gain_type) {
+    int ret = 0;
+    pa_sink *sink = NULL;
+    pa_proplist *p;
+
+    uint32_t stream_idx = 0;
+    uint32_t play_idx = 0;
+
+    p = pa_proplist_new();
+
+    /* Set role type of stream */
+    if (role)
+        pa_proplist_sets(p, PA_PROP_MEDIA_ROLE, role);
+
+    /* Set volume gain type of stream */
+    if (vol_gain_type)
+        pa_proplist_sets(p, PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE, vol_gain_type);
+
+    /* Set policy type of stream */
+    pa_proplist_sets(p, PA_PROP_MEDIA_POLICY, "auto");
+    /* Set policy for selecting sink */
+    pa_proplist_sets(p, PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK, "yes");
+    sink = pa_namereg_get_default_sink(u->module->core);
+
+    pa_log_debug("role[%s], volume_gain_type[%s]", role, vol_gain_type);
+
+    play_idx = pa_scache_get_id_by_name(u->module->core, sample_name);
+    if (play_idx != PA_IDXSET_INVALID) {
+        pa_log_debug("pa_scache_play_item() start, index [%u] for name [%s]", play_idx, sample_name);
+        /* for more precision, need to update volume value here */
+        if ((ret = pa_scache_play_item(u->module->core, sample_name, sink, PA_VOLUME_NORM, p, &stream_idx) < 0)) {
+            pa_log_error("pa_scache_play_item fail");
+            goto exit;
+        }
+        pa_log_debug("pa_scache_play_item() end");
+    } else
+        pa_log_error("could not find the scache item for [%s]", sample_name);
 
 exit:
     pa_proplist_free(p);
@@ -238,8 +284,10 @@ static DBusHandlerResult handle_introspect(DBusConnection *conn, DBusMessage *ms
 }
 
 static void handle_simple_play(DBusConnection *conn, DBusMessage *msg, void *userdata) {
-    char *uri;
-    dbus_int32_t volume_conf, result;
+    char *uri = NULL;
+    char *role = NULL;
+    char *volume_gain = NULL;
+    dbus_int32_t result = 0;
     struct userdata *u =  (struct userdata*)userdata;
     pa_assert(conn);
     pa_assert(msg);
@@ -247,10 +295,38 @@ static void handle_simple_play(DBusConnection *conn, DBusMessage *msg, void *use
 
     pa_assert_se(dbus_message_get_args(msg, NULL,
                                        DBUS_TYPE_STRING, &uri,
-                                       DBUS_TYPE_INT32, &volume_conf,
+                                       DBUS_TYPE_STRING, &role,
+                                       DBUS_TYPE_STRING, &volume_gain,
                                        DBUS_TYPE_INVALID));
-    pa_log_warn("uri[%s], volume_conf[0x%x]", uri, volume_conf);
-    _simple_play(u, uri, (uint32_t)volume_conf);
+    pa_log_info("uri[%s], role[%s], volume_gain[%s]", uri, role, volume_gain);
+    if (uri)
+        _simple_play(u, uri, role, volume_gain);
+    else
+        result = -1;
+
+    pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_INT32, &result);
+}
+
+static void handle_sample_play(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    char *sample_name = NULL;
+    char *role = NULL;
+    char *volume_gain = NULL;
+    dbus_int32_t result = 0;
+    struct userdata *u =  (struct userdata*)userdata;
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(u);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL,
+                                       DBUS_TYPE_STRING, &sample_name,
+                                       DBUS_TYPE_STRING, &role,
+                                       DBUS_TYPE_STRING, &volume_gain,
+                                       DBUS_TYPE_INVALID));
+    pa_log_info("sample_name[%s], role[%s], volume_gain[%s]", sample_name, role, volume_gain);
+    if (sample_name)
+        _sample_play(u, sample_name, role, volume_gain);
+    else
+        result = -1;
 
     pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_INT32, &result);
 }
@@ -305,75 +381,63 @@ static DBusHandlerResult method_handler_for_vt(DBusConnection *c, DBusMessage *m
 }
 #endif
 
-static int init_ipc (struct userdata *u, const char *type) {
-
+static int init_ipc (struct userdata *u) {
+    int pre_mask;
     pa_assert(u);
-    pa_assert(type);
 
-    pa_log_info("Initialization for IPC, type:[%s]", type);
+    pa_log_info("Initialization for IPC");
 
-    if(!strncmp(type, "pipe", 4)) {
-        int pre_mask;
+    pre_mask = umask(0);
+    if (mknod(KEYTONE_PATH,S_IFIFO|0660,0)<0)
+        pa_log_warn("mknod failed. errno=[%d][%s]", errno, strerror(errno));
 
-        pre_mask = umask(0);
-        if (mknod(KEYTONE_PATH,S_IFIFO|0660,0)<0) {
-            pa_log_warn("mknod failed. errno=[%d][%s]", errno, strerror(errno));
-        }
-        umask(pre_mask);
+    umask(pre_mask);
 
-        u->fd = open(KEYTONE_PATH, O_RDWR);
-        if (u->fd == -1) {
-            pa_log_warn("Check ipc node %s\n", KEYTONE_PATH);
-            goto fail;
-        }
-
-        /* change access mode so group can use keytone pipe */
-        if (fchmod (u->fd, 0666) == -1) {
-            pa_log_warn("Changing keytone access mode is failed. errno=[%d][%s]", errno, strerror(errno));
-        }
-
-        /* change group due to security request */
-        if (fchown (u->fd, -1, KEYTONE_GROUP) == -1) {
-            pa_log_warn("Changing keytone group is failed. errno=[%d][%s]", errno, strerror(errno));
-        }
-
-        u->io = u->module->core->mainloop->io_new(u->module->core->mainloop, u->fd, PA_IO_EVENT_INPUT|PA_IO_EVENT_HANGUP, io_event_callback, u);
-
-    } else if (!strncmp(type, "dbus", 4)) {
-#ifdef HAVE_DBUS
-#ifdef USE_DBUS_PROTOCOL
-        u->dbus_protocol = pa_dbus_protocol_get(u->module->core);
-        pa_assert_se(pa_dbus_protocol_add_interface(u->dbus_protocol, SOUND_PLAYER_OBJECT_PATH, &sound_player_interface_info, u) >= 0);
-        pa_assert_se(pa_dbus_protocol_register_extension(u->dbus_protocol, SOUND_PLAYER_INTERFACE) >= 0);
-#else
-        DBusError err;
-        pa_dbus_connection *conn = NULL;
-        static const DBusObjectPathVTable vtable = {
-            .message_function = method_handler_for_vt,
-        };
-        dbus_error_init(&err);
-
-        if (!(conn = pa_dbus_bus_get(u->module->core, DBUS_BUS_SYSTEM, &err)) || dbus_error_is_set(&err)) {
-            if (conn) {
-                pa_dbus_connection_unref(conn);
-            }
-            pa_log_error("Unable to contact D-Bus system bus: %s: %s", err.name, err.message);
-            goto fail;
-        } else {
-            pa_log_notice("Got dbus connection");
-        }
-        u->dbus_conn = conn;
-        pa_assert_se(dbus_connection_register_object_path(pa_dbus_connection_get(conn), SOUND_PLAYER_OBJECT_PATH, &vtable, u));
-#endif
-#else
-        pa_log_error("DBUS is not supported\n");
-        goto fail;
-#endif
-
-    } else {
-        pa_log_error("Unknown type(%s) for IPC", type);
+    u->fd = open(KEYTONE_PATH, O_RDWR);
+    if (u->fd == -1) {
+        pa_log_warn("Check ipc node %s\n", KEYTONE_PATH);
         goto fail;
     }
+
+    /* change access mode so group can use keytone pipe */
+    if (fchmod (u->fd, 0666) == -1)
+        pa_log_warn("Changing keytone access mode is failed. errno=[%d][%s]", errno, strerror(errno));
+
+    /* change group due to security request */
+    if (fchown (u->fd, -1, KEYTONE_GROUP) == -1)
+        pa_log_warn("Changing keytone group is failed. errno=[%d][%s]", errno, strerror(errno));
+
+    u->io = u->module->core->mainloop->io_new(u->module->core->mainloop, u->fd, PA_IO_EVENT_INPUT|PA_IO_EVENT_HANGUP, io_event_callback, u);
+
+#ifdef HAVE_DBUS
+#ifdef USE_DBUS_PROTOCOL
+    u->dbus_protocol = pa_dbus_protocol_get(u->module->core);
+    pa_assert_se(pa_dbus_protocol_add_interface(u->dbus_protocol, SOUND_PLAYER_OBJECT_PATH, &sound_player_interface_info, u) >= 0);
+    pa_assert_se(pa_dbus_protocol_register_extension(u->dbus_protocol, SOUND_PLAYER_INTERFACE) >= 0);
+#else
+    DBusError err;
+    pa_dbus_connection *conn = NULL;
+    static const DBusObjectPathVTable vtable = {
+        .message_function = method_handler_for_vt,
+    };
+    dbus_error_init(&err);
+
+    if (!(conn = pa_dbus_bus_get(u->module->core, DBUS_BUS_SYSTEM, &err)) || dbus_error_is_set(&err)) {
+        if (conn) {
+            pa_dbus_connection_unref(conn);
+        }
+        pa_log_error("Unable to contact D-Bus system bus: %s: %s", err.name, err.message);
+        goto fail;
+    } else
+        pa_log_notice("Got dbus connection");
+
+    u->dbus_conn = conn;
+    pa_assert_se(dbus_connection_register_object_path(pa_dbus_connection_get(conn), SOUND_PLAYER_OBJECT_PATH, &vtable, u));
+#endif
+#else
+    pa_log_error("DBUS is not supported\n");
+    goto fail;
+#endif
 
     return 0;
 fail:
@@ -414,8 +478,6 @@ static void io_event_callback(pa_mainloop_api *io, pa_io_event *e, int fd, pa_io
     int ret = 0;
     int size = 0;
 
-    int gain = 0;
-
     pa_assert(io);
     pa_assert(u);
 
@@ -429,9 +491,8 @@ static void io_event_callback(pa_mainloop_api *io, pa_io_event *e, int fd, pa_io
         memset(&data, 0, size);
         ret = read(fd, (void *)&data, size);
         if(ret != -1) {
-            gain = AUDIO_VOLUME_CONFIG_GAIN(data.volume_config)>>8;
-            pa_log_info("name(%s), volume_config(0x%x)", data.filename, data.volume_config);
-            _simple_play(u, data.filename, data.volume_config);
+            pa_log_info("name(%s), role(%s), volume_gain_type(%s)", data.filename, data.role, data.volume_gain_type);
+            _simple_play(u, data.filename, data.role, data.volume_gain_type);
 
         } else {
             pa_log_warn("Fail to read file");
@@ -447,20 +508,10 @@ fail:
     pa_module_unload_request(u->module, TRUE);
 }
 
-
 int pa__init(pa_module *m) {
     struct userdata *u;
-    pa_modargs *ma = NULL;
-    const char *ipc_type = NULL;
 
     pa_assert(m);
-
-    if (!(ma = pa_modargs_new(m->argument, valid_modargs))) {
-        pa_log("Failed to parse module arguments");
-        goto fail;
-    }
-
-    ipc_type = pa_modargs_get_value(ma, "ipc_type", "pipe");
 
     m->userdata = u = pa_xnew0(struct userdata, 1);
     u->module = m;
@@ -473,20 +524,15 @@ int pa__init(pa_module *m) {
     u->dbus_conn = NULL;
 #endif
 #endif
-    if (init_ipc(u, ipc_type))
+    if (init_ipc(u))
         goto fail;
-
-    pa_modargs_free(ma);
 
     return 0;
 
 fail:
-
-    pa_modargs_free(ma);
     pa__done(m);
     return -1;
 }
-
 
 void pa__done(pa_module *m) {
     struct userdata *u;

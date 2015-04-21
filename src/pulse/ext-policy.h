@@ -120,22 +120,6 @@ pa_operation *pa_ext_policy_test(
         pa_ext_policy_test_cb_t cb,
         void *userdata);
 
-/** Callback prototype for pa_ext_policy_play_sample(). \since 0.9.21 */
-typedef void (*pa_ext_policy_play_sample_cb_t)(
-        pa_context *c,
-        uint32_t stream_index,
-        void *userdata);
-
-/* Similar with pa_context_play_sample, but can apply volume type */
-pa_operation *pa_ext_policy_play_sample (
-        pa_context *c,
-        const char *name,
-        uint32_t volume_type,
-        uint32_t gain_type,
-        uint32_t volume_level,
-        pa_ext_policy_play_sample_cb_t cb,
-        void *userdata);
-
 /** Enable the mono mode. \since 0.9.21 */
 pa_operation *pa_ext_policy_set_mono (
         pa_context *c,

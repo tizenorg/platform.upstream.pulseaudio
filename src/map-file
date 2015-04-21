@@ -193,7 +193,6 @@ pa_ext_policy_set_session;
 pa_ext_policy_set_subsession;
 pa_ext_policy_set_active_device;
 pa_ext_policy_reset;
-pa_ext_policy_get_volume_level_max;
 pa_ext_policy_get_volume_level;
 pa_ext_policy_set_volume_level;
 pa_ext_policy_get_mute

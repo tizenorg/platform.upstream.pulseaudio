@@ -2,44 +2,46 @@
 #define foostreammanagerfoo
 #include <pulsecore/core.h>
 
-#include "stream-manager-priv.h"
-
 typedef struct _stream_manager pa_stream_manager;
 
 typedef enum _stream_type {
     STREAM_SINK_INPUT,
     STREAM_SOURCE_OUTPUT,
-} stream_type;
+} stream_type_t;
 
-typedef struct _device {
-    char *type;
-    int id;
-} device;
+typedef enum stream_route_type {
+    STREAM_ROUTE_TYPE_AUTO,     /* the policy of decision device(s) is automatic and it's routing path is particular to one device */
+    STREAM_ROUTE_TYPE_AUTO_ALL, /* the policy of decision device(s) is automatic and it's routing path can be several devices */
+    STREAM_ROUTE_TYPE_MANUAL,   /* the policy of decision device(s) is manual */
+} stream_route_type_t;
 
 typedef struct _hook_call_data_for_select {
-    char *stream_role;
-    stream_type stream_type;
-    stream_route_type route_type;
+    const char *stream_role;
+    stream_type_t stream_type;
+    stream_route_type_t route_type;
     pa_sink **proper_sink;
     pa_source **proper_source;
     pa_sample_spec sample_spec;
-    pa_idxset *avail_devices;
-    pa_hashmap *manual_devices;
+    pa_idxset *idx_avail_devices;
+    pa_idxset *idx_manual_devices;
 } pa_stream_manager_hook_data_for_select;
 
 typedef struct _hook_call_data_for_route {
-    char *stream_role;
-    stream_type stream_type;
-    stream_route_type route_type;
+    const char *stream_role;
+    stream_type_t stream_type;
+    stream_route_type_t route_type;
+    pa_sink **proper_sink;
+    pa_source **proper_source;
     pa_sample_spec sample_spec;
-    pa_idxset *route_options;
-    pa_idxset *avail_devices;
-    pa_hashmap *manual_devices;
-    pa_idxset *streams;
+    pa_idxset *idx_route_options;
+    pa_idxset *idx_avail_devices;
+    pa_idxset *idx_manual_devices;
+    pa_idxset *idx_streams;
+    pa_bool_t origins_from_new_data;
 } pa_stream_manager_hook_data_for_route;
 
 typedef struct _hook_call_data_for_options {
-    char *stream_role;
+    const char *stream_role;
     pa_idxset *route_options;
 } pa_stream_manager_hook_data_for_options;
 

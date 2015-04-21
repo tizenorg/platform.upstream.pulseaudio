@@ -9,9 +9,20 @@
 #define VCONFKEY_SOUND_PRIMARY_VOLUME_TYPE "memory/private/sound/PrimaryVolumetype"
 #define VCONFKEY_OUT_VOLUME_PREFIX         "file/private/sound/volume/"
 
-int init_volume_map (pa_stream_manager *m);
+typedef enum {
+    GET_VOLUME_CURRENT_LEVEL,
+    GET_VOLUME_MAX_LEVEL
+} pa_volume_get_command_t;
+
+int32_t init_volume_map (pa_stream_manager *m);
 void deinit_volume_map (pa_stream_manager *m);
-int set_volume_level_by_idx(pa_stream_manager *m, stream_type stream_type, uint32_t idx, uint32_t volume_level);
+int32_t get_volume_level_by_type(pa_stream_manager *m, pa_volume_get_command_t command, stream_type_t stream_type, const char *volume_type, uint32_t *volume_level);
+int32_t set_volume_level_by_type(pa_stream_manager *m, stream_type_t stream_type, const char *volume_type, uint32_t volume_level);
+int32_t set_volume_level_by_idx(pa_stream_manager *m, stream_type_t stream_type, uint32_t idx, uint32_t volume_level);
+int32_t get_volume_mute_by_type(pa_stream_manager *m, stream_type_t stream_type, const char *volume_type, pa_bool_t *mute);
+int32_t set_volume_mute_by_type(pa_stream_manager *m, stream_type_t stream_type, const char *volume_type, pa_bool_t mute);
+int32_t set_volume_mute_by_idx(pa_stream_manager *m, stream_type_t stream_type, uint32_t stream_idx, pa_bool_t mute);
+int32_t get_volume_mute_by_idx(pa_stream_manager *m, stream_type_t stream_type, uint32_t stream_idx, pa_bool_t *mute);
 #ifdef PRIMARY_VOLUME
 int _set_primary_volume(pa_stream_manager *m, void* key, int volumetype, int is_new);
 #endif

@@ -1,8 +1,10 @@
 #ifndef foostreammanagerprivfoo
 #define foostreammanagerprivfoo
 
+#include "stream-manager.h"
 #include "hal-manager.h"
 #include "communicator.h"
+#include "device-manager.h"
 
 #include <pulsecore/core-util.h>
 #include <pulsecore/namereg.h>
@@ -18,18 +20,11 @@ enum stream_direction {
     STREAM_DIRECTION_MAX,
 };
 
-typedef enum stream_route_type {
-    STREAM_ROUTE_TYPE_AUTO,     /* the policy of decision device(s) is automatic and it's routing path is particular to one device */
-    STREAM_ROUTE_TYPE_AUTO_ALL, /* the policy of decision device(s) is automatic and it's routing path can be several devices */
-    STREAM_ROUTE_TYPE_MANUAL,   /* the policy of decision device(s) is manual */
-} stream_route_type;
-
-
 typedef struct _stream_info {
     int32_t priority;
     char *volume_type[STREAM_DIRECTION_MAX];
     pa_bool_t is_hal_volume[STREAM_DIRECTION_MAX];
-    stream_route_type route_type;
+    stream_route_type_t route_type;
     pa_idxset *idx_avail_in_devices;
     pa_idxset *idx_avail_out_devices;
     pa_idxset *idx_avail_frameworks;
@@ -37,6 +32,7 @@ typedef struct _stream_info {
 
 typedef struct _volume_info {
     pa_bool_t is_hal_volume_type;
+    pa_bool_t is_muted;
     pa_idxset *idx_volume_values;
     uint32_t current_level;
 } volume_info;
@@ -51,6 +47,8 @@ typedef struct _volume_map {
 typedef struct _prior_max_priority_stream {
     pa_sink_input *sink_input;
     pa_source_output *source_output;
+    pa_bool_t need_to_update_si;
+    pa_bool_t need_to_update_so;
 } cur_max_priority_stream;
 
 struct primary_volume_type_info {
@@ -84,7 +82,11 @@ struct _stream_manager {
 #endif
 #endif
     pa_subscription *subscription;
-    pa_communicator *comm;
+    struct {
+        pa_communicator *comm;
+        pa_hook_slot *comm_hook_device_connection_changed_slot;
+        pa_hook_slot *comm_hook_device_information_changed_slot;
+    } comm;
 #ifdef PRIMARY_VOLUME
     PA_LLIST_HEAD(struct primary_volume_type_info, primary_volume);
 #endif

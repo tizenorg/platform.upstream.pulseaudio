@@ -19,37 +19,46 @@ typedef struct _pa_hal_manager pa_hal_manager;
 typedef enum _io_direction {
     DIRECTION_IN,
     DIRECTION_OUT,
-} io_direction;
+} io_direction_t;
 
-typedef struct hal_device_info {
-    char *type;
+typedef struct _hal_device_info {
+    const char *type;
     uint32_t direction;
     uint32_t id;
-} hal_device_info_t;
+} hal_device_info;
 
-typedef struct hal_route_info {
-    char *role;
-    hal_device_info_t *device_infos;
+typedef struct _hal_route_info {
+    const char *role;
+    hal_device_info *device_infos;
     uint32_t num_of_devices;
-} hal_route_info_t;
+} hal_route_info;
 
-typedef struct hal_route_option {
-    char *role;
+typedef struct _hal_route_option {
+    const char *role;
     char **options;
     uint32_t num_of_options;
-} hal_route_option_t;
+} hal_route_option;
+
+typedef struct _hal_stream_connection_info {
+    const char *role;
+    uint32_t direction;
+    uint32_t idx;
+    pa_bool_t is_connected;
+} hal_stream_connection_info;
 
 pa_hal_manager* pa_hal_manager_get(pa_core *core, void *user_data);
 pa_hal_manager* pa_hal_manager_ref(pa_hal_manager *h);
 void pa_hal_manager_unref(pa_hal_manager *h);
 int32_t pa_hal_manager_get_buffer_attribute(pa_hal_manager *h, audio_latency_t latency, pa_sink_input_new_data *new_data, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
-int32_t pa_hal_manager_get_volume_level_max (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *level);
-int32_t pa_hal_manager_get_volume_level (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *level);
-int32_t pa_hal_manager_set_volume_level (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t level);
-int32_t pa_hal_manager_get_volume_value (pa_hal_manager *h, audio_info_t *info, const char *volume_type, io_direction direction, uint32_t level, double *value);
-int32_t pa_hal_manager_get_mute (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *mute);
-int32_t pa_hal_manager_set_mute (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t mute);
-int32_t pa_hal_manager_do_route (pa_hal_manager *h, hal_route_info_t *info);
-int32_t pa_hal_manager_update_route_option (pa_hal_manager *h, hal_route_option_t *option);
+int32_t pa_hal_manager_reset_volume (pa_hal_manager *h);
+int32_t pa_hal_manager_get_volume_level_max (pa_hal_manager *h, const char *volume_type, io_direction_t direction, uint32_t *level);
+int32_t pa_hal_manager_get_volume_level (pa_hal_manager *h, const char *volume_type, io_direction_t direction, uint32_t *level);
+int32_t pa_hal_manager_set_volume_level (pa_hal_manager *h, const char *volume_type, io_direction_t direction, uint32_t level);
+int32_t pa_hal_manager_get_volume_value (pa_hal_manager *h, const char *volume_type, const char *gain_type, io_direction_t direction, uint32_t level, double *value);
+int32_t pa_hal_manager_get_mute (pa_hal_manager *h, const char *volume_type, io_direction_t direction, uint32_t *mute);
+int32_t pa_hal_manager_set_mute (pa_hal_manager *h, const char *volume_type, io_direction_t direction, uint32_t mute);
+int32_t pa_hal_manager_do_route (pa_hal_manager *h, hal_route_info *info);
+int32_t pa_hal_manager_update_route_option (pa_hal_manager *h, hal_route_option *option);
+int32_t pa_hal_manager_update_stream_connection_info (pa_hal_manager *h, hal_stream_connection_info *info);
 
 #endif

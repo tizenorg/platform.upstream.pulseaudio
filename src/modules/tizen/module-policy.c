@@ -329,37 +329,9 @@ static pa_dbus_interface_info policy_interface_info = {
 
 /* check if this sink is bluez */
 
-/* Vconf Keys */
-#define DEFAULT_BOOTING_SOUND_PATH "/usr/share/keysound/poweron.ogg"
-#define VCONF_BOOTING "memory/private/sound/booting"
-
-/* boot sound */
-#define BOOTING_SOUND_SAMPLE "booting"
-
-
-typedef enum pa_hal_event_type {
-    PA_HAL_EVENT_LOAD_DEVICE,
-    PA_HAL_EVENT_OPEN_DEVICE,
-    PA_HAL_EVENT_CLOSE_ALL_DEVICES,
-    PA_HAL_EVENT_CLOSE_DEVICE,
-    PA_HAL_EVENT_UNLOAD_DEVICE,
-} pa_hal_event_type_t;
-
 struct pa_hal_device_event_data {
     audio_device_info_t device_info;
     audio_device_param_info_t params[AUDIO_DEVICE_PARAM_MAX];
-};
-
-struct pa_hal_event {
-    struct userdata *userdata;
-
-    pa_hal_event_type_t event_type;
-    void *event_data;
-
-    pa_cond *cond;
-    pa_mutex *mutex;
-
-    PA_LLIST_FIELDS(struct pa_hal_event);
 };
 
 struct userdata {
@@ -376,11 +348,6 @@ struct userdata {
 
     pa_hook_slot *sink_state_changed_slot;
     pa_hook_slot *sink_input_state_changed_slot;
-
-    pthread_t tid;
-    pa_defer_event *defer_event;
-    PA_LLIST_HEAD(struct pa_hal_event, hal_event_queue);
-    struct pa_hal_event *hal_event_last;
 
     pa_subscription *subscription;
 
@@ -429,10 +396,6 @@ struct userdata {
         pa_hook_slot *comm_hook_select_proper_sink_or_source_slot;
         pa_hook_slot *comm_hook_change_route_slot;
         pa_hook_slot *comm_hook_update_route_options_slot;
-#ifdef DEVICE_MANAGER
-        pa_hook_slot *comm_hook_device_connection_changed_slot;
-        pa_hook_slot *comm_hook_device_information_changed_slot;
-#endif
     } communicator;
 
     pa_stream_manager *stream_manager;
@@ -452,7 +415,6 @@ enum {
 
 enum {
     SUBCOMMAND_TEST,
-    SUBCOMMAND_PLAY_SAMPLE,
     SUBCOMMAND_MONO,
     SUBCOMMAND_BALANCE,
     SUBCOMMAND_MUTEALL,
@@ -461,7 +423,6 @@ enum {
     SUBCOMMAND_SET_SUBSESSION,
     SUBCOMMAND_SET_ACTIVE_DEVICE,
     SUBCOMMAND_RESET,
-    SUBCOMMAND_GET_VOLUME_LEVEL_MAX,
     SUBCOMMAND_GET_VOLUME_LEVEL,
     SUBCOMMAND_SET_VOLUME_LEVEL,
     SUBCOMMAND_GET_MUTE,
@@ -481,12 +442,8 @@ typedef enum
 
 static pa_sink *__get_real_master_sink(pa_sink_input *si);
 static pa_source *__get_real_master_source(pa_source_output *so);
-static inline int __compare_device_info(audio_device_info_t *device_info1, audio_device_info_t *device_info2);
-static audio_return_t __fill_audio_playback_stream_info(pa_proplist *sink_input_proplist, pa_sample_spec *sample_spec, audio_info_t *audio_info);
-static audio_return_t __fill_audio_playback_device_info(pa_proplist *sink_proplist, audio_info_t *audio_info);
-static audio_return_t __fill_audio_capture_device_info(pa_proplist *source_proplist, audio_info_t *audio_info);
-static audio_return_t policy_play_sample(struct userdata *u, pa_native_connection *c, const char *name, uint32_t volume_type, uint32_t gain_type, uint32_t volume_level, uint32_t *stream_idx);
-static audio_return_t policy_reset(struct userdata *u);
+
+static audio_return_t policy_volume_reset(struct userdata *u);
 static audio_return_t policy_set_session(struct userdata *u, uint32_t session, uint32_t start);
 static audio_return_t policy_set_active_device(struct userdata *u, uint32_t device_in, uint32_t device_out, uint32_t* need_update);
 static pa_bool_t policy_is_filter (pa_sink_input* si);
@@ -1094,733 +1051,6 @@ static pa_source *__get_real_master_source(pa_source_output *so)
     return source;
 }
 
-static void __free_audio_stream_info (audio_info_t *audio_info)
-{
-    pa_xfree(audio_info->stream.name);
-}
-static void __free_audio_device_info (audio_info_t *audio_info)
-{
-    if (audio_info->device.api == AUDIO_DEVICE_API_ALSA) {
-        pa_xfree(audio_info->device.alsa.card_name);
-    } else if (audio_info->device.api == AUDIO_DEVICE_API_BLUEZ) {
-        pa_xfree(audio_info->device.bluez.protocol);
-    }
-    pa_xfree(audio_info->device.name);
-}
-static void __free_audio_info (audio_info_t *audio_info)
-{
-    __free_audio_stream_info(audio_info);
-    __free_audio_device_info(audio_info);
-}
-static audio_return_t __fill_audio_playback_stream_info(pa_proplist *sink_input_proplist, pa_sample_spec *sample_spec, audio_info_t *audio_info)
-{
-    const char *si_volume_type_str, *si_gain_type_str;
-
-    memset(&audio_info->stream, 0x00, sizeof(audio_stream_info_t));
-
-    if (!sink_input_proplist) {
-        return AUDIO_ERR_PARAMETER;
-    }
-
-    audio_info->stream.name = strdup(pa_strnull(pa_proplist_gets(sink_input_proplist, PA_PROP_MEDIA_NAME)));
-    audio_info->stream.samplerate = sample_spec->rate;
-    audio_info->stream.channels = sample_spec->channels;
-    audio_info->stream.gain_type = AUDIO_GAIN_TYPE_DEFAULT;
-
-    /* Get volume type of sink input */
-    if ((si_volume_type_str = pa_proplist_gets(sink_input_proplist, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE))) {
-        audio_info->stream.volume_type = si_volume_type_str;
-    } else {
-        pa_xfree(audio_info->stream.name);
-        return AUDIO_ERR_UNDEFINED;
-    }
-
-    /* Get gain type of sink input */
-    if ((si_gain_type_str = pa_proplist_gets(sink_input_proplist, PA_PROP_MEDIA_TIZEN_GAIN_TYPE))) {
-        pa_atou(si_gain_type_str, &audio_info->stream.gain_type);
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static audio_return_t __fill_audio_playback_device_info(pa_proplist *sink_proplist, audio_info_t *audio_info)
-{
-    const char *s_device_api_str;
-
-    memset(&audio_info->device, 0x00, sizeof(audio_device_info_t));
-
-    if (!sink_proplist) {
-        return AUDIO_ERR_PARAMETER;
-    }
-
-    /* Get device api */
-    if ((s_device_api_str = pa_proplist_gets(sink_proplist, PA_PROP_DEVICE_API))) {
-        audio_info->device.name = strdup(pa_strnull(pa_proplist_gets(sink_proplist, PA_PROP_DEVICE_STRING)));
-        if (pa_streq(s_device_api_str, "alsa")) {
-            const char *card_idx_str, *device_idx_str;
-
-            audio_info->device.api = AUDIO_DEVICE_API_ALSA;
-            audio_info->device.direction = AUDIO_DIRECTION_OUT;
-            audio_info->device.alsa.card_name = strdup(pa_strnull(pa_proplist_gets(sink_proplist, "alsa.card_name")));
-            audio_info->device.alsa.card_idx = 0;
-            audio_info->device.alsa.device_idx = 0;
-            if ((card_idx_str = pa_proplist_gets(sink_proplist, "alsa.card")))
-                pa_atou(card_idx_str, &audio_info->device.alsa.card_idx);
-            if ((device_idx_str = pa_proplist_gets(sink_proplist, "alsa.device")))
-                pa_atou(device_idx_str, &audio_info->device.alsa.device_idx);
-        }
-        else if (pa_streq(s_device_api_str, "bluez")) {
-            const char *nrec_str;
-
-            audio_info->device.api = AUDIO_DEVICE_API_BLUEZ;
-            audio_info->device.bluez.nrec = 0;
-            audio_info->device.bluez.protocol = strdup(pa_strnull(pa_proplist_gets(sink_proplist, "bluetooth.protocol")));
-            if ((nrec_str = pa_proplist_gets(sink_proplist, "bluetooth.nrec")))
-                pa_atou(nrec_str, &audio_info->device.bluez.nrec);
-        }
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static audio_return_t __fill_audio_capture_device_info(pa_proplist *source_proplist, audio_info_t *audio_info)
-{
-    const char *s_device_api_str;
-
-    if (!source_proplist) {
-        return AUDIO_ERR_PARAMETER;
-    }
-
-    memset(&audio_info->device, 0x00, sizeof(audio_device_info_t));
-
-    /* Get device api */
-    if ((s_device_api_str = pa_proplist_gets(source_proplist, PA_PROP_DEVICE_API))) {
-        audio_info->device.name = strdup(pa_strnull(pa_proplist_gets(source_proplist, PA_PROP_DEVICE_STRING)));
-        if (pa_streq(s_device_api_str, "alsa")) {
-            const char *card_idx_str, *device_idx_str;
-
-            audio_info->device.api = AUDIO_DEVICE_API_ALSA;
-            audio_info->device.direction = AUDIO_DIRECTION_IN;
-            audio_info->device.alsa.card_name = strdup(pa_strnull(pa_proplist_gets(source_proplist, "alsa.card_name")));
-            audio_info->device.alsa.card_idx = 0;
-            audio_info->device.alsa.device_idx = 0;
-            if ((card_idx_str = pa_proplist_gets(source_proplist, "alsa.card")))
-                pa_atou(card_idx_str, &audio_info->device.alsa.card_idx);
-            if ((device_idx_str = pa_proplist_gets(source_proplist, "alsa.device")))
-                pa_atou(device_idx_str, &audio_info->device.alsa.device_idx);
-        }
-        else if (pa_streq(s_device_api_str, "bluez")) {
-            const char *nrec_str;
-
-            audio_info->device.api = AUDIO_DEVICE_API_BLUEZ;
-            audio_info->device.bluez.nrec = 0;
-            audio_info->device.bluez.protocol = strdup(pa_strnull(pa_proplist_gets(source_proplist, "bluetooth.protocol")));
-            if ((nrec_str = pa_proplist_gets(source_proplist, "bluetooth.nrec")))
-                pa_atou(nrec_str, &audio_info->device.bluez.nrec);
-        }
-    }
-
-    return AUDIO_RET_OK;
-}
-
-#define PROP_POLICY_CORK "policy_cork_by_device_switch"
-
-static inline int __compare_device_info (audio_device_info_t *device_info1, audio_device_info_t *device_info2)
-{
-    if (device_info1->direction != device_info2->direction)
-        return false;
-
-    if (device_info1->api == AUDIO_DEVICE_API_ALSA) {
-        if ((!strcmp(device_info1->alsa.card_name, device_info2->alsa.card_name) || (device_info1->alsa.card_idx == device_info2->alsa.card_idx))
-            && (device_info1->alsa.device_idx == device_info2->alsa.device_idx)) {
-            return true;
-        }
-    }
-    if (device_info1->api == AUDIO_DEVICE_API_BLUEZ) {
-        if (!strcmp(device_info1->bluez.protocol, device_info2->bluez.protocol) && (device_info1->bluez.nrec == device_info2->bluez.nrec)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static void __free_event (struct pa_hal_event *hal_event) {
-    pa_assert(hal_event);
-    pa_assert(hal_event->userdata);
-
-    pa_xfree(hal_event->event_data);
-    pa_mutex_free(hal_event->mutex);
-    pa_cond_free(hal_event->cond);
-    pa_xfree(hal_event);
-}
-
-static inline const char *__get_event_type_string (pa_hal_event_type_t hal_event_type)
-{
-    switch (hal_event_type) {
-        case PA_HAL_EVENT_LOAD_DEVICE:          return "load device";
-        case PA_HAL_EVENT_OPEN_DEVICE:          return "open device";
-        case PA_HAL_EVENT_CLOSE_ALL_DEVICES:    return "close all devices";
-        case PA_HAL_EVENT_CLOSE_DEVICE:         return "close device";
-        case PA_HAL_EVENT_UNLOAD_DEVICE:        return "unload device";
-        default:                                return "undefined";
-    }
-}
-static audio_return_t __load_n_open_device (struct userdata *u, audio_device_info_t *device_info, audio_device_param_info_t *params, pa_hal_event_type_t hal_event_type)
-{
-    audio_info_t audio_info;
-    bool is_module_loaded = false;
-    pa_strbuf *name_buf, *args_buf, *prop_buf;
-    char *name = NULL, *args = NULL, *prop = NULL;
-    pa_source *source;
-    pa_sink *sink;
-    const char *device_object_str = NULL, *dirction_str = NULL;
-    const char *is_manual_corked_str = NULL;
-    uint32_t is_manual_corked = 0;
-    int i;
-    bool is_param_set[AUDIO_DEVICE_PARAM_MAX] = {false, };
-    uint32_t idx;
-
-    pa_assert(u);
-    pa_assert(device_info);
-    pa_assert(device_info->direction == AUDIO_DIRECTION_IN || device_info->direction == AUDIO_DIRECTION_OUT);
-
-     if (device_info->direction == AUDIO_DIRECTION_IN) {
-        PA_IDXSET_FOREACH(source, u->core->sources, idx) {
-            if (!AUDIO_IS_ERROR(__fill_audio_capture_device_info(source->proplist, &audio_info))) {
-                if (__compare_device_info(&audio_info.device, device_info)) {
-                    is_module_loaded = true;
-                    __free_audio_device_info(&audio_info);
-                    break;
-                }
-                __free_audio_device_info(&audio_info);
-            }
-        }
-        device_object_str = "source";
-        dirction_str = "input";
-    } else {
-        PA_IDXSET_FOREACH(sink, u->core->sinks, idx) {
-            if (!AUDIO_IS_ERROR(__fill_audio_playback_device_info(sink->proplist, &audio_info))) {
-                if (__compare_device_info(&audio_info.device, device_info)) {
-                    is_module_loaded = true;
-                    __free_audio_device_info(&audio_info);
-                    break;
-                }
-                __free_audio_device_info(&audio_info);
-            }
-        }
-        device_object_str = "sink";
-        dirction_str = "output";
-    }
-
-    name_buf = pa_strbuf_new();
-    if (device_info->api == AUDIO_DEVICE_API_ALSA) {
-        if (device_info->alsa.card_name && !strncmp(device_info->alsa.card_name, ALSA_VIRTUAL_CARD, strlen(ALSA_VIRTUAL_CARD))) {
-            pa_strbuf_printf(name_buf, "%s", (device_info->direction == AUDIO_DIRECTION_OUT) ? SINK_VIRTUAL : SOURCE_VIRTUAL);
-        } else if (device_info->alsa.card_name && !strncmp(device_info->alsa.card_name, ALSA_SAUDIOVOIP_CARD, strlen(ALSA_SAUDIOVOIP_CARD))) {
-            pa_strbuf_printf(name_buf, "%s", (device_info->direction == AUDIO_DIRECTION_OUT) ? SINK_VOIP : SOURCE_VOIP);
-        } else {
-            pa_strbuf_printf(name_buf, "alsa_%s.%d.analog-stereo", dirction_str, device_info->alsa.device_idx);
-        }
-    } else if (device_info->api == AUDIO_DEVICE_API_BLUEZ) {
-        /* HAL_TODO : do we need to consider BLUEZ here? */
-        pa_strbuf_printf(name_buf, "bluez_%s.%s", device_object_str, device_info->bluez.protocol);
-    } else {
-        pa_strbuf_printf(name_buf, "unknown_%s", device_object_str);
-    }
-    name = pa_strbuf_tostring_free(name_buf);
-    if (!name) {
-        pa_log_error("invalid module name");
-        return AUDIO_ERR_PARAMETER;
-    }
-
-    /* load module if is not loaded */
-    if (is_module_loaded == false) {
-        args_buf = pa_strbuf_new();
-        prop_buf = pa_strbuf_new();
-
-        pa_strbuf_printf(args_buf, "%s_name=\"%s\" ", device_object_str, name);
-        if (device_info->name) {
-            pa_strbuf_printf(args_buf, "device=\"%s\" ", device_info->name);
-        }
-
-        for (i = 0; i < AUDIO_DEVICE_PARAM_MAX; i++) {
-            if (params[i].param == AUDIO_DEVICE_PARAM_NONE)
-                break;
-            is_param_set[params[i].param] = true;
-            if (params[i].param == AUDIO_DEVICE_PARAM_CHANNELS) {
-                pa_strbuf_printf(args_buf, "channels=\"%d\" ", params[i].u32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_SAMPLERATE) {
-                pa_strbuf_printf(args_buf, "rate=\"%d\" ", params[i].u32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_FRAGMENT_SIZE) {
-                pa_strbuf_printf(args_buf, "fragment_size=\"%d\" ", params[i].u32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_FRAGMENT_NB) {
-                pa_strbuf_printf(args_buf, "fragments=\"%d\" ", params[i].u32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_START_THRESHOLD) {
-                pa_strbuf_printf(args_buf, "start_threshold=\"%d\" ", params[i].s32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_USE_MMAP) {
-                pa_strbuf_printf(args_buf, "mmap=\"%d\" ", params[i].u32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_USE_TSCHED) {
-                pa_strbuf_printf(args_buf, "tsched=\"%d\" ", params[i].u32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_TSCHED_BUF_SIZE) {
-                pa_strbuf_printf(args_buf, "tsched_buffer_size=\"%d\" ", params[i].u32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_SUSPEND_TIMEOUT) {
-                pa_strbuf_printf(prop_buf, "module-suspend-on-idle.timeout=%d ", params[i].u32_v);
-            } else if (params[i].param == AUDIO_DEVICE_PARAM_ALTERNATE_RATE) {
-                pa_strbuf_printf(args_buf, "alternate_rate=\"%d\" ", params[i].u32_v);
-            }
-        }
-
-        if (device_info->direction == AUDIO_DIRECTION_IN) {
-            pa_module *module_source = NULL;
-
-            if (!is_param_set[AUDIO_DEVICE_PARAM_FRAGMENT_SIZE]) {
-                pa_strbuf_printf(args_buf, "fragment_size=\"%d\" ", (u->fragment_size) ? u->fragment_size : DEFAULT_FRAGMENT_SIZE);
-            }
-            if ((prop = pa_strbuf_tostring_free(prop_buf))) {
-                pa_strbuf_printf(args_buf, "source_properties=\"%s\" ", prop);
-            }
-
-            args = pa_strbuf_tostring_free(args_buf);
-
-            if (device_info->api == AUDIO_DEVICE_API_ALSA) {
-                module_source = pa_module_load(u->core, "module-alsa-source", args);
-            } else if (device_info->api == AUDIO_DEVICE_API_BLUEZ) {
-                module_source = pa_module_load(u->core, "module-bluez-source", args);
-            }
-
-            if (!module_source) {
-                pa_log_error("load source module failed. api:%d args:%s", device_info->api, args);
-            }
-        } else {
-            pa_module *module_sink = NULL;
-
-            if (!is_param_set[AUDIO_DEVICE_PARAM_TSCHED_BUF_SIZE]) {
-                pa_strbuf_printf(args_buf, "tsched_buffer_size=\"%d\" ", (u->tsched_buffer_size) ? u->tsched_buffer_size : DEFAULT_TSCHED_BUFFER_SIZE);
-            }
-            if ((prop = pa_strbuf_tostring_free(prop_buf))) {
-                pa_strbuf_printf(args_buf, "sink_properties=\"%s\" ", prop);
-            }
-
-            args = pa_strbuf_tostring_free(args_buf);
-
-            if (device_info->api == AUDIO_DEVICE_API_ALSA) {
-                module_sink = pa_module_load(u->core, "module-alsa-sink", args);
-            } else if (device_info->api == AUDIO_DEVICE_API_BLUEZ) {
-                module_sink = pa_module_load(u->core, "module-bluez-sink", args);
-            }
-
-            if (!module_sink) {
-                pa_log_error("load sink module failed. api:%d args:%s", device_info->api, args);
-            }
-        }
-    }
-
-    if (hal_event_type == PA_HAL_EVENT_LOAD_DEVICE) {
-        goto exit;
-    }
-
-    if (device_info->direction == AUDIO_DIRECTION_IN) {
-        /* set default source */
-        pa_source *source_default = pa_namereg_get_default_source(u->core);
-        pa_source *source_null = (pa_source *)pa_namereg_get(u->core, "null", PA_NAMEREG_SOURCE);
-
-        if (source_default == source_null || device_info->is_default_device) {
-            if ((source = pa_namereg_get(u->core, name, PA_NAMEREG_SOURCE))) {
-                pa_source_output *so;
-
-                if (source != source_default) {
-                    pa_namereg_set_default_source(u->core, source);
-                    pa_log_info("set %s as default source", name);
-                }
-
-                PA_IDXSET_FOREACH(so, u->core->source_outputs, idx) {
-                    if (!so->source)
-                        continue;
-                    /* Get role (if role is filter, skip it) */
-                    if (policy_is_filter(so->proplist))
-                        continue;
-
-                    pa_source_output_move_to(so, source, false);
-
-                    /* UnCork if corked by manually */
-                    if ((is_manual_corked_str = pa_proplist_gets(so->proplist, PROP_POLICY_CORK))) {
-                        pa_atou(is_manual_corked_str, &is_manual_corked);
-                        if (is_manual_corked) {
-                            pa_proplist_sets(so->proplist, PROP_POLICY_CORK, "0");
-                            pa_source_output_cork(so, false);
-                            pa_log_info("<UnCork> for source-input[%d]:source[%s]", so->index, so->source->name);
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        /* set default sink */
-        pa_sink *sink_default = pa_namereg_get_default_sink(u->core);
-        pa_sink *sink_null = (pa_sink *)pa_namereg_get(u->core, "null", PA_NAMEREG_SINK);
-
-        if ((sink_default == sink_null || device_info->is_default_device)
-            && !(device_info->api == AUDIO_DEVICE_API_ALSA && u->active_device_out == AUDIO_DEVICE_OUT_BT_A2DP)) {
-            if ((sink = pa_namereg_get(u->core, name, PA_NAMEREG_SINK))) {
-                pa_sink_input *si;
-
-                if (sink != sink_default) {
-                    pa_namereg_set_default_sink(u->core, sink);
-                    pa_log_info("set %s as default sink", name);
-                }
-
-                PA_IDXSET_FOREACH(si, u->core->sink_inputs, idx) {
-                    if (!si->sink)
-                        continue;
-
-                    /* Get role (if role is filter, skip it) */
-                    if (policy_is_filter(si->proplist))
-                        continue;
-
-                    pa_sink_input_move_to(si, sink, false);
-
-                    /* UnCork if corked by manually */
-                    if ((is_manual_corked_str = pa_proplist_gets(si->proplist, PROP_POLICY_CORK))) {
-                        pa_atou(is_manual_corked_str, &is_manual_corked);
-                        if (is_manual_corked) {
-                            pa_proplist_sets(si->proplist, PROP_POLICY_CORK, "0");
-                            pa_sink_input_cork(si, false);
-                            pa_log_info("<UnCork> for sink-input[%d]:sink[%s]", si->index, si->sink->name);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-exit:
-    pa_xfree(name);
-    pa_xfree(args);
-    pa_xfree(prop);
-
-    return AUDIO_RET_OK;
-}
-static audio_return_t __load_n_open_device_callback (void *platform_data, audio_device_info_t *device_info, audio_device_param_info_t *params, pa_hal_event_type_t hal_event_type)
-{
-    struct userdata *u = (struct userdata *)platform_data;
-    struct pa_hal_event *hal_event;
-    struct pa_hal_device_event_data *event_data;
-
-    pa_assert(u);
-    pa_assert(device_info);
-    pa_assert(device_info->direction == AUDIO_DIRECTION_IN || device_info->direction == AUDIO_DIRECTION_OUT);
-    pa_assert(hal_event_type == PA_HAL_EVENT_LOAD_DEVICE || hal_event_type == PA_HAL_EVENT_OPEN_DEVICE);
-
-    if (u->tid != pthread_self()) {
-        /* called from thread */
-        pa_log_debug("%s is called within thread", __get_event_type_string(hal_event_type));
-
-        hal_event = pa_xmalloc(sizeof(struct pa_hal_event));
-        hal_event->userdata = u;
-        hal_event->event_type = hal_event_type;
-        event_data = pa_xmalloc(sizeof(struct pa_hal_device_event_data));
-        memcpy(&event_data->device_info, device_info, sizeof(audio_device_info_t));
-        memcpy(&event_data->params[0], params, sizeof(audio_device_param_info_t) * AUDIO_DEVICE_PARAM_MAX);
-        hal_event->event_data = (void *)event_data;
-
-        hal_event->mutex = pa_mutex_new(true, true);
-        hal_event->cond = pa_cond_new();
-
-        pa_mutex_lock(hal_event->mutex);
-
-        PA_LLIST_INSERT_AFTER(struct pa_hal_event, u->hal_event_queue, u->hal_event_last, hal_event);
-        u->hal_event_last = hal_event;
-
-        u->core->mainloop->defer_enable(u->defer_event, 1);
-
-        pa_cond_wait(hal_event->cond, hal_event->mutex);
-        pa_mutex_unlock(hal_event->mutex);
-
-        pa_log_info("%s is finished within thread", __get_event_type_string(hal_event_type));
-
-        __free_event(hal_event);
-    } else {
-        /* called from mainloop */
-        pa_log_debug("%s is called within mainloop", __get_event_type_string(hal_event_type));
-        __load_n_open_device(u, device_info, params, hal_event_type);
-        pa_log_info("%s is finished within mainloop", __get_event_type_string(hal_event_type));
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static audio_return_t __load_device_callback (void *platform_data, audio_device_info_t *device_info, audio_device_param_info_t *params)
-{
-    return __load_n_open_device_callback(platform_data, device_info, params, PA_HAL_EVENT_LOAD_DEVICE);
-}
-
-static audio_return_t __open_device_callback (void *platform_data, audio_device_info_t *device_info, audio_device_param_info_t *params)
-{
-    return __load_n_open_device_callback(platform_data, device_info, params, PA_HAL_EVENT_OPEN_DEVICE);
-}
-
-
-static audio_return_t __close_all_devices (struct userdata *u)
-{
-    pa_source *source_null, *source;
-    pa_source_output *so;
-    pa_sink *sink_null, *sink;
-    pa_sink_input *si;
-    uint32_t idx;
-
-    pa_assert(u);
-
-    /* set default sink/src as null */
-    source_null = (pa_source *)pa_namereg_get(u->core, "null", PA_NAMEREG_SOURCE);
-    pa_namereg_set_default_source(u->core, source_null);
-    sink_null = (pa_sink *)pa_namereg_get(u->core, "null", PA_NAMEREG_SINK);
-    pa_namereg_set_default_sink(u->core, sink_null);
-
-    /* close input devices */
-    PA_IDXSET_FOREACH(so, u->core->source_outputs, idx) {
-        if (!so->source)
-            continue;
-#if 0
-        /* Get role (if role is filter, skip it) */
-        if (policy_is_filter(so->proplist))
-            continue;
-#endif
-        /* Cork only if source-output was Running */
-        if (pa_source_output_get_state(so) == PA_SOURCE_OUTPUT_RUNNING) {
-            pa_proplist_sets(so->proplist, PROP_POLICY_CORK, "1");
-            pa_source_output_cork(so, true);
-            pa_log_info("<Cork> for source-output[%d]:source[%s]", so->index, so->source->name);
-        }
-        if (source_null)
-            pa_source_output_move_to(so, source_null, false);
-    }
-    PA_IDXSET_FOREACH(source, u->core->sources, idx) {
-        pa_source_suspend(source, true, PA_SUSPEND_INTERNAL);
-    }
-
-    /* close output devices */
-    PA_IDXSET_FOREACH(si, u->core->sink_inputs, idx) {
-        if (!si->sink)
-            continue;
-        /* Get role (if role is filter, skip it) */
-        if (policy_is_filter(si))
-            continue;
-        /* Cork only if sink-input was Running */
-        if (pa_sink_input_get_state(si) == PA_SINK_INPUT_RUNNING) {
-            pa_proplist_sets(si->proplist, PROP_POLICY_CORK, "1");
-            pa_sink_input_cork(si, true);
-            pa_log_info("<Cork> for sink-input[%d]:sink[%s]", si->index, si->sink->name);
-        }
-        if (sink_null)
-            pa_sink_input_move_to(si, sink_null, false);
-    }
-    PA_IDXSET_FOREACH(sink, u->core->sinks, idx) {
-        pa_sink_suspend(sink, true, PA_SUSPEND_INTERNAL);
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static audio_return_t __close_all_devices_callback (void *platform_data)
-{
-    struct userdata *u = (struct userdata *)platform_data;
-    struct pa_hal_event *hal_event;
-
-    pa_assert(u);
-
-    if (u->tid != pthread_self()) {
-        /* called from thread */
-        pa_log_debug("%s is called within thread", __get_event_type_string(PA_HAL_EVENT_CLOSE_ALL_DEVICES));
-
-        hal_event = pa_xmalloc(sizeof(struct pa_hal_event));
-        hal_event->userdata = u;
-        hal_event->event_type = PA_HAL_EVENT_CLOSE_ALL_DEVICES;
-        hal_event->event_data = NULL;
-
-        hal_event->mutex = pa_mutex_new(true, true);
-        hal_event->cond = pa_cond_new();
-
-        pa_mutex_lock(hal_event->mutex);
-
-        PA_LLIST_INSERT_AFTER(struct pa_hal_event, u->hal_event_queue, u->hal_event_last, hal_event);
-        u->hal_event_last = hal_event;
-
-        u->core->mainloop->defer_enable(u->defer_event, 1);
-
-        pa_cond_wait(hal_event->cond, hal_event->mutex);
-        pa_mutex_unlock(hal_event->mutex);
-
-        pa_log_info("%s is finished within thread", __get_event_type_string(PA_HAL_EVENT_CLOSE_ALL_DEVICES));
-
-        __free_event(hal_event);
-    } else {
-        /* called from mainloop */
-        pa_log_debug("%s is called within mainloop", __get_event_type_string(PA_HAL_EVENT_CLOSE_ALL_DEVICES));
-        __close_all_devices(u);
-        pa_log_info("%s is finished within mainloop", __get_event_type_string(PA_HAL_EVENT_CLOSE_ALL_DEVICES));
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static audio_return_t __close_n_unload_device (struct userdata *u, audio_device_info_t *device_info, pa_hal_event_type_t hal_event_type)
-{
-    audio_info_t audio_info;
-    bool is_module_loaded = false;
-    pa_source *source_null, *source;
-    pa_source_output *so;
-    pa_sink *sink_null, *sink;
-    pa_sink_input *si;
-    uint32_t idx;
-
-    pa_assert(u);
-    pa_assert(device_info);
-    pa_assert(device_info->direction == AUDIO_DIRECTION_IN || device_info->direction == AUDIO_DIRECTION_OUT);
-
-     if (device_info->direction == AUDIO_DIRECTION_IN) {
-        PA_IDXSET_FOREACH(source, u->core->sources, idx) {
-            if (!AUDIO_IS_ERROR(__fill_audio_capture_device_info(source->proplist, &audio_info))) {
-                if (__compare_device_info(&audio_info.device, device_info)) {
-                    is_module_loaded = true;
-                    __free_audio_device_info(&audio_info);
-                    break;
-                }
-            }
-            __free_audio_device_info(&audio_info);
-        }
-
-        if (is_module_loaded) {
-            source_null = (pa_source *)pa_namereg_get(u->core, "null", PA_NAMEREG_SOURCE);
-            if (pa_namereg_get_default_source(u->core) == source) {
-                pa_namereg_set_default_source(u->core, source_null);
-            }
-
-            PA_IDXSET_FOREACH(so, u->core->source_outputs, idx) {
-                if (__get_real_master_source(so) != source)
-                    continue;
-                /* Get role (if role is filter, skip it) */
-#if 0
-                if (policy_is_filter(so->proplist))
-                    continue;
-#endif
-                /* Cork only if source-output was Running */
-                if (pa_source_output_get_state(so) == PA_SOURCE_OUTPUT_RUNNING) {
-                    pa_proplist_sets(so->proplist, PROP_POLICY_CORK, "1");
-                    pa_source_output_cork(so, true);
-                    pa_log_info("<Cork> for source-output[%d]:source[%s]", so->index, so->source->name);
-                }
-                if (source_null)
-                    pa_source_output_move_to(so, source_null, false);
-            }
-            pa_source_suspend(source, true, PA_SUSPEND_INTERNAL);
-
-            if (hal_event_type == PA_HAL_EVENT_UNLOAD_DEVICE) {
-                pa_module_unload(u->core, source->module, true);
-            }
-        }
-    } else {
-        PA_IDXSET_FOREACH(sink, u->core->sinks, idx) {
-            if (!AUDIO_IS_ERROR(__fill_audio_playback_device_info(sink->proplist, &audio_info))) {
-                if (__compare_device_info(&audio_info.device, device_info)) {
-                    is_module_loaded = true;
-                    __free_audio_device_info(&audio_info);
-                    break;
-                }
-            }
-            __free_audio_device_info(&audio_info);
-        }
-
-        if (is_module_loaded) {
-            sink_null = (pa_sink *)pa_namereg_get(u->core, "null", PA_NAMEREG_SINK);
-            if (pa_namereg_get_default_sink(u->core) == sink) {
-                pa_namereg_set_default_sink(u->core, sink_null);
-            }
-
-            PA_IDXSET_FOREACH(si, u->core->sink_inputs, idx) {
-                if (__get_real_master_sink(si) != sink)
-                    continue;
-                /* Get role (if role is filter, skip it) */
-                if (policy_is_filter(si))
-                    continue;
-                /* Cork only if sink-input was Running */
-                if (pa_sink_input_get_state(si) == PA_SINK_INPUT_RUNNING) {
-                    pa_proplist_sets(si->proplist, PROP_POLICY_CORK, "1");
-                    pa_sink_input_cork(si, true);
-                    pa_log_info("<Cork> for sink-input[%d]:sink[%s]", si->index, si->sink->name);
-                }
-                if (sink_null)
-                    pa_sink_input_move_to(si, sink_null, false);
-            }
-            pa_sink_suspend(sink, true, PA_SUSPEND_INTERNAL);
-
-            if (hal_event_type == PA_HAL_EVENT_UNLOAD_DEVICE) {
-                pa_module_unload(u->core, sink->module, true);
-            }
-        }
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static audio_return_t __close_n_unload_device_callback (void *platform_data, audio_device_info_t *device_info, pa_hal_event_type_t hal_event_type)
-{
-    struct userdata *u = (struct userdata *)platform_data;
-    struct pa_hal_event *hal_event;
-    struct pa_hal_device_event_data *event_data;
-
-    pa_assert(u);
-    pa_assert(device_info);
-    pa_assert(device_info->direction == AUDIO_DIRECTION_IN || device_info->direction == AUDIO_DIRECTION_OUT);
-    pa_assert(hal_event_type == PA_HAL_EVENT_CLOSE_DEVICE || hal_event_type == PA_HAL_EVENT_UNLOAD_DEVICE);
-
-    if (u->tid != pthread_self()) {
-        /* called from thread */
-        pa_log_debug("%s is called within thread", __get_event_type_string(hal_event_type));
-
-        hal_event = pa_xmalloc(sizeof(struct pa_hal_event));
-        hal_event->userdata = u;
-        hal_event->event_type = hal_event_type;
-        event_data = pa_xmalloc(sizeof(struct pa_hal_device_event_data));
-        memcpy(&event_data->device_info, device_info, sizeof(audio_device_info_t));
-        hal_event->event_data = (void *)event_data;
-
-        hal_event->mutex = pa_mutex_new(true, true);
-        hal_event->cond = pa_cond_new();
-
-        pa_mutex_lock(hal_event->mutex);
-
-        PA_LLIST_INSERT_AFTER(struct pa_hal_event, u->hal_event_queue, u->hal_event_last, hal_event);
-        u->hal_event_last = hal_event;
-
-        u->core->mainloop->defer_enable(u->defer_event, 1);
-
-        pa_cond_wait(hal_event->cond, hal_event->mutex);
-        pa_mutex_unlock(hal_event->mutex);
-
-        pa_log_info("%s is finished within thread", __get_event_type_string(hal_event_type));
-
-        __free_event(hal_event);
-    } else {
-        /* called from mainloop */
-        pa_log_debug("%s is called within mainloop", __get_event_type_string(hal_event_type));
-        __close_n_unload_device(u, device_info, hal_event_type);
-        pa_log_info("%s is finished within mainloop", __get_event_type_string(hal_event_type));
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static audio_return_t __close_device_callback (void *platform_data, audio_device_info_t *device_info)
-{
-    return __close_n_unload_device_callback(platform_data, device_info, PA_HAL_EVENT_CLOSE_DEVICE);
-}
-
-static audio_return_t __unload_device_callback (void *platform_data, audio_device_info_t *device_info)
-{
-    return __close_n_unload_device_callback(platform_data, device_info, PA_HAL_EVENT_UNLOAD_DEVICE);
-}
-
 static uint32_t __get_route_flag(struct userdata *u) {
     uint32_t route_flag = 0;
 
@@ -1859,94 +1089,16 @@ static uint32_t __get_route_flag(struct userdata *u) {
     return route_flag;
 }
 
-/* It will be moved to module-sound-player */
-static audio_return_t policy_play_sample(struct userdata *u, pa_native_connection *c, const char *name, uint32_t volume_type, uint32_t gain_type, uint32_t volume_level, uint32_t *stream_idx)
-{
-    audio_return_t audio_ret = AUDIO_RET_OK;
-    pa_proplist *p;
-    pa_sink *sink = NULL;
-    audio_info_t audio_info;
-    double volume_linear = 1.0f;
-    pa_client *client = pa_native_connection_get_client(c);
-    pa_bool_t is_boot_sound;
-    uint32_t sample_idx = 0;
-    char* booting = NULL;
-    const char* file_to_add = NULL;
-    int sample_ret = 0;
-    const char *volume_str = NULL;
-
-    memset(&audio_info, 0x00, sizeof(audio_info_t));
-
-    p = pa_proplist_new();
-
-    /* Set volume type of stream */
-    pa_proplist_setf(p, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE, "%d", volume_type);
-    /* Set gain type of stream */
-    pa_proplist_setf(p, PA_PROP_MEDIA_TIZEN_GAIN_TYPE, "%d", gain_type);
-    /* Set policy */
-    pa_proplist_setf(p, PA_PROP_MEDIA_POLICY, "%s", volume_type == AUDIO_VOLUME_TYPE_FIXED ? POLICY_PHONE : POLICY_AUTO);
-
-    pa_proplist_update(p, PA_UPDATE_MERGE, client->proplist);
-
-    /* Set policy for selecting sink */
-    pa_proplist_sets(p, PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK, "yes");
-    sink = pa_namereg_get_default_sink(u->core);
-
-    /* FIXME : Add gain_type parameter to API like volume_type */
-    audio_info.stream.gain_type = gain_type;
-    __convert_volume_type_to_string(volume_type, &volume_str);
-    if (pa_hal_manager_get_volume_value(u->hal_manager, &audio_info, volume_str, STREAM_SINK_INPUT, volume_level, &volume_linear))
-        goto exit;
-
-    pa_log_debug("play_sample volume_type:%d gain_type:%d volume_linear:%f", volume_type, gain_type, volume_linear);
-
-    is_boot_sound = pa_streq(name, BOOTING_SOUND_SAMPLE);
-    if (is_boot_sound && pa_namereg_get(u->core, name, PA_NAMEREG_SAMPLE) == NULL) {
-        booting = vconf_get_str(VCONF_BOOTING);
-        file_to_add = (booting)? booting : (char *)DEFAULT_BOOTING_SOUND_PATH;
-        if ((sample_ret = pa_scache_add_file(u->core, name, file_to_add, &sample_idx)) != 0) {
-            pa_log_error("failed to add sample [%s][%s]", name, file_to_add);
-        } else {
-            pa_log_info("success to add sample [%s][%s]", name, file_to_add);
-        }
-        if (booting)
-            free(booting);
-    }
-
-    if (pa_scache_play_item(u->core, name, sink, pa_sw_volume_from_linear(volume_linear), p, stream_idx) < 0) {
-        pa_log_error("pa_scache_play_item fail");
-        audio_ret = AUDIO_ERR_UNDEFINED;
-        goto exit;
-    }
-
-    if (is_boot_sound && sample_ret == 0) {
-        if (pa_scache_remove_item(u->core, name) != 0) {
-            pa_log_error("failed to remove sample [%s]", name);
-        } else {
-            pa_log_info("success to remove sample [%s]", name);
-        }
-    }
-
-exit:
-    pa_proplist_free(p);
-
-    return audio_ret;
-}
-
-/* It will be removed soon */
-static audio_return_t policy_reset(struct userdata *u)
+/* It will be removed soon. This operation will be moved to stream-manager using dbus */
+/* This is for the volume tunning app. for product. It needs to reset volume table of stream-manager itself as well as HAL's */
+static audio_return_t policy_volume_reset(struct userdata *u)
 {
     audio_return_t audio_ret = AUDIO_RET_OK;
 
     pa_log_debug("reset");
     __load_dump_config(u);
 
-    if (u->hal_manager->intf.reset) {
-        if (AUDIO_IS_ERROR((audio_ret = u->hal_manager->intf.reset(&u->hal_manager->data)))) {
-            pa_log_error("hal_manager reset failed");
-            return audio_ret;
-        }
-    }
+    audio_ret = pa_hal_manager_reset_volume(u->hal_manager);
 
     return audio_ret;
 }
@@ -2214,125 +1366,130 @@ static pa_bool_t policy_is_available_high_latency(struct userdata *u)
 #define EXT_VERSION 1
 
 static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connection *c, uint32_t tag, pa_tagstruct *t) {
-  struct userdata *u = NULL;
-  uint32_t command;
-  pa_tagstruct *reply = NULL;
+    struct userdata *u = NULL;
+    uint32_t command;
+    pa_tagstruct *reply = NULL;
 
-  pa_sink_input *si = NULL;
-  pa_sink *s = NULL;
-  uint32_t idx;
-  pa_sink* sink_to_move  = NULL;
+    pa_sink_input *si = NULL;
+    pa_sink *s = NULL;
+    uint32_t idx;
 
-  pa_assert(p);
-  pa_assert(m);
-  pa_assert(c);
-  pa_assert(t);
+    pa_assert(p);
+    pa_assert(m);
+    pa_assert(c);
+    pa_assert(t);
 
-  u = m->userdata;
+    u = m->userdata;
 
-  if (pa_tagstruct_getu32(t, &command) < 0)
-    goto fail;
-
-  reply = pa_tagstruct_new(NULL, 0);
-  pa_tagstruct_putu32(reply, PA_COMMAND_REPLY);
-  pa_tagstruct_putu32(reply, tag);
-
-  switch (command) {
-    case SUBCOMMAND_TEST: {
-        if (!pa_tagstruct_eof(t))
-            goto fail;
-
-        pa_tagstruct_putu32(reply, EXT_VERSION);
-        break;
-    }
-    /* it will be removed soon */
-    case SUBCOMMAND_GET_VOLUME_LEVEL_MAX: {
-        uint32_t volume_type = 0;
-        uint32_t volume_level = 0;
-        const char *volume_str = NULL;
-
-        pa_tagstruct_getu32(t, &volume_type);
-
-        __convert_volume_type_to_string(volume_type, &volume_str);
-        pa_stream_manager_volume_get_max_level(u->stream_manager, STREAM_SINK_INPUT, volume_str, &volume_level);
-
-        pa_tagstruct_putu32(reply, volume_level);
-        break;
-    }
-    /* it will be removed soon */
-    case SUBCOMMAND_GET_VOLUME_LEVEL: {
-        uint32_t stream_idx = PA_INVALID_INDEX;
-        uint32_t volume_type = 0;
-        uint32_t volume_level = 0;
-        const char *volume_str = NULL;
-
-        pa_tagstruct_getu32(t, &stream_idx);
-        pa_tagstruct_getu32(t, &volume_type);
-
-        __convert_volume_type_to_string(volume_type, &volume_str);
-        pa_stream_manager_volume_get_level(u->stream_manager, STREAM_SINK_INPUT, volume_str, &volume_level);
-
-        pa_tagstruct_putu32(reply, volume_level);
-        break;
-    }
-    /* it will be removed soon */
-    case SUBCOMMAND_SET_VOLUME_LEVEL: {
-        uint32_t stream_idx = PA_INVALID_INDEX;
-        uint32_t volume_type = 0;
-        uint32_t volume_level = 0;
-        const char *volume_str = NULL;
-
-        pa_tagstruct_getu32(t, &stream_idx);
-        pa_tagstruct_getu32(t, &volume_type);
-        pa_tagstruct_getu32(t, &volume_level);
-
-        __convert_volume_type_to_string(volume_type, &volume_str);
-        pa_stream_manager_volume_set_level(u->stream_manager, STREAM_SINK_INPUT, volume_str, volume_level);
-
-        break;
-    }
-    /* it will be removed soon */
-    case SUBCOMMAND_SET_MUTE: {
-        uint32_t stream_idx = PA_INVALID_INDEX;
-        uint32_t volume_type = 0;
-        uint32_t direction = 0;
-        uint32_t mute = 0;
-        const char *volume_str = NULL;
-
-        pa_tagstruct_getu32(t, &stream_idx);
-        pa_tagstruct_getu32(t, &volume_type);
-        pa_tagstruct_getu32(t, &direction);
-        pa_tagstruct_getu32(t, &mute);
-
-        __convert_volume_type_to_string(volume_type, &volume_str);
-        pa_stream_manager_volume_set_mute(u, STREAM_SINK_INPUT, volume_str, mute);
-        break;
-    }
-    case SUBCOMMAND_IS_AVAILABLE_HIGH_LATENCY: {
-        pa_bool_t available = false;
-
-        available = policy_is_available_high_latency(u);
-
-        pa_tagstruct_putu32(reply, (uint32_t)available);
-        break;
-    }
-    case SUBCOMMAND_UNLOAD_HDMI: {
-        break;
-    }
-
-    default:
+    if (pa_tagstruct_getu32(t, &command) < 0)
         goto fail;
-  }
 
-  pa_pstream_send_tagstruct(pa_native_connection_get_pstream(c), reply);
-  return 0;
+    reply = pa_tagstruct_new(NULL, 0);
+    pa_tagstruct_putu32(reply, PA_COMMAND_REPLY);
+    pa_tagstruct_putu32(reply, tag);
 
-  fail:
+    switch (command) {
+        case SUBCOMMAND_TEST: {
+            if (!pa_tagstruct_eof(t))
+                goto fail;
 
-  if (reply)
-      pa_tagstruct_free(reply);
+            pa_tagstruct_putu32(reply, EXT_VERSION);
+            break;
+        }
+        /* it will be removed soon */
+        case SUBCOMMAND_GET_VOLUME_LEVEL: {
+            uint32_t stream_idx = PA_INVALID_INDEX;
+            uint32_t volume_type = 0;
+            uint32_t volume_level = 0;
+            const char *volume_str = NULL;
 
-  return -1;
+            pa_tagstruct_getu32(t, &stream_idx);
+            pa_tagstruct_getu32(t, &volume_type);
+
+            __convert_volume_type_to_string(volume_type, &volume_str);
+            pa_stream_manager_volume_get_level(u->stream_manager, STREAM_SINK_INPUT, volume_str, &volume_level);
+
+            pa_tagstruct_putu32(reply, volume_level);
+            break;
+        }
+        /* it will be removed soon */
+        case SUBCOMMAND_SET_VOLUME_LEVEL: {
+            uint32_t stream_idx = PA_INVALID_INDEX;
+            uint32_t volume_type = 0;
+            uint32_t volume_level = 0;
+            const char *volume_str = NULL;
+
+            pa_tagstruct_getu32(t, &stream_idx);
+            pa_tagstruct_getu32(t, &volume_type);
+            pa_tagstruct_getu32(t, &volume_level);
+
+            __convert_volume_type_to_string(volume_type, &volume_str);
+            pa_stream_manager_volume_set_level(u->stream_manager, STREAM_SINK_INPUT, volume_str, volume_level);
+            break;
+        }
+        /* it will be removed soon */
+        case SUBCOMMAND_GET_MUTE: {
+            uint32_t stream_idx = PA_INVALID_INDEX;
+            uint32_t volume_type = 0;
+            uint32_t direction = 0;
+            uint32_t mute = 0;
+            const char *volume_str = NULL;
+
+            pa_tagstruct_getu32(t, &stream_idx);
+            pa_tagstruct_getu32(t, &volume_type);
+            pa_tagstruct_getu32(t, &direction);
+
+            __convert_volume_type_to_string(volume_type, &volume_str);
+            pa_stream_manager_volume_get_mute(u->stream_manager, STREAM_SINK_INPUT, volume_str, &mute);
+
+            pa_tagstruct_putu32(reply, mute);
+            break;
+        }
+        /* it will be removed soon */
+        case SUBCOMMAND_SET_MUTE: {
+            uint32_t stream_idx = PA_INVALID_INDEX;
+            uint32_t volume_type = 0;
+            uint32_t direction = 0;
+            uint32_t mute = 0;
+            const char *volume_str = NULL;
+
+            pa_tagstruct_getu32(t, &stream_idx);
+            pa_tagstruct_getu32(t, &volume_type);
+            pa_tagstruct_getu32(t, &direction);
+            pa_tagstruct_getu32(t, &mute);
+
+            __convert_volume_type_to_string(volume_type, &volume_str);
+            if (stream_idx == -1)
+                pa_stream_manager_volume_set_mute(u->stream_manager, STREAM_SINK_INPUT, volume_str, mute);
+            else
+                pa_stream_manager_volume_set_mute_by_idx(u->stream_manager, STREAM_SINK_INPUT, stream_idx, mute);
+            break;
+        }
+        case SUBCOMMAND_IS_AVAILABLE_HIGH_LATENCY: {
+            pa_bool_t available = FALSE;
+
+            available = policy_is_available_high_latency(u);
+
+            pa_tagstruct_putu32(reply, (uint32_t)available);
+            break;
+        }
+        case SUBCOMMAND_UNLOAD_HDMI: {
+            break;
+        }
+
+        default:
+            goto fail;
+    }
+
+    pa_pstream_send_tagstruct(pa_native_connection_get_pstream(c), reply);
+    return 0;
+
+    fail:
+
+    if (reply)
+        pa_tagstruct_free(reply);
+
+    return -1;
 }
 
 static void __set_sink_input_role_type(pa_proplist *p, int gain_type)
@@ -2358,12 +1515,12 @@ static void __set_sink_input_role_type(pa_proplist *p, int gain_type)
 
     return;
 }
-
+#ifndef DEVICE_MANAGER
 /*  Called when new sink-input is creating  */
 static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_new_data *new_data, struct userdata *u)
 {
     audio_return_t audio_ret = AUDIO_RET_OK;
-    audio_info_t audio_info;
+    //audio_info_t audio_info;
     const char *policy = NULL;
     const char *ignore_preset_sink = NULL;
     const char *master_name = NULL;
@@ -2407,56 +1564,19 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
 #endif
     } else {
 
-    /* Set proper sink to sink-input */
-    pa_sink* new_sink = policy_select_proper_sink(u, policy, NULL, u->is_mono);
-    if(new_sink != new_data->sink)
-        pa_sink_input_new_data_set_sink(new_data, new_sink, false);
+        /* Set proper sink to sink-input */
+        new_data->save_sink = FALSE;
+            new_data->sink = policy_select_proper_sink (u, policy, NULL, TRUE);
+
+        if (new_data->sink == NULL) {
+            pa_log_error("new_data->sink is null");
+        }
     }
 #endif
-    s = pa_strbuf_new();
-    master_name = pa_proplist_gets(new_data->sink->proplist, PA_PROP_DEVICE_MASTER_DEVICE);
-    if (master_name)
-        realsink = pa_namereg_get(c, master_name, PA_NAMEREG_SINK);
-
-    if (AUDIO_IS_ERROR((audio_ret = __fill_audio_playback_stream_info(new_data->proplist, &new_data->sample_spec, &audio_info)))) {
-        pa_log_debug("__fill_audio_playback_stream_info returns 0x%x", audio_ret);
-    } else if (AUDIO_IS_ERROR((audio_ret = __fill_audio_playback_device_info(realsink? realsink->proplist : new_data->sink->proplist, &audio_info)))) {
-        pa_log_debug("__fill_audio_playback_device_info returns 0x%x", audio_ret);
-    } else {
-        double volume_linear = 1.0f;
-
-        // set role type
-        __set_sink_input_role_type(new_data->proplist, audio_info.stream.gain_type);
-        pa_hal_manager_get_volume_level(u->hal_manager, audio_info.stream.volume_type, STREAM_SINK_INPUT, &volume_level);
-
-        pa_strbuf_printf(s, "[%s] policy[%s] ch[%d] rate[%d] volume&gain[%d,%d] level[%d]",
-                audio_info.stream.name, policy, audio_info.stream.channels, audio_info.stream.samplerate,
-                audio_info.stream.volume_type, audio_info.stream.gain_type, volume_level);
-
-        if (audio_info.device.api == AUDIO_DEVICE_API_ALSA) {
-            pa_strbuf_printf(s, " device:ALSA[%d,%d]", audio_info.device.alsa.card_idx, audio_info.device.alsa.device_idx);
-        } else if (audio_info.device.api == AUDIO_DEVICE_API_BLUEZ) {
-            pa_strbuf_printf(s, " device:BLUEZ[%s] nrec[%d]", audio_info.device.bluez.protocol, audio_info.device.bluez.nrec);
-        }
-        pa_strbuf_printf(s, " sink[%s]", (new_data->sink)? new_data->sink->name : "null");
-
-        if(u->muteall && audio_info.stream.volume_type != AUDIO_VOLUME_TYPE_FIXED) {
-            pa_sink_input_new_data_set_muted(new_data, true); // pa_simpe api use muted stream always. for play_sample_xxx apis
-        }
-        __free_audio_info(&audio_info);
-    }
-
-exit:
-    if (s) {
-        s_info = pa_strbuf_tostring_free(s);
-        pa_log_info("new %s", s_info);
-        pa_xfree(s_info);
-    }
 
     return PA_HOOK_OK;
 }
 
-#ifndef DEVICE_MANAGER
 /*  Called when new sink is added while sink-input is existing  */
 static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, struct userdata *u)
 {
@@ -2565,58 +1685,6 @@ static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, struct
     return PA_HOOK_OK;
 }
 #endif
-
-static void defer_event_cb (pa_mainloop_api *m, pa_defer_event *e, void *userdata)
-{
-    struct userdata *u = userdata;
-
-    pa_assert(m);
-    pa_assert(e);
-    pa_assert(u);
-
-    m->defer_enable(u->defer_event, 0);
-
-    /* Dispatch queued events */
-
-    while (u->hal_event_queue) {
-        struct pa_hal_event *hal_event = u->hal_event_queue;
-
-        if ((hal_event->event_type == PA_HAL_EVENT_LOAD_DEVICE) || (hal_event->event_type == PA_HAL_EVENT_OPEN_DEVICE)) {
-            struct pa_hal_device_event_data *event_data = (struct pa_hal_device_event_data *)hal_event->event_data;
-
-            pa_log_info("dispatch %s event", __get_event_type_string(hal_event->event_type));
-
-            __load_n_open_device(hal_event->userdata, &event_data->device_info, &event_data->params[0], hal_event->event_type);
-
-            pa_log_debug("completed %s event", __get_event_type_string(hal_event->event_type));
-        } else if (hal_event->event_type == PA_HAL_EVENT_CLOSE_ALL_DEVICES) {
-            pa_log_info("dispatch %s event", __get_event_type_string(PA_HAL_EVENT_CLOSE_ALL_DEVICES));
-
-            __close_all_devices(hal_event->userdata);
-
-            pa_log_debug("completed %s event", __get_event_type_string(PA_HAL_EVENT_CLOSE_ALL_DEVICES));
-        } else if ((hal_event->event_type == PA_HAL_EVENT_CLOSE_DEVICE) || (hal_event->event_type == PA_HAL_EVENT_UNLOAD_DEVICE)) {
-            struct pa_hal_device_event_data *event_data = (struct pa_hal_device_event_data *)hal_event->event_data;
-
-            pa_log_info("dispatch %s event", __get_event_type_string(hal_event->event_type));
-
-            __close_n_unload_device(hal_event->userdata, &event_data->device_info, hal_event->event_type);
-
-            pa_log_debug("completed %s event", __get_event_type_string(hal_event->event_type));
-        }
-
-        if (!hal_event->next)
-            hal_event->userdata->hal_event_last = hal_event->prev;
-
-        PA_LLIST_REMOVE(struct pa_hal_event, hal_event->userdata->hal_event_queue, hal_event);
-
-        if (hal_event->cond) {
-            pa_mutex_lock(hal_event->mutex);
-            pa_cond_signal(hal_event->cond, 0);
-            pa_mutex_unlock(hal_event->mutex);
-        }
-    }
-}
 
 static void subscribe_cb(pa_core *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata)
 {
@@ -2812,7 +1880,6 @@ static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, voi
 
     return PA_HOOK_OK;
 }
-#endif
 
 static pa_hook_result_t sink_unlink_post_hook_callback(pa_core *c, pa_sink *sink, void* userdata) {
     struct userdata *u = userdata;
@@ -2838,6 +1905,7 @@ static pa_hook_result_t sink_unlink_post_hook_callback(pa_core *c, pa_sink *sink
 
     return PA_HOOK_OK;
 }
+#endif
 
 static pa_hook_result_t sink_input_move_start_cb(pa_core *core, pa_sink_input *i, struct userdata *u) {
     int32_t audio_ret = 0;
@@ -3062,88 +2130,295 @@ static pa_hook_result_t source_output_new_hook_callback(pa_core *c, pa_source_ou
     return PA_HOOK_OK;
 }
 
-/* Set the proper sink(source) according to the data from argument.     */
-/* 1. Get all the activate devices from device manager.                 */
-/* 2. Find and set the matched device.                                  */
-/*   - ROUTE_TYPE_AUTO(_ALL)                                            */
-/*     : Just set an activate device to the proper_sink(source).        */
-/*   - ROUTE_TYPE_MANUAL                                                */
-/*     : If found the matched sink(source), then set it.                */
-/*     : If not, set it to null sink(source).                           */
+/* Set the proper sink(source) according to the data of the parameter.  */
+/* - ROUTE_TYPE_AUTO(_ALL)                                              */
+/*     1. Find the proper sink/source comparing between avail_devices   */
+/*       and current connected devices.                                 */
+/*     2. If not found, set it to null sink/source.                     */
+/* - ROUTE_TYPE_MANUAL                                                  */
+/*     1. Find the proper sink/source comparing between avail_devices   */
+/*        and manual_devices that have been set by user.                */
+/*     2. If not found, set it to null sink/source.                     */
 static pa_hook_result_t select_proper_sink_or_source_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_select *data, struct userdata *u) {
-    pa_log("select_proper_sink_or_source_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
+    pa_log_info("select_proper_sink_or_source_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
             data, data->stream_type, data->stream_role, data->route_type);
+#ifdef DEVICE_MANAGER
     uint32_t idx = 0;
+    uint32_t m_idx = 0;
     void *state = NULL;
+    uint32_t conn_idx = 0;
+    uint32_t *device_id = NULL;
     const char *device_type = NULL;
-    /* devices */
-    if ((data->route_type == STREAM_ROUTE_TYPE_AUTO || data->route_type == STREAM_ROUTE_TYPE_AUTO_ALL) && data->avail_devices) {
-        /* In case of AUTO routing, use idxset for avail devices */
-        PA_IDXSET_FOREACH(device_type, data->avail_devices, idx) {
-            pa_log("-- device[%u] : type(%s)", idx, device_type);
-            /* query by device type */
+    const char *dm_device_type = NULL;
+    const char *dm_device_subtype = NULL;
+    dm_device *device = NULL;
+    dm_device_state_t device_state = DM_DEVICE_STATE_DEACTIVATED;
+    dm_device_direction_t device_direction = DM_DEVICE_DIRECTION_NONE;
+    pa_idxset *conn_devices = NULL;
+
+    if ((data->route_type == STREAM_ROUTE_TYPE_AUTO || data->route_type == STREAM_ROUTE_TYPE_AUTO_ALL) && data->idx_avail_devices) {
+        /* Get current connected devices */
+        conn_devices = pa_device_manager_get_device_list(u->device_manager);
+        PA_IDXSET_FOREACH(device_type, data->idx_avail_devices, idx) {
+            pa_log_debug("-- [AUTO] avail_device[%u] for this role[%s]: type(%s)", idx, data->stream_role, device_type);
+            PA_IDXSET_FOREACH(device, conn_devices, conn_idx) {
+                dm_device_type = pa_device_manager_get_device_type(device);
+                dm_device_subtype = pa_device_manager_get_device_subtype(device);
+                device_direction = pa_device_manager_get_device_direction(device);
+                pa_log_debug("-- [AUTO] conn_devices, type[%s], subtype[%s], direction[%p]", dm_device_type, dm_device_subtype, device_direction);
+                if (pa_streq(device_type, dm_device_type) &&
+                    (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
+                    ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
+                    pa_log_debug("-- [AUTO] found a matched device: type[%s], direction[%p]", device_type, device_direction);
+                    if (data->stream_type == STREAM_SINK_INPUT)
+                        *(data->proper_sink) = pa_device_manager_get_sink(device, DEVICE_ROLE_NORMAL);
+                    else
+                        *(data->proper_source) = pa_device_manager_get_source(device, DEVICE_ROLE_NORMAL);
+                    goto SUCCESS;
+                    }
+                }
         }
-    } else if (data->route_type == STREAM_ROUTE_TYPE_MANUAL && data->manual_devices) {
-        /* In case of MANUAL routing, use hashmap for manual_devices */
-        device *device = NULL;
-        PA_HASHMAP_FOREACH(device, data->manual_devices, state) {
-            pa_log("-- device: type(%s), id(%i)", device->type, device->id);
-            /* query by device id */
+        /* need to add logic for auto-all. (use combine-sink, move sink-input/source-output) */
+
+    } else if (data->route_type == STREAM_ROUTE_TYPE_MANUAL && data->idx_manual_devices && data->idx_avail_devices) {
+        PA_IDXSET_FOREACH(device_type, data->idx_avail_devices, idx) {
+            pa_log_debug("-- [MANUAL] avail_device[%u] for this role[%s]: type(%s)", idx, data->stream_role, device_type);
+            PA_IDXSET_FOREACH(device_id, data->idx_manual_devices, m_idx) {
+                device = pa_device_manager_get_device_by_id(u->device_manager, *device_id);
+                if (device) {
+                    dm_device_type = pa_device_manager_get_device_type(device);
+                    dm_device_subtype = pa_device_manager_get_device_subtype(device);
+                    device_direction = pa_device_manager_get_device_direction(device);
+                    pa_log_debug("-- [MANUAL] manual_devices, type[%s], subtype[%s], direction[%p], device id[%u]",
+                            dm_device_type, dm_device_subtype, device_direction, *device_id);
+                    if (pa_streq(device_type, dm_device_type) &&
+                        (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
+                        ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
+                        pa_log_debug("-- [MANUAL] found a matched device: type[%s], direction[%p]", device_type, device_direction);
+                        if (data->stream_type == STREAM_SINK_INPUT)
+                            *(data->proper_sink) = pa_device_manager_get_sink(device, DEVICE_ROLE_NORMAL);
+                        else
+                            *(data->proper_source) = pa_device_manager_get_source(device, DEVICE_ROLE_NORMAL);
+                        goto SUCCESS;
+                        }
+                }
+            }
         }
     }
+
+    if ((data->stream_type==STREAM_SINK_INPUT)?!(*(data->proper_sink)):!(*(data->proper_source))) {
+        pa_log_warn("could not find a proper sink/source, set it to null sink/source");
+        if (data->stream_type == STREAM_SINK_INPUT)
+            *(data->proper_sink) = (pa_sink*)pa_namereg_get(u->core, "null", PA_NAMEREG_SINK);
+        else
+            *(data->proper_source) = (pa_source*)pa_namereg_get(u->core, "null", PA_NAMEREG_SOURCE);
+    }
+SUCCESS:
+#endif
     return PA_HOOK_OK;
 }
 
-/* Change the route setting according to the data from argument.               */
-/* 1. Get all the connected devices from device manager.                       */
-/* 2. Apply the proper route setting.(Call HAL API to apply routing)           */
-/*   - ROUTE_TYPE_AUTO                                                         */
-/*     : Need to check the priority of the device list by order of precedence. */
-/*   - ROUTE_TYPE_AUTO_ALL                                                     */
-/*     : Set all the connected devices that are in the device list.            */
-/*   - ROUTE_TYPE_MANUAL                                                       */
-/*     : Set all the connected devices that are in the device list.            */
-/*     : If a device in the device list is not connected, return error.        */
+/* Change the route setting according to the data from argument.              */
+/* This function is called only when it needs to change routing path via HAL. */
+/* - role is "reset"                                                          */
+/*     1. It will be received when it is needed to terminate playback         */
+/*       or capture routing path.                                             */
+/*     2. Update the state of the device to be deactivated.                   */
+/*     3. Call HAL API to reset routing.                                      */
+/* - ROUTE_TYPE_AUTO                                                          */
+/*     1. Find the proper sink/source comparing between avail_devices         */
+/*       and current connected devices.                                       */
+/*      : Need to check the priority of the device list by order of receipt.  */
+/*     2. Update the state of devices.                                        */
+/*     3. Call HAL API to apply the routing setting                           */
+/* - ROUTE_TYPE_AUTO_ALL                                                      */
+/*     1. Find the proper sink/source comparing between avail_devices         */
+/*       and current connected devices.                                       */
+/*      : Might use combine-sink according to the conditions.                 */
+/*     2. Update the state of devices.                                        */
+/*     3. Call HAL API to apply the routing setting                           */
+/* - ROUTE_TYPE_MANUAL                                                        */
+/*     1. Find the proper sink/source comparing between avail_devices         */
+/*        and manual_devices that have been set by user.                      */
+/*     2. Update the state of devices.                                        */
+/*     3. Call HAL API to apply the routing setting                           */
 static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_route *data, struct userdata *u) {
-    pa_log("route_change_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
+    pa_log_info("route_change_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
             data, data->stream_type, data->stream_role, data->route_type);
+#ifdef DEVICE_MANAGER
+    int32_t i = 0;
     uint32_t idx = 0;
+    uint32_t m_idx = 0;
     void *state = NULL;
+    uint32_t *stream_idx = NULL;
+    hal_route_info route_info = {NULL, NULL, 0};
+    uint32_t conn_idx = 0;
+    uint32_t *device_id = NULL;
+    uint32_t device_idx = 0;
     const char *device_type = NULL;
-    uint32_t *stream_idx;
+    dm_device *device = NULL;
+    dm_device *_device = NULL;
+    const char *dm_device_type = NULL;
+    const char *dm_device_subtype = NULL;
+    dm_device_state_t device_state = DM_DEVICE_STATE_DEACTIVATED;
+    dm_device_direction_t device_direction = DM_DEVICE_DIRECTION_NONE;
+    void *s = NULL;
+    pa_sink *sink = NULL;
+    pa_source *source = NULL;
+    pa_idxset *conn_devices = NULL;
 
-    /* streams */
-    if (data->streams) {
-        PA_IDXSET_FOREACH(stream_idx, data->streams, idx) {
-            pa_log("-- stream[%u]: idx(%u)", idx, *stream_idx);
-        }
-    }
-    /* devices */
-    if ((data->route_type == STREAM_ROUTE_TYPE_AUTO || data->route_type == STREAM_ROUTE_TYPE_AUTO_ALL) && data->avail_devices) {
-        /* In case of AUTO routing, use idxset for avail devices */
-        state = NULL;
-        PA_IDXSET_FOREACH(device_type, data->avail_devices, idx) {
-            pa_log("-- device[%u]: type(%s)", idx, device_type);
-            /* query by device type */
-        }
-    } else if (data->route_type == STREAM_ROUTE_TYPE_MANUAL && data->manual_devices) {
-        /* In case of MANUAL routing, use hashmap for manual_devices */
-        state = NULL;
-        device *device = NULL;
-        PA_HASHMAP_FOREACH(device, data->manual_devices, state) {
-            pa_log("-- device: type(%s), id(%i)", device->type, device->id);
-            /* query by device id */
-        }
-    }
-
-    audio_route_info_t route_info;
     route_info.role = data->stream_role;
-    if (u->hal_manager->intf.do_route) {
-        if (u->hal_manager->intf.do_route(&u->hal_manager->data, &route_info) != AUDIO_RET_OK) {
-            pa_log_error("do_route() failed");
+
+    /* Streams */
+    if (data->idx_streams) {
+        PA_IDXSET_FOREACH(stream_idx, data->idx_streams, idx) {
+            pa_log_debug("-- stream[%u]: idx(%u)", idx, *stream_idx);
         }
     }
 
+    /* Devices */
+    if (pa_streq(data->stream_role, "reset")) {
+        /* Get current connected devices */
+        conn_devices = pa_device_manager_get_device_list(u->device_manager);
+        /* Set device state to deactivate */
+        PA_IDXSET_FOREACH(device, conn_devices, conn_idx) {
+            dm_device_type = pa_device_manager_get_device_type(device);
+            device_state = pa_device_manager_get_device_state(device);
+            device_direction = pa_device_manager_get_device_direction(device);
+            if (device_state == DM_DEVICE_STATE_ACTIVATED &&
+                (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
+                ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
+                pa_log_debug("-- [RESET] found a matched device and set state to DE-ACTIVATED: type[%s], direction[%p]", dm_device_type, device_direction);
+                /* set device state to deactivated */
+                pa_device_manager_set_device_state(device, DM_DEVICE_STATE_DEACTIVATED);
+              }
+        }
+        route_info.num_of_devices = 1;
+        route_info.device_infos = pa_xmalloc0(sizeof(hal_device_info)*route_info.num_of_devices);
+        route_info.device_infos[0].direction = (data->stream_type==STREAM_SINK_INPUT)?DIRECTION_OUT:DIRECTION_IN;
+
+    } else if ((data->route_type == STREAM_ROUTE_TYPE_AUTO || data->route_type == STREAM_ROUTE_TYPE_AUTO_ALL) && data->idx_avail_devices) {
+        /* Get current connected devices */
+        conn_devices = pa_device_manager_get_device_list(u->device_manager);
+        PA_IDXSET_FOREACH(device_type, data->idx_avail_devices, idx) {
+            pa_log_debug("-- [AUTO] avail_device[%u] for this role[%s]: type[%s]", idx, route_info.role, device_type);
+            PA_IDXSET_FOREACH(device, conn_devices, conn_idx) {
+                dm_device_type = pa_device_manager_get_device_type(device);
+                dm_device_subtype = pa_device_manager_get_device_subtype(device);
+                device_direction = pa_device_manager_get_device_direction(device);
+                device_idx = pa_device_manager_get_device_id(device);
+                pa_log_debug("-- [AUTO] conn_devices, type[%s], subtype[%s], direction[%p], id[%u]",
+                        dm_device_type, dm_device_subtype, device_direction, device_idx);
+                if (pa_streq(device_type, dm_device_type) &&
+                    (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
+                    ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
+                    if (dm_device_subtype && pa_streq(DEVICE_PROFILE_BT_SCO, dm_device_subtype))
+                        continue;
+                    route_info.num_of_devices++;
+                    route_info.device_infos = pa_xrealloc(route_info.device_infos, sizeof(hal_device_info)*route_info.num_of_devices);
+                    route_info.device_infos[route_info.num_of_devices-1].type = dm_device_type;
+                    route_info.device_infos[route_info.num_of_devices-1].direction = (data->stream_type==STREAM_SINK_INPUT)?DIRECTION_OUT:DIRECTION_IN;
+                    route_info.device_infos[route_info.num_of_devices-1].id = device_idx;
+                    pa_log_debug("-- [AUTO] found a matched device and set state to ACTIVATED: type[%s], direction[%p], id[%u]",
+                        route_info.device_infos[route_info.num_of_devices-1].type, device_direction, device_idx);
+                    /* Set device state to activated */
+                    pa_device_manager_set_device_state(device, DM_DEVICE_STATE_ACTIVATED);
+                    break;
+                    }
+                }
+            if (data->route_type == STREAM_ROUTE_TYPE_AUTO && route_info.num_of_devices) {
+                /* Set other device's state to deactivated */
+                PA_IDXSET_FOREACH(_device, conn_devices, conn_idx) {
+                    if (device == _device)
+                        continue;
+                    pa_device_manager_set_device_state(device, DM_DEVICE_STATE_DEACTIVATED);
+                }
+
+                /* Move sink-inputs/source-outputs if needed */
+                if (!data->origins_from_new_data) {
+                    if (data->stream_type == STREAM_SINK_INPUT)
+                        sink = pa_device_manager_get_sink(device, DEVICE_ROLE_NORMAL);
+                    else if (data->stream_type == STREAM_SOURCE_OUTPUT)
+                        source = pa_device_manager_get_source(device, DEVICE_ROLE_NORMAL);
+                    if (data->idx_streams) {
+                        PA_IDXSET_FOREACH (s, data->idx_streams, idx) {
+                            if (sink && sink != (data->origins_from_new_data?((pa_sink_input_new_data*)s)->sink:((pa_sink_input*)s)->sink))
+                                pa_sink_input_move_to(s, sink, FALSE);
+                            else if (source && source != (data->origins_from_new_data?((pa_source_output_new_data*)s)->source:((pa_source_output*)s)->source))
+                                pa_source_output_move_to(s, source, FALSE);
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        if (data->route_type == STREAM_ROUTE_TYPE_AUTO_ALL && route_info.num_of_devices) {
+            /* Set other device's state to deactivated */
+            PA_IDXSET_FOREACH(_device, conn_devices, conn_idx) {
+                pa_bool_t need_to_deactive = TRUE;
+                device_idx = pa_device_manager_get_device_id(_device);
+                for (i = 0; i < route_info.num_of_devices; i++) {
+                    if (device_idx == route_info.device_infos[i].id) {
+                        need_to_deactive = FALSE;
+                        break;
+                    }
+                }
+                if (need_to_deactive)
+                    pa_device_manager_set_device_state(_device, DM_DEVICE_STATE_DEACTIVATED);
+            }
+        }
+
+    } else if (data->route_type == STREAM_ROUTE_TYPE_MANUAL && data->idx_manual_devices && data->idx_avail_devices) {
+        PA_IDXSET_FOREACH(device_type, data->idx_avail_devices, idx) {
+            pa_log_debug("-- [MANUAL] avail_device[%u] for this role[%s]: type(%s)", idx, data->stream_role, device_type);
+            PA_IDXSET_FOREACH(device_id, data->idx_manual_devices, m_idx) {
+                device = pa_device_manager_get_device_by_id(u->device_manager, *device_id);
+                if (device) {
+                    dm_device_type = pa_device_manager_get_device_type(device);
+                    dm_device_subtype = pa_device_manager_get_device_subtype(device);
+                    device_direction = pa_device_manager_get_device_direction(device);
+                    pa_log_debug("-- [MANUAL] manual_devices, type[%s], subtype[%s], direction[%p]", dm_device_type, dm_device_subtype, device_direction);
+                    if (pa_streq(device_type, dm_device_type) &&
+                        (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
+                        ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
+                        pa_log_debug("-- [MANUAL] found a matched device: type[%s], direction[%p]", device_type, device_direction);
+                        route_info.num_of_devices++;
+                        route_info.device_infos = pa_xrealloc(route_info.device_infos, sizeof(hal_device_info)*route_info.num_of_devices);
+                        route_info.device_infos[route_info.num_of_devices-1].type = dm_device_type;
+                        route_info.device_infos[route_info.num_of_devices-1].direction = (data->stream_type==STREAM_SINK_INPUT)?DIRECTION_OUT:DIRECTION_IN;
+                        pa_log_debug("-- [MANUAL] found a matched device and set state to ACTIVATED: type[%s], direction[%p]",
+                            route_info.device_infos[route_info.num_of_devices-1].type, device_direction);
+                        /* Set device state to activated */
+                        pa_device_manager_set_device_state(device, DM_DEVICE_STATE_ACTIVATED);
+                        }
+                }
+            }
+        }
+
+        /* Move sink-inputs/source-outputs if needed */
+        if (!data->origins_from_new_data) {
+            if (data->stream_type == STREAM_SINK_INPUT)
+                sink = pa_device_manager_get_sink(device, DEVICE_ROLE_NORMAL);
+            else if (data->stream_type == STREAM_SOURCE_OUTPUT)
+                source = pa_device_manager_get_source(device, DEVICE_ROLE_NORMAL);
+            if (data->idx_streams) {
+                PA_IDXSET_FOREACH (s, data->idx_streams, idx) {
+                    if (sink && sink != (data->origins_from_new_data?((pa_sink_input_new_data*)s)->sink:((pa_sink_input*)s)->sink))
+                        pa_sink_input_move_to(s, sink, FALSE);
+                    else if (source && source != (data->origins_from_new_data?((pa_source_output_new_data*)s)->source:((pa_source_output*)s)->source))
+                        pa_source_output_move_to(s, source, FALSE);
+                }
+            }
+        }
+    }
+
+    if (route_info.device_infos) {
+        /* Send information to HAL to set routing */
+        if(pa_hal_manager_do_route (u->hal_manager, &route_info))
+            pa_log_error("Failed to pa_hal_manager_do_route()");
+        pa_xfree(route_info.device_infos);
+    }
+#endif
     return PA_HOOK_OK;
 }
 
@@ -3155,38 +2430,25 @@ static pa_hook_result_t route_options_update_hook_cb(pa_core *c, pa_stream_manag
     const char *option_name = NULL;
     int i = 0;
 
-    hal_route_option_t route_option;
+    hal_route_option route_option;
     char **options = NULL;
     route_option.role = data->stream_role;
     route_option.num_of_options = pa_idxset_size(data->route_options);
     if (route_option.num_of_options)
-        route_option.options = pa_xmalloc(sizeof(char*)*route_option.num_of_options);
+        route_option.options = pa_xmalloc0(sizeof(char*)*route_option.num_of_options);
 
     while (data->route_options && (option_name = pa_idxset_iterate(data->route_options, &state, NULL))) {
         pa_log("-- option : %s", option_name);
         route_option.options[i++] = option_name;
     }
 
+    /* Send information to HAL to update routing option */
     if(pa_hal_manager_update_route_option (u->hal_manager, &route_option))
         pa_log_error("Failed to pa_hal_manager_update_route_option()");
     pa_xfree(route_option.options);
 
     return PA_HOOK_OK;
 }
-
-#ifdef DEVICE_MANAGER
-/* Reorganize routing when a device has been connected or disconnected */
-static pa_hook_result_t device_connection_changed_hook_cb(pa_core *c, pa_device_manager_hook_data_for_conn_changed *conn, struct userdata *u) {
-    pa_log_debug("device_connection_changed_hook_cb is called. conn(%p), is_connected(%d), device(%p)", conn, conn->is_connected, conn->device);
-    return PA_HOOK_OK;
-}
-
-/* Reorganize routing when the information(STATE/IO/SUB_TYPE) of a device has been changed */
-static pa_hook_result_t device_information_changed_hook_cb(pa_core *c, pa_device_manager_hook_data_for_info_changed *info, struct userdata *u) {
-    pa_log_debug("device_information_changed_hook_cb is called. info(%p), changed_info(%d), device(%p)", info, info->changed_info, info->device);
-    return PA_HOOK_OK;
-}
-#endif
 
 #ifdef HAVE_DBUS
 static void _do_something1(char* arg1, int arg2, void *data)
@@ -3745,7 +3007,7 @@ int pa__init(pa_module *m)
 
     /* A little bit later than module-stream-restore */
     u->sink_state_changed_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_STATE_CHANGED], PA_HOOK_NORMAL, (pa_hook_cb_t)sink_state_changed_hook_cb, u);
-
+#ifndef DEVICE_MANAGER
     u->sink_input_new_hook_slot =
             pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_NEW], PA_HOOK_EARLY+10, (pa_hook_cb_t) sink_input_new_hook_callback, u);
 
@@ -3754,7 +3016,7 @@ int pa__init(pa_module *m)
 
     u->source_output_new_hook_slot =
             pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_NEW], PA_HOOK_EARLY+10, (pa_hook_cb_t) source_output_new_hook_callback, u);
-
+#endif
 
 #ifndef DEVICE_MANAGER
     if (on_hotplug) {
@@ -3768,11 +3030,10 @@ int pa__init(pa_module *m)
     u->sink_unlink_post_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_UNLINK_POST], PA_HOOK_EARLY, (pa_hook_cb_t) sink_unlink_post_hook_callback, u);
 #endif
 
+#ifndef DEVICE_MANAGER
     u->sink_input_move_start_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_MOVE_START], PA_HOOK_LATE, (pa_hook_cb_t) sink_input_move_start_cb, u);
     u->sink_input_move_finish_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_MOVE_FINISH], PA_HOOK_LATE, (pa_hook_cb_t) sink_input_move_finish_cb, u);
-
-    u->tid = pthread_self();
-    u->defer_event = u->core->mainloop->defer_new(u->core->mainloop, defer_event_cb, u);
+#endif
 
     u->subscription = pa_subscription_new(u->core, PA_SUBSCRIPTION_MASK_SERVER | PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE, subscribe_cb, u);
 
@@ -3786,21 +3047,11 @@ int pa__init(pa_module *m)
     pa_native_protocol_install_ext(u->protocol, m, extension_cb);
 
     u->hal_manager = pa_hal_manager_get(u->core, (void *)u);
-#if 1 /* For temporarily access hal directly, it'll be removed or moved later on */
-    u->hal_manager->intf.reset = dlsym(u->hal_manager->dl_handle, "audio_reset");
-    u->hal_manager->intf.set_callback = dlsym(u->hal_manager->dl_handle, "audio_set_callback");
+#ifndef DEVICE_MANAGER /* For temporarily access hal directly, it'll be removed or moved later on */
+    u->hal_manager->intf.reset_volume = dlsym(u->hal_manager->dl_handle, "audio_reset_volume");
+//    u->hal_manager->intf.set_callback = dlsym(u->hal_manager->dl_handle, "audio_set_callback");
     u->hal_manager->intf.set_session = dlsym(u->hal_manager->dl_handle, "audio_set_session");
     u->hal_manager->intf.set_route = dlsym(u->hal_manager->dl_handle, "audio_set_route");
-    if (u->hal_manager->intf.set_callback) {
-        audio_cb_interface_t cb_interface;
-
-        cb_interface.load_device = __load_device_callback;
-        cb_interface.open_device = __open_device_callback;
-        cb_interface.close_all_devices = __close_all_devices_callback;
-        cb_interface.close_device = __close_device_callback;
-        cb_interface.unload_device = __unload_device_callback;
-        u->hal_manager->intf.set_callback(u->hal_manager->data, &cb_interface);
-    }
 #endif
 
     u->communicator.comm = pa_communicator_get(u->core);
@@ -3811,12 +3062,6 @@ int pa__init(pa_module *m)
                     PA_HOOK_EARLY, (pa_hook_cb_t) route_change_hook_cb, u);
         u->communicator.comm_hook_update_route_options_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTIONS),
                     PA_HOOK_EARLY, (pa_hook_cb_t) route_options_update_hook_cb, u);
-#ifdef DEVICE_MANAGER
-        u->communicator.comm_hook_device_connection_changed_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_DEVICE_CONNECTION_CHANGED),
-                    PA_HOOK_EARLY, (pa_hook_cb_t) device_connection_changed_hook_cb, u);
-        u->communicator.comm_hook_device_information_changed_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_DEVICE_INFORMATION_CHANGED),
-                    PA_HOOK_EARLY, (pa_hook_cb_t) device_information_changed_hook_cb, u);
-#endif
     }
     u->stream_manager = pa_stream_manager_init(u->core);
 
@@ -3893,12 +3138,6 @@ void pa__done(pa_module *m)
             pa_hook_slot_free(u->communicator.comm_hook_change_route_slot);
         if (u->communicator.comm_hook_change_route_slot)
             pa_hook_slot_free(u->communicator.comm_hook_update_route_options_slot);
-#ifdef DEVICE_MANAGER
-        if (u->communicator.comm_hook_device_connection_changed_slot)
-            pa_hook_slot_free(u->communicator.comm_hook_device_connection_changed_slot);
-        if (u->communicator.comm_hook_device_information_changed_slot)
-            pa_hook_slot_free(u->communicator.comm_hook_device_information_changed_slot);
-#endif
         pa_communicator_unref(u->communicator.comm);
     }
 

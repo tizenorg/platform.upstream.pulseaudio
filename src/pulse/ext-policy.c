@@ -36,7 +36,6 @@
 
 enum {
     SUBCOMMAND_TEST,
-    SUBCOMMAND_PLAY_SAMPLE,
     SUBCOMMAND_MONO,
     SUBCOMMAND_BALANCE,
     SUBCOMMAND_MUTEALL,
@@ -45,7 +44,6 @@ enum {
     SUBCOMMAND_SET_SUBSESSION,
     SUBCOMMAND_SET_ACTIVE_DEVICE,
     SUBCOMMAND_RESET,
-    SUBCOMMAND_GET_VOLUME_LEVEL_MAX,
     SUBCOMMAND_GET_VOLUME_LEVEL,
     SUBCOMMAND_SET_VOLUME_LEVEL,
     SUBCOMMAND_GET_MUTE,
@@ -111,80 +109,6 @@ pa_operation *pa_ext_policy_test(
     pa_tagstruct_putu32(t, SUBCOMMAND_TEST);
     pa_pstream_send_tagstruct(c->pstream, t);
     pa_pdispatch_register_reply(c->pdispatch, tag, DEFAULT_TIMEOUT, ext_policy_test_cb, pa_operation_ref(o), (pa_free_cb_t) pa_operation_unref);
-
-    return o;
-}
-
-static void ext_policy_play_sample_cb(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata)
-{
-    pa_operation *o = userdata;
-    uint32_t stream_index = 0;
-
-    pa_assert(pd);
-    pa_assert(o);
-    pa_assert(PA_REFCNT_VALUE(o) >= 1);
-
-    if (!o->context)
-        goto finish;
-
-    if (command != PA_COMMAND_REPLY) {
-        if (pa_context_handle_error(o->context, command, t, FALSE) < 0)
-            goto finish;
-
-    } else {
-        while (!pa_tagstruct_eof(t)) {
-            if (pa_tagstruct_getu32(t, &stream_index) < 0) {
-                pa_context_fail(o->context, PA_ERR_PROTOCOL);
-                pa_log_error("play_sample : context fail");
-                goto finish;
-            }
-        }
-    }
-
-    if (o->callback) {
-        pa_ext_policy_play_sample_cb_t cb = (pa_ext_policy_play_sample_cb_t) o->callback;
-        cb(o->context, stream_index, o->userdata);
-    }
-
-finish:
-    pa_operation_done(o);
-    pa_operation_unref(o);
-}
-
-pa_operation *pa_ext_policy_play_sample (
-        pa_context *c,
-        const char *name,
-        uint32_t volume_type,
-        uint32_t gain_type,
-        uint32_t volume_level,
-        pa_ext_policy_play_sample_cb_t cb,
-        void *userdata) {
-
-    uint32_t tag;
-    pa_operation *o = NULL;
-    pa_tagstruct *t = NULL;
-
-    pa_assert(c);
-    pa_assert(PA_REFCNT_VALUE(c) >= 1);
-
-    PA_CHECK_VALIDITY_RETURN_NULL(c, !pa_detect_fork(), PA_ERR_FORKED);
-    PA_CHECK_VALIDITY_RETURN_NULL(c, c->state == PA_CONTEXT_READY, PA_ERR_BADSTATE);
-    PA_CHECK_VALIDITY_RETURN_NULL(c, c->version >= 14, PA_ERR_NOTSUPPORTED);
-
-    o = pa_operation_new(c, NULL, (pa_operation_cb_t) cb, userdata);
-
-    t = pa_tagstruct_command(c, PA_COMMAND_EXTENSION, &tag);
-    pa_tagstruct_putu32(t, PA_INVALID_INDEX);
-    pa_tagstruct_puts(t, "module-policy");
-    pa_tagstruct_putu32(t, SUBCOMMAND_PLAY_SAMPLE);
-
-    pa_tagstruct_puts(t, name);
-    pa_tagstruct_putu32(t, volume_type);
-    pa_tagstruct_putu32(t, (gain_type >> 8));
-    pa_tagstruct_putu32(t, volume_level);
-
-    pa_pstream_send_tagstruct(c->pstream, t);
-    pa_pdispatch_register_reply(c->pdispatch, tag, DEFAULT_TIMEOUT, ext_policy_play_sample_cb, pa_operation_ref(o), (pa_free_cb_t) pa_operation_unref);
 
     return o;
 }
@@ -551,38 +475,6 @@ static void ext_policy_get_volume_level_max_cb(pa_pdispatch *pd, uint32_t comman
 finish:
     pa_operation_done(o);
     pa_operation_unref(o);
-}
-
-pa_operation *pa_ext_policy_get_volume_level_max (
-        pa_context *c,
-        uint32_t volume_type,
-        pa_ext_policy_get_volume_level_max_cb_t cb,
-        void *userdata) {
-
-    uint32_t tag;
-    pa_operation *o = NULL;
-    pa_tagstruct *t = NULL;
-
-    pa_assert(c);
-    pa_assert(PA_REFCNT_VALUE(c) >= 1);
-
-    PA_CHECK_VALIDITY_RETURN_NULL(c, !pa_detect_fork(), PA_ERR_FORKED);
-    PA_CHECK_VALIDITY_RETURN_NULL(c, c->state == PA_CONTEXT_READY, PA_ERR_BADSTATE);
-    PA_CHECK_VALIDITY_RETURN_NULL(c, c->version >= 14, PA_ERR_NOTSUPPORTED);
-
-    o = pa_operation_new(c, NULL, (pa_operation_cb_t) cb, userdata);
-
-    t = pa_tagstruct_command(c, PA_COMMAND_EXTENSION, &tag);
-    pa_tagstruct_putu32(t, PA_INVALID_INDEX);
-    pa_tagstruct_puts(t, "module-policy");
-    pa_tagstruct_putu32(t, SUBCOMMAND_GET_VOLUME_LEVEL_MAX);
-
-    pa_tagstruct_putu32(t, volume_type);
-
-    pa_pstream_send_tagstruct(c->pstream, t);
-    pa_pdispatch_register_reply(c->pdispatch, tag, DEFAULT_TIMEOUT, ext_policy_get_volume_level_max_cb, pa_operation_ref(o), (pa_free_cb_t) pa_operation_unref);
-
-    return o;
 }
 
 static void ext_policy_get_volume_level_cb(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata)

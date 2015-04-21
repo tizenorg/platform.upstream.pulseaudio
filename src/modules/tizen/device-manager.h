@@ -1,6 +1,25 @@
 
 #include <pulsecore/core.h>
 
+#define DEVICE_TYPE_SPEAKER                 "builtin-speaker"
+#define DEVICE_TYPE_RECEIVER                "builtin-receiver"
+#define DEVICE_TYPE_MIC                     "builtin-mic"
+#define DEVICE_TYPE_AUDIO_JACK              "audio-jack"
+#define DEVICE_TYPE_BT                      "bt"
+#define DEVICE_TYPE_HDMI                    "hdmi"
+#define DEVICE_TYPE_FORWARDING              "forwarding"
+#define DEVICE_TYPE_USB_AUDIO               "usb-audio"
+#define DEVICE_TYPE_NONE                    "none"
+
+#define DEVICE_PROFILE_BT_SCO               "sco"
+#define DEVICE_PROFILE_BT_A2DP              "a2dp"
+
+#define DEVICE_ROLE_NORMAL                  "normal"
+#define DEVICE_ROLE_VOIP                    "voip"
+#define DEVICE_ROLE_LOW_LATENCY             "low-latency"
+#define DEVICE_ROLE_HIGH_LATENCY            "high-latency"
+#define DEVICE_ROLE_UHQA                    "uhqa"
+
 typedef enum dm_device_direction_type {
     DM_DEVICE_DIRECTION_NONE,
     DM_DEVICE_DIRECTION_IN = 0x1,
@@ -46,6 +65,7 @@ dm_device_state_t pa_device_manager_get_device_state(dm_device *device);
 uint32_t pa_device_manager_get_device_id(dm_device *device);
 const char* pa_device_manager_get_device_type(dm_device *device);
 const char* pa_device_manager_get_device_subtype(dm_device *device);
+uint32_t pa_device_manager_get_device_id(dm_device *device);
 dm_device_direction_t pa_device_manager_get_device_direction(dm_device *device);
 
 int pa_device_manager_load_sink(const char *device_type, const char *device_profile, const char *role, pa_device_manager *dm);

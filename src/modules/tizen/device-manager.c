@@ -52,19 +52,6 @@
 
 #define DEVICE_TYPE_STR_MAX                 20
 
-#define DEVICE_TYPE_SPEAKER                 "builtin-speaker"
-#define DEVICE_TYPE_RECEIVER                "builtin-receiver"
-#define DEVICE_TYPE_MIC                     "builtin-mic"
-#define DEVICE_TYPE_AUDIO_JACK              "audio-jack"
-#define DEVICE_TYPE_BT                      "bt"
-#define DEVICE_TYPE_HDMI                    "hdmi"
-#define DEVICE_TYPE_FORWARDING              "forwarding"
-#define DEVICE_TYPE_USB_AUDIO               "usb-audio"
-#define DEVICE_TYPE_NONE                    "none"
-
-#define DEVICE_PROFILE_BT_SCO               "sco"
-#define DEVICE_PROFILE_BT_A2DP              "a2dp"
-
 #define DEVICE_DIRECTION_STR_NONE           "none"
 #define DEVICE_DIRECTION_STR_OUT            "out"
 #define DEVICE_DIRECTION_STR_IN             "in"
@@ -72,12 +59,6 @@
 
 #define DEVICE_AVAIL_CONDITION_STR_PULSE    "pulse"
 #define DEVICE_AVAIL_CONDITION_STR_DBUS     "dbus"
-
-#define DEVICE_ROLE_NORMAL                  "normal"
-#define DEVICE_ROLE_VOIP                    "voip"
-#define DEVICE_ROLE_LOW_LATENCY             "low-latency"
-#define DEVICE_ROLE_HIGH_LATENCY            "high-latency"
-#define DEVICE_ROLE_UHQA                    "uhqa"
 
 /* Properties of sink/sources */
 #define DEVICE_API_BLUEZ                    "bluez"
@@ -441,7 +422,7 @@ struct pulse_device_prop {
 };
 /******************************************************************************/
 
-int device_id_max_g;
+int device_id_max_g = 1;
 
 #ifdef HAVE_DBUS
 
@@ -3301,6 +3282,7 @@ static void notify_device_connection_changed(dm_device *device_item, pa_bool_t c
 
     send_device_connected_signal(device_item, connected, dm);
     hook_data.is_connected = connected;
+    hook_data.device = device_item;
     pa_hook_fire(pa_communicator_hook(dm->comm, PA_COMMUNICATOR_HOOK_DEVICE_CONNECTION_CHANGED), &hook_data);
 }
 
@@ -3310,6 +3292,7 @@ static void notify_device_info_changed(dm_device *device_item, dm_device_changed
     send_device_info_changed_signal(device_item, changed_type, dm);
 
     hook_data.changed_info = changed_type;
+    hook_data.device = device_item;
     pa_hook_fire(pa_communicator_hook(dm->comm, PA_COMMUNICATOR_HOOK_DEVICE_INFORMATION_CHANGED), &hook_data);
 }
 
@@ -3707,6 +3690,12 @@ dm_device_state_t pa_device_manager_get_device_state(dm_device *device_item) {
     pa_assert(profile_item = _device_item_get_active_profile(device_item));
 
     return profile_item->state;
+}
+
+uint32_t pa_device_manager_get_device_id(dm_device *device_item) {
+    pa_assert(device_item);
+
+    return device_item->id;
 }
 
 const char* pa_device_manager_get_device_type(dm_device *device_item) {

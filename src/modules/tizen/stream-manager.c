@@ -1158,7 +1158,7 @@ static pa_bool_t update_volume_type_of_stream(stream_type type, void *stream, co
         return FALSE;
 
     if (volume_type)
-        pa_proplist_setf(type==STREAM_SINK_INPUT?((pa_sink_input*)stream)->proplist:((pa_source_output*)stream)->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE, volume_type);
+        pa_proplist_sets(type==STREAM_SINK_INPUT?((pa_sink_input*)stream)->proplist:((pa_source_output*)stream)->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE, volume_type);
     else
         pa_log_warn("this stream[%p] does not have any volume type, skip updating volume type. stream_type[%d], role[%s]", stream, type, role);
 

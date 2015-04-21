@@ -85,9 +85,8 @@ PA_C_DECL_BEGIN
 #define PA_PROP_MEDIA_ROLE_ROUTE_TYPE          "media.role.route_type"
 #define PA_PROP_MEDIA_PARENT_ID                "media.parent_id"
 #define PA_PROP_MEDIA_TIZEN_VOLUME_TYPE        "media.tizen_volume_type"
-#define PA_PROP_MEDIA_TIZEN_GAIN_TYPE          "media.tizen_gain_type"
-#define PA_PROP_MEDIA_TIZEN_FADE_STATUS        "media.tizen_fade_status"
-#define PA_PROP_MEDIA_TIZEN_FADE_RETURN_VOLUME "media.tizen_fade_return_volume"
+#define PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE   "media.tizen_volume_gain_type"
+#define PA_PROP_MEDIA_TIZEN_GAIN_TYPE          "media.tizen_gain_type" // It will be deprecated.
 #define PA_PROP_MEDIA_TIZEN_AUDIO_LATENCY      "media.tizen_audio_latency"
 #endif
 

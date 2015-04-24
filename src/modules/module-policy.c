@@ -46,7 +46,9 @@
 #endif
 
 //To be changed
-#define VCONFKEY_SOUND_CAPTURE_STATUS "memory/private/sound/CaptureStatus"
+#ifndef VCONFKEY_SOUND_CAPTURE_STATUS
+#define VCONFKEY_SOUND_CAPTURE_STATUS "memory/Sound/SoundCaptureStatus"
+#endif
 #define VCONFKEY_CALL_NOISE_REDUCTION_STATE_BOOL "memory/private/call/NoiseReduction"
 #define VCONFKEY_CALL_EXTRA_VOLUME_STATE_BOOL "memory/private/call/ExtraVolume"
 #define VCONFKEY_CALL_WBAMR_STATE_BOOL "memory/private/call/WBAMRState"

@@ -723,6 +723,33 @@ unlock_and_fail:
     return (pa_usec_t) -1;
 }
 
+#ifdef __TIZEN__
+pa_usec_t pa_simple_get_final_latency(pa_simple *p, int *rerror) {
+	pa_usec_t t;
+
+	pa_assert(p);
+
+	CHECK_DEAD_GOTO(p, rerror, fail);
+
+	if (p->context->version >= 13) {
+		if (p->direction == PA_STREAM_PLAYBACK) {
+			t = (pa_bytes_to_usec(p->stream->buffer_attr.tlength, &p->stream->sample_spec) + p->stream->timing_info.configured_sink_usec);
+		} else if (p->direction == PA_STREAM_RECORD) {
+			t = (pa_bytes_to_usec(p->stream->buffer_attr.fragsize, &p->stream->sample_spec) + p->stream->timing_info.configured_source_usec);
+		} else {
+			t = (pa_usec_t) -1;
+		}
+	} else {
+		t = (pa_usec_t) -1;
+	}
+
+	return t;
+
+fail:
+	return (pa_usec_t) -1;
+}
+#endif
+
 int pa_simple_cork(pa_simple *p, int cork, int *rerror) {
     pa_operation *o = NULL;
 

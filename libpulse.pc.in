@@ -9,4 +9,4 @@ Description: PulseAudio Client Interface
 Version: @PACKAGE_VERSION@
 Libs: -L${libdir} -lpulse @PTHREAD_LIBS@
 Libs.private: -L${libdir}/pulseaudio -lpulsecommon-@PA_MAJORMINOR@
-Cflags: -I${includedir} -D_REENTRANT
+Cflags: -I${includedir} -D_REENTRANT -D__TIZEN__ -D__TIZEN_BT__

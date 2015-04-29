@@ -482,10 +482,18 @@ int pa_alsa_set_sw_params(snd_pcm_t *pcm, snd_pcm_uframes_t avail_min, bool peri
         return err;
     }
 
+/* For Qualcomm chipset only. Sometimes, snd_pcm_avail is not changed during playback(e.g.shutter), so we adjust parameters */
+#ifdef __TIZEN__
+    if ((err = snd_pcm_sw_params_set_tstamp_mode(pcm, swparams, SND_PCM_TSTAMP_NONE)) < 0) {
+        pa_log_warn("Unable to enable time stamping: %s\n", pa_alsa_strerror(err));
+        return err;
+    }
+#else
     if ((err = snd_pcm_sw_params_set_tstamp_mode(pcm, swparams, SND_PCM_TSTAMP_ENABLE)) < 0) {
         pa_log_warn("Unable to enable time stamping: %s\n", pa_alsa_strerror(err));
         return err;
     }
+#endif
 
     if ((err = snd_pcm_sw_params_get_boundary(swparams, &boundary)) < 0) {
         pa_log_warn("Unable to get boundary: %s\n", pa_alsa_strerror(err));

@@ -167,8 +167,12 @@ static void signal_callback(pa_mainloop_api*m, pa_signal_event *e, int sig, void
         }
 #endif
 
-        case SIGINT:
         case SIGTERM:
+#ifndef TIZEN_MICRO
+            break;
+#endif
+
+        case SIGINT:
         default:
             pa_log_info(_("Exiting."));
             m->quit(m, 1);
@@ -504,7 +508,9 @@ int main(int argc, char *argv[]) {
     pa_drop_root();
     pa_close_allv(passed_fds);
     pa_xfree(passed_fds);
+#ifndef __TIZEN__
     pa_reset_sigs(-1);
+#endif
     pa_unblock_sigs(-1);
     pa_reset_priority();
 

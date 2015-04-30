@@ -53,7 +53,6 @@ static const char *__get_gain_type_string_by_idx (uint32_t gain_type_idx) {
 static int load_out_volume_and_gain_table_from_ini (pa_stream_manager *m) {
     int ret = 0;
     dictionary *dict = NULL;
-    uint32_t vol_type_idx = 0;
     uint32_t gain_type_idx = 0;
     int size = 0;
     const char delimiter[] = ", ";

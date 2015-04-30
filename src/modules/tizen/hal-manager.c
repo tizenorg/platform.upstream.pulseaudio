@@ -40,7 +40,6 @@ struct _pa_hal_manager {
 
 pa_hal_manager* pa_hal_manager_get(pa_core *core, void *user_data) {
     pa_hal_manager *h;
-    unsigned i;
 
     pa_assert(core);
 

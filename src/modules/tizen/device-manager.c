@@ -294,7 +294,7 @@ typedef enum {
 */
 struct dm_device {
     uint32_t id;
-    const char *type;
+    char *type;
     char *name;
     const char *identifier;
 
@@ -311,7 +311,7 @@ struct dm_device {
     Even if both-way device(earjack, sco..) , one device_profile.
 */
 typedef struct dm_device_profile {
-    const char *profile;
+    char *profile;
     dm_device_direction_t direction;
     dm_device_state_t state;
 
@@ -592,7 +592,7 @@ static void device_item_free_func(dm_device *device_item) {
     if (device_item->name)
         pa_xfree(device_item->name);
     if (device_item->profiles)
-        pa_idxset_free(device_item->profiles, profile_item_free_func);
+        pa_idxset_free(device_item->profiles, (pa_free_cb_t)profile_item_free_func);
 
     pa_xfree(device_item);
 }
@@ -635,7 +635,6 @@ static pa_bool_t pulse_device_is_bluez(pa_proplist *prop) {
 }
 
 static pa_bool_t pulse_device_is_tizenaudio(void *pulse_device, pa_device_type_t pdt) {
-    const char *api_name = NULL;
     pa_sink *sink;
 
     if (!pulse_device) {
@@ -736,8 +735,8 @@ static const char* device_string_get_value(const char *device_string) {
 }
 
 static dm_device_class_t pulse_device_get_class(void *pulse_device, pa_device_type_t pdt) {
-    pa_sink *sink;
-    pa_source *source;
+    pa_sink *sink = NULL;
+    pa_source *source = NULL;
 
     if (!pulse_device) {
         pa_log_error("pulse_device null");
@@ -1281,8 +1280,6 @@ static dm_device* _device_item_add_profile(dm_device *device_item, dm_device_pro
 
 
 static int _device_list_add_device(pa_idxset *device_list, dm_device *device_item, pa_device_manager *dm) {
-    uint32_t active_profile;
-
     pa_assert(device_list);
     pa_assert(device_item);
 
@@ -1549,11 +1546,9 @@ void _device_profile_set_state(dm_device_profile *profile_item, dm_device_state_
 
 
 static int device_type_get_direction(pa_device_manager *dm, const char *device_type, const char *device_profile, const char *identifier) {
-    pa_idxset *device_type_infos = NULL;
     struct device_type_info *type_info = NULL;
     struct device_status_info *status_info;
     dm_device_direction_t direction = 0, d_num = 0, d_idx = 0, correct_d_idx = 0;
-    int device_status;
 
     if (!dm || !device_type) {
         pa_log_error("Invalid Parameter");
@@ -1719,7 +1714,6 @@ static pa_source* _device_manager_set_default_source(pa_device_manager *dm,  con
 
 static dm_device_profile* handle_not_predefined_device_profile(void *pulse_device, pa_device_type_t pdt, const char *device_profile) {
     dm_device_profile *profile_item = NULL;
-    dm_device *device_item;
     dm_device_direction_t direc;
 
     pa_log_debug("Create device profile item %s", device_profile);
@@ -1758,7 +1752,6 @@ static dm_device* handle_not_predefined_device(pa_device_manager *dm, void *puls
     dm_device *device_item = NULL;
     pa_source *sibling_source, *source;
     pa_sink *sibling_sink, *sink;
-    uint32_t active_profile;
 
     pa_assert(dm);
     pa_assert(pulse_device);
@@ -1859,7 +1852,6 @@ static pa_bool_t pulse_device_loaded_with_param(pa_core *core, pa_device_type_t 
     pa_sink *sink;
     pa_source *source;
     uint32_t device_idx;
-    char *mod_args;
 
     pa_assert(core);
     pa_assert(device_string);
@@ -2923,7 +2915,7 @@ static int handle_device_disconnected(pa_device_manager *dm, const char *device_
 
     PA_IDXSET_FOREACH(device_item, dm->device_list, device_idx) {
         if (!strcmp(device_item->type, device_type)) {
-            if(profile_item = _device_item_get_profile(device_item, device_profile)) {
+            if((profile_item = _device_item_get_profile(device_item, device_profile))) {
                 destroy_device_profile(profile_item, dm);
             } else {
                 pa_log_debug("no matching profile");
@@ -3454,14 +3446,13 @@ static void handle_load_sink(DBusConnection *conn, DBusMessage *msg, void *userd
 }
 
 static void handle_test_device_status_change(DBusConnection *conn, DBusMessage *msg, void *userdata) {
-    pa_device_manager *dm;
+    pa_device_manager *dm = (pa_device_manager *)userdata;
     char *device_type, *device_profile;
     dbus_int32_t status;
     DBusMessage *reply = NULL;
     DBusError error;
 
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
-    dm = (pa_device_manager *) userdata;
 
     pa_log_debug("[DEBUG_LOG] handle_test_device_status_change");
     pa_log_debug("[DEBUG_LOG] signature: '%s'", dbus_message_get_signature(msg));
@@ -3480,7 +3471,7 @@ static void handle_test_device_status_change(DBusConnection *conn, DBusMessage *
     if (!strcmp(device_profile, "none"))
         device_profile = NULL;
 
-    handle_device_status_changed(userdata, device_type, device_profile, NULL, status);
+    handle_device_status_changed(dm, device_type, device_profile, NULL, status);
     pa_assert_se(dbus_connection_send(conn, reply, NULL));
     dbus_message_unref(reply);
 }
@@ -3911,16 +3902,16 @@ void pa_device_manager_done(pa_device_manager *dm) {
         pa_communicator_unref(dm->comm);
 
     if (dm->type_infos)
-        pa_idxset_free(dm->type_infos, type_info_free_func);
+        pa_idxset_free(dm->type_infos, (pa_free_cb_t)type_info_free_func);
     if (dm->file_map) {
         if (dm->file_map->playback)
-            pa_idxset_free(dm->file_map->playback, file_info_free_func);
+            pa_idxset_free(dm->file_map->playback, (pa_free_cb_t)file_info_free_func);
         if (dm->file_map->capture)
-            pa_idxset_free(dm->file_map->capture, file_info_free_func);
+            pa_idxset_free(dm->file_map->capture, (pa_free_cb_t)file_info_free_func);
         pa_xfree(dm->file_map);
     }
     if (dm->device_list)
-        pa_idxset_free(dm->device_list, device_item_free_func);
+        pa_idxset_free(dm->device_list, (pa_free_cb_t)device_item_free_func);
     if (dm->device_status)
         pa_idxset_free(dm->device_status, NULL);
 

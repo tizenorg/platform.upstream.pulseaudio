@@ -24,6 +24,7 @@
 #endif
 
 #include "communicator.h"
+#include <pulsecore/shared.h>
 
 struct _pa_communicator {
     PA_REFCNT_DECLARE;

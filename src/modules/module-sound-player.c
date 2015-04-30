@@ -50,6 +50,8 @@
 #include "module-sound-player-symdef.h"
 #include "tizen-audio.h"
 
+#include <pulsecore/core-scache.h>
+
 PA_MODULE_AUTHOR("Sangchul Lee");
 PA_MODULE_DESCRIPTION("Sound Player module");
 PA_MODULE_VERSION(PACKAGE_VERSION);
@@ -383,6 +385,15 @@ static DBusHandlerResult method_handler_for_vt(DBusConnection *c, DBusMessage *m
 
 static int init_ipc (struct userdata *u) {
     int pre_mask;
+#ifdef HAVE_DBUS
+#ifndef USE_DBUS_PROTOCOL
+    DBusError err;
+    pa_dbus_connection *conn = NULL;
+    static const DBusObjectPathVTable vtable = {
+        .message_function = method_handler_for_vt,
+    };
+#endif
+#endif
     pa_assert(u);
 
     pa_log_info("Initialization for IPC");
@@ -415,11 +426,6 @@ static int init_ipc (struct userdata *u) {
     pa_assert_se(pa_dbus_protocol_add_interface(u->dbus_protocol, SOUND_PLAYER_OBJECT_PATH, &sound_player_interface_info, u) >= 0);
     pa_assert_se(pa_dbus_protocol_register_extension(u->dbus_protocol, SOUND_PLAYER_INTERFACE) >= 0);
 #else
-    DBusError err;
-    pa_dbus_connection *conn = NULL;
-    static const DBusObjectPathVTable vtable = {
-        .message_function = method_handler_for_vt,
-    };
     dbus_error_init(&err);
 
     if (!(conn = pa_dbus_bus_get(u->module->core, DBUS_BUS_SYSTEM, &err)) || dbus_error_is_set(&err)) {

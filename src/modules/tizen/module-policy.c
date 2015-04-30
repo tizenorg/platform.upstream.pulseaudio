@@ -45,6 +45,7 @@
 #include "communicator.h"
 #include "hal-manager.h"
 #include "stream-manager.h"
+#include "stream-manager-volume.h"
 //#define DEVICE_MANAGER
 #ifdef DEVICE_MANAGER
 #include "device-manager.h"
@@ -439,9 +440,6 @@ typedef enum
     DOCK_AUDIODOCK = 7,
     DOCK_SMARTDOCK = 8
 } DOCK_STATUS;
-
-static pa_sink *__get_real_master_sink(pa_sink_input *si);
-static pa_source *__get_real_master_source(pa_source_output *so);
 
 static audio_return_t policy_volume_reset(struct userdata *u);
 static audio_return_t policy_set_session(struct userdata *u, uint32_t session, uint32_t start);
@@ -1024,32 +1022,6 @@ static pa_bool_t policy_is_filter (pa_sink_input* si)
 
     return false;
 }
-static pa_sink *__get_real_master_sink(pa_sink_input *si)
-{
-    const char *master_name;
-    pa_sink *s, *sink;
-
-    s = (si->origin_sink) ? si->origin_sink : si->sink;
-    master_name = pa_proplist_gets(s->proplist, PA_PROP_DEVICE_MASTER_DEVICE);
-    if (master_name)
-        sink = pa_namereg_get(si->core, master_name, PA_NAMEREG_SINK);
-    else
-        sink = s;
-    return sink;
-}
-static pa_source *__get_real_master_source(pa_source_output *so)
-{
-    const char *master_name;
-    pa_source *s, *source;
-
-    s = (so->destination_source) ? so->destination_source : so->source;
-    master_name = pa_proplist_gets(s->proplist, PA_PROP_DEVICE_MASTER_DEVICE);
-    if (master_name)
-        source = pa_namereg_get(so->core, master_name, PA_NAMEREG_SINK);
-    else
-        source = s;
-    return source;
-}
 
 static uint32_t __get_route_flag(struct userdata *u) {
     uint32_t route_flag = 0;
@@ -1370,10 +1342,6 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
     uint32_t command;
     pa_tagstruct *reply = NULL;
 
-    pa_sink_input *si = NULL;
-    pa_sink *s = NULL;
-    uint32_t idx;
-
     pa_assert(p);
     pa_assert(m);
     pa_assert(c);
@@ -1515,176 +1483,6 @@ static void __set_sink_input_role_type(pa_proplist *p, int gain_type)
 
     return;
 }
-#ifndef DEVICE_MANAGER
-/*  Called when new sink-input is creating  */
-static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_new_data *new_data, struct userdata *u)
-{
-    audio_return_t audio_ret = AUDIO_RET_OK;
-    //audio_info_t audio_info;
-    const char *policy = NULL;
-    const char *ignore_preset_sink = NULL;
-    const char *master_name = NULL;
-    pa_sink *realsink = NULL;
-    uint32_t volume_level = 0;
-    pa_strbuf *s = NULL;
-    const char *rate_str = NULL;
-    const char *ch_str = NULL;
-    char *s_info = NULL;
-
-    pa_assert(c);
-    pa_assert(new_data);
-    pa_assert(u);
-
-    if (!new_data->proplist) {
-        pa_log_debug(" New stream lacks property data.");
-        return PA_HOOK_OK;
-    }
-#if 1
-    /* If no policy exists, skip */
-    if (!(policy = pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_POLICY))) {
-        pa_log_debug("Not setting device for stream [%s], because it lacks policy.",
-                pa_strnull(pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_NAME)));
-        return PA_HOOK_OK;
-    }
-
-    /* Check if this input want to be played via the sink selected by module-policy */
-    if ((ignore_preset_sink = pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK))) {
-        pa_log_debug("ignore_preset_sink is enabled. module-policy will judge a proper sink for stream [%s]",
-                pa_strnull(pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_NAME)));
-    } else {
-        ignore_preset_sink = "no";
-    }
-
-    /* If sink-input has already sink, skip */
-    if (new_data->sink && (strncmp("yes", ignore_preset_sink, strlen("yes")))) {
-        /* sink-input with filter role will be also here because sink is already set */
-#ifdef DEBUG_DETAIL
-        pa_log_debug(" Not setting device for stream [%s], because already set.",
-                pa_strnull(pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_NAME)));
-#endif
-    } else {
-
-        /* Set proper sink to sink-input */
-        new_data->save_sink = FALSE;
-            new_data->sink = policy_select_proper_sink (u, policy, NULL, TRUE);
-
-        if (new_data->sink == NULL) {
-            pa_log_error("new_data->sink is null");
-        }
-    }
-#endif
-
-    return PA_HOOK_OK;
-}
-
-/*  Called when new sink is added while sink-input is existing  */
-static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, struct userdata *u)
-{
-    pa_sink_input *si;
-    pa_sink *sink_to_move;
-    uint32_t idx;
-    char *args = NULL;
-
-    pa_bool_t is_bt;
-    pa_bool_t is_usb_alsa;
-    pa_bool_t is_need_to_move = true;
-	uint32_t device_out = AUDIO_DEVICE_OUT_BT_A2DP;
-
-    pa_assert(c);
-    pa_assert(sink);
-    pa_assert(u);
-    pa_assert(u->on_hotplug);
-
-    /* If connected sink is BLUETOOTH, set as default */
-    /* we are checking with device.api property */
-    is_bt = policy_is_bluez(sink);
-    is_usb_alsa = policy_is_usb_alsa(sink);
-
-    if (is_bt || is_usb_alsa) {
-        pa_log_debug("[POLICY][%s] set default sink to sink[%s][%d]", __func__, sink->name, sink->index);
-        pa_namereg_set_default_sink (c,sink);
-    } else {
-        pa_log_debug("[POLICY][%s] this sink [%s][%d] is not a bluez....return", __func__, sink->name, sink->index);
-        return PA_HOOK_OK;
-    }
-
-    if (is_bt) {
-/*
-        pa_log_info("new bluetooth sink(card) is detected. volume level and route will be changed by sound_server a2dp_on function");
-        is_need_to_move = false;
-        */
-    }
-
-    if (is_need_to_move) {
-        int ret = 0;
-        uint32_t route_flag = 0;
-
-        /* Set active device out */
-        if (u->active_device_out != device_out) {
-            route_flag = __get_route_flag(u);
-            /* it will be removed soon */
-            if (u->hal_manager->intf.set_route) {
-                ret = u->hal_manager->intf.set_route(u->hal_manager->data, u->session, u->subsession, u->active_device_in, device_out, route_flag);
-            }
-        }
-
-        /* load combine sink */
-        args = pa_sprintf_malloc("sink_name=%s slaves=\"%s,%s\"", SINK_COMBINED, sink->name, SINK_ALSA);
-        u->module_combined = pa_module_load(u->module->core, "module-combine", args);
-        pa_xfree(args);
-
-        /* load mono_combine sink */
-        args = pa_sprintf_malloc("sink_name=%s master=%s channels=1", SINK_MONO_COMBINED, SINK_COMBINED);
-        u->module_mono_combined = pa_module_load(u->module->core, "module-remap-sink", args);
-        pa_xfree(args);
-    }
-
-    /* Iterate each sink inputs to decide whether we should move to new sink */
-    PA_IDXSET_FOREACH(si, c->sink_inputs, idx) {
-        const char *policy = NULL;
-
-        if (si->sink == sink)
-            continue;
-
-        /* Skip this if it is already in the process of being moved
-         * anyway */
-        if (!si->sink)
-            continue;
-
-        /* It might happen that a stream and a sink are set up at the
-           same time, in which case we want to make sure we don't
-           interfere with that */
-        if (!PA_SINK_INPUT_IS_LINKED(pa_sink_input_get_state(si)))
-            continue;
-
-        /* Get role (if role is filter, skip it) */
-        if (policy_is_filter(si))
-            continue;
-
-        /* Check policy */
-        if (!(policy = pa_proplist_gets(si->proplist, PA_PROP_MEDIA_POLICY))) {
-            /* No policy exists, this means auto */
-            pa_log_debug("[POLICY][%s] set policy of sink-input[%d] from [%s] to [auto]", __func__, si->index, "null");
-            policy = POLICY_AUTO;
-        }
-
-        sink_to_move = policy_select_proper_sink (u, policy, si, u->is_mono);
-        if (sink_to_move) {
-            pa_log_debug("[POLICY][%s] Moving sink-input[%d] from [%s] to [%s]", __func__, si->index, si->sink->name, sink_to_move->name);
-            pa_sink_input_move_to(si, sink_to_move, false);
-        } else {
-            pa_log_debug("[POLICY][%s] Can't move sink-input....",__func__);
-        }
-    }
-
-    /* Reset sink volume with balance from userdata */
-    pa_cvolume* cvol = pa_sink_get_volume(sink, false);
-    pa_cvolume_set_balance(cvol, &sink->channel_map, u->balance);
-    pa_sink_set_volume(sink, cvol, true, true);
-
-    return PA_HOOK_OK;
-}
-#endif
 
 static void subscribe_cb(pa_core *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata)
 {
@@ -1698,8 +1496,8 @@ static void subscribe_cb(pa_core *c, pa_subscription_event_type_t t, uint32_t id
     pa_source_state_t source_state;
     int vconf_source_status = 0;
     uint32_t si_index;
-    int audio_ret;
-    pa_assert(u);
+
+	pa_assert(u);
 
     pa_log_debug("[POLICY][%s] subscribe_cb() t=[0x%x], idx=[%d]", __func__, t, idx);
 
@@ -1799,232 +1597,6 @@ static void subscribe_cb(pa_core *c, pa_subscription_event_type_t t, uint32_t id
             }
         }
     }
-}
-
-#ifndef DEVICE_MANAGER
-static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, void* userdata) {
-    struct userdata *u = userdata;
-    uint32_t idx;
-    pa_sink *sink_to_move;
-    pa_sink_input	*si;
-
-    const char *si_volume_type_str;
-    uint32_t volume_type = AUDIO_VOLUME_TYPE_SYSTEM;
-
-    pa_assert(c);
-    pa_assert(sink);
-    pa_assert(u);
-
-     /* There's no point in doing anything if the core is shut down anyway */
-    if (c->state == PA_CORE_SHUTDOWN)
-        return PA_HOOK_OK;
-
-    /* if unloading sink is not bt, just return */
-    if (!policy_is_bluez (sink)) {
-        pa_log_debug("[POLICY][%s] sink[%s][%d] unlinked but not a bluez....return\n", __func__,  sink->name, sink->index);
-        return PA_HOOK_OK;
-    }
-
-    pa_log_debug ("[POLICY][%s] SINK unlinked ================================ sink [%s][%d], bt_off_idx was [%d]",
-                __func__, sink->name, sink->index,u->bt_off_idx);
-
-    u->bt_off_idx = sink->index;
-    pa_log_debug ("[POLICY][%s] bt_off_idx is set to [%d]", __func__, u->bt_off_idx);
-
-    /* BT sink is unloading, move sink-input to proper sink */
-    PA_IDXSET_FOREACH(si, c->sink_inputs, idx) {
-        const char *policy = NULL;
-        if (!si->sink)
-            continue;
-
-        /* Get role (if role is filter, skip it) */
-        if (policy_is_filter(si))
-            continue;
-
-        /* Find who were using bt sink or bt related sink and move them to proper sink (alsa/mono_alsa) */
-        if (pa_streq (si->sink->name, SINK_MONO_BT) ||
-            pa_streq (si->sink->name, SINK_MONO_COMBINED) ||
-            pa_streq (si->sink->name, SINK_COMBINED) ||
-            policy_is_bluez (si->sink)) {
-
-            /* Move sink-input to proper sink : only alsa related sink is available now */
-            sink_to_move = policy_get_sink_by_name (c, (u->is_mono)? SINK_MONO_ALSA : SINK_ALSA);
-            if (sink_to_move) {
-                pa_log_debug("[POLICY][%s] Moving sink-input[%d] from [%s] to [%s]", __func__, si->index, si->sink->name, sink_to_move->name);
-                pa_sink_input_move_to(si, sink_to_move, false);
-            } else {
-                pa_log_warn("[POLICY][%s] No sink to move", __func__);
-            }
-        }
-    }
-
-    pa_log_debug ("[POLICY][%s] unload sink in dependencies", __func__);
-
-    /* Unload mono_combine sink */
-    if (u->module_mono_combined) {
-        pa_module_unload(u->module->core, u->module_mono_combined, true);
-        u->module_mono_combined = NULL;
-    }
-
-    /* Unload combine sink */
-    if (u->module_combined) {
-        pa_module_unload(u->module->core, u->module_combined, true);
-        u->module_combined = NULL;
-    }
-
-    /* Unload mono_bt sink */
-    if (u->module_mono_bt) {
-        pa_module_unload(u->module->core, u->module_mono_bt, true);
-        u->module_mono_bt = NULL;
-    }
-
-    return PA_HOOK_OK;
-}
-
-static pa_hook_result_t sink_unlink_post_hook_callback(pa_core *c, pa_sink *sink, void* userdata) {
-    struct userdata *u = userdata;
-
-    pa_assert(c);
-    pa_assert(sink);
-    pa_assert(u);
-
-    pa_log_debug("[POLICY][%s] SINK unlinked POST ================================ sink [%s][%d]", __func__, sink->name, sink->index);
-
-     /* There's no point in doing anything if the core is shut down anyway */
-    if (c->state == PA_CORE_SHUTDOWN)
-        return PA_HOOK_OK;
-
-    /* if unloading sink is not bt, just return */
-    if (!policy_is_bluez (sink)) {
-        pa_log_debug("[POLICY][%s] not a bluez....return\n", __func__);
-        return PA_HOOK_OK;
-    }
-
-    u->bt_off_idx = -1;
-    pa_log_debug ("[POLICY][%s] bt_off_idx is cleared to [%d]", __func__, u->bt_off_idx);
-
-    return PA_HOOK_OK;
-}
-#endif
-
-static pa_hook_result_t sink_input_move_start_cb(pa_core *core, pa_sink_input *i, struct userdata *u) {
-    int32_t audio_ret = 0;
-
-    pa_core_assert_ref(core);
-    pa_sink_input_assert_ref(i);
-
-    /* There's no point in doing anything if the core is shut down anyway */
-   if (core->state == PA_CORE_SHUTDOWN)
-       return PA_HOOK_OK;
-
-    pa_log_debug ("------- sink-input [%d] was sink [%s][%d] : Trying to mute!!!",
-            i->index, i->sink->name, i->sink->index);
-
-    audio_ret = pa_stream_manager_volume_set_mute_by_idx(u->stream_manager, STREAM_SINK_INPUT, i->index, 1);
-    if (audio_ret) {
-        pa_log_warn("policy_set_mute(1) for stream[%d] returns error:0x%x", i->index, audio_ret);
-    }
-
-    return PA_HOOK_OK;
-}
-
-static pa_hook_result_t sink_input_move_finish_cb(pa_core *core, pa_sink_input *i, struct userdata *u) {
-    int32_t audio_ret = 0;
-
-    pa_core_assert_ref(core);
-    pa_sink_input_assert_ref(i);
-
-    /* There's no point in doing anything if the core is shut down anyway */
-   if (core->state == PA_CORE_SHUTDOWN)
-       return PA_HOOK_OK;
-
-    pa_log_debug("[POLICY][%s] sink_input_move_finish_cb -------------------------------------- sink-input [%d], sink [%s][%d], bt_off_idx [%d] : %s",
-            __func__, i->index, i->sink->name, i->sink->index, u->bt_off_idx,
-            (u->bt_off_idx == -1)? "Trying to un-mute!!!!" : "skip un-mute...");
-
-    /* If sink input move is caused by bt sink unlink, then skip un-mute operation */
-    /* If sink input move is caused by bt sink unlink, then skip un-mute operation */
-    if (u->bt_off_idx == -1 && !u->muteall) {
-//        if (AUDIO_IS_ERROR((audio_ret = __update_volume(u, i->index, (uint32_t)-1, (uint32_t)-1)))) {
-//            pa_log_debug("__update_volume for stream[%d] returns error:0x%x", i->index, audio_ret);
-//        }
-        audio_ret = pa_stream_manager_volume_set_mute_by_idx(u->stream_manager, STREAM_SINK_INPUT, i->index, 0);
-        if (audio_ret) {
-            pa_log_debug("policy_set_mute(0) for stream[%d] returns error:0x%x", i->index, audio_ret);
-        }
-    }
-    return PA_HOOK_OK;
-}
-
-static pa_source* policy_get_source_by_name (pa_core *c, const char* source_name)
-{
-    pa_source *s = NULL;
-    uint32_t idx;
-
-    if (c == NULL || source_name == NULL) {
-        pa_log_warn ("input param is null");
-        return NULL;
-    }
-
-    PA_IDXSET_FOREACH(s, c->sources, idx) {
-        if (pa_streq (s->name, source_name)) {
-            pa_log_debug ("[POLICY][%s] return [%p] for [%s]\n",  __func__, s, source_name);
-            return s;
-        }
-    }
-    return NULL;
-}
-
-static pa_hook_result_t sink_input_state_changed_hook_cb(pa_core *core, pa_sink_input *i, struct userdata *u)
-{
-    pa_sink* sink_to_move = NULL;
-    pa_sink* sink_default = NULL;
-    const char * policy = NULL;
-
-    pa_assert(i);
-    pa_assert(u);
-
-    if(i->state == PA_SINK_INPUT_RUNNING) {
-        policy = pa_proplist_gets (i->proplist, PA_PROP_MEDIA_POLICY);
-
-        pa_log_info("---------------------------------------------");
-
-        /** If sink input is an UHQA sink sink input then connect it to UHQA sink if not connected to UHQA sink*/
-        if ( ( i->sample_spec.rate >= UHQA_BASE_SAMPLING_RATE) && (policy != NULL) &&
-             ( pa_streq (policy, POLICY_HIGH_LATENCY) || pa_streq (policy, POLICY_AUTO) )) {
-            char tmp_policy[100] = {0};
-
-            pa_log_info ("------------------------------------");
-
-            sprintf(tmp_policy, "%s-uhqa", policy);
-            sink_to_move = policy_select_proper_sink (u, tmp_policy, i, u->is_mono);
-
-            if (i->sink != sink_to_move) {
-                 if (sink_to_move) {
-                    pa_log_debug("Moving sink-input[%d] from [%s] to [%s]", i->index, i->sink->name, sink_to_move->name);
-                    pa_sink_input_move_to(i, sink_to_move, false);
-                }
-            }
-        }
-
-        /** Get the normal sink and move all sink input from normal sink to UHQA sink if normal sink and UHQA sink are different*/
-        sink_default = policy_select_proper_sink (u, policy, i, u->is_mono);
-        if ((sink_to_move != NULL) && (sink_default != NULL) && (sink_to_move != sink_default)) {
-            pa_sink_input *si = NULL;
-            uint32_t idx;
-
-            /** Check any sink input connected to normal sink then move them to UHQA sink*/
-            PA_IDXSET_FOREACH (si, sink_default->inputs, idx) {
-                pa_log_info ("------------------------------------");
-                /* Get role (if role is filter, skip it) */
-                if (policy_is_filter (si)) {
-                    continue;
-                }
-                pa_sink_input_move_to (si,  sink_to_move, false);
-            }
-        }
-    }
-    return PA_HOOK_OK;
 }
 
 static pa_hook_result_t sink_state_changed_hook_cb(pa_core *c, pa_object *o, struct userdata *u) {
@@ -2140,19 +1712,15 @@ static pa_hook_result_t source_output_new_hook_callback(pa_core *c, pa_source_ou
 /*        and manual_devices that have been set by user.                */
 /*     2. If not found, set it to null sink/source.                     */
 static pa_hook_result_t select_proper_sink_or_source_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_select *data, struct userdata *u) {
-    pa_log_info("select_proper_sink_or_source_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
-            data, data->stream_type, data->stream_role, data->route_type);
 #ifdef DEVICE_MANAGER
     uint32_t idx = 0;
     uint32_t m_idx = 0;
-    void *state = NULL;
     uint32_t conn_idx = 0;
     uint32_t *device_id = NULL;
     const char *device_type = NULL;
     const char *dm_device_type = NULL;
     const char *dm_device_subtype = NULL;
     dm_device *device = NULL;
-    dm_device_state_t device_state = DM_DEVICE_STATE_DEACTIVATED;
     dm_device_direction_t device_direction = DM_DEVICE_DIRECTION_NONE;
     pa_idxset *conn_devices = NULL;
 
@@ -2194,7 +1762,7 @@ static pa_hook_result_t select_proper_sink_or_source_hook_cb(pa_core *c, pa_stre
                     if (pa_streq(device_type, dm_device_type) &&
                         (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
                         ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
-                        pa_log_debug("-- [MANUAL] found a matched device: type[%s], direction[%p]", device_type, device_direction);
+                        pa_log_debug("-- [MANUAL] found a matched device: type[%s], direction[0x%x]", device_type, device_direction);
                         if (data->stream_type == STREAM_SINK_INPUT)
                             *(data->proper_sink) = pa_device_manager_get_sink(device, DEVICE_ROLE_NORMAL);
                         else
@@ -2243,13 +1811,10 @@ SUCCESS:
 /*     2. Update the state of devices.                                        */
 /*     3. Call HAL API to apply the routing setting                           */
 static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_route *data, struct userdata *u) {
-    pa_log_info("route_change_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
-            data, data->stream_type, data->stream_role, data->route_type);
 #ifdef DEVICE_MANAGER
     int32_t i = 0;
     uint32_t idx = 0;
     uint32_t m_idx = 0;
-    void *state = NULL;
     uint32_t *stream_idx = NULL;
     hal_route_info route_info = {NULL, NULL, 0};
     uint32_t conn_idx = 0;
@@ -2267,6 +1832,8 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
     pa_source *source = NULL;
     pa_idxset *conn_devices = NULL;
 
+    pa_log_info("route_change_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
+            data, data->stream_type, data->stream_role, data->route_type);
     route_info.role = data->stream_role;
 
     /* Streams */
@@ -2424,14 +1991,13 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
 
 /* Forward routing options to HAL */
 static pa_hook_result_t route_options_update_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_options *data, struct userdata *u) {
-    pa_log("route_options_update_hook_cb is called. (%p), stream_role(%s), route_options(%p), num_of_options(%d)",
-            data, data->stream_role, data->route_options, pa_idxset_size(data->route_options));
     void *state = NULL;
     const char *option_name = NULL;
     int i = 0;
-
     hal_route_option route_option;
-    char **options = NULL;
+
+    pa_log("route_options_update_hook_cb is called. (%p), stream_role(%s), route_options(%p), num_of_options(%d)",
+            data, data->stream_role, data->route_options, pa_idxset_size(data->route_options));
     route_option.role = data->stream_role;
     route_option.num_of_options = pa_idxset_size(data->route_options);
     if (route_option.num_of_options)
@@ -3007,33 +2573,6 @@ int pa__init(pa_module *m)
 
     /* A little bit later than module-stream-restore */
     u->sink_state_changed_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_STATE_CHANGED], PA_HOOK_NORMAL, (pa_hook_cb_t)sink_state_changed_hook_cb, u);
-#ifndef DEVICE_MANAGER
-    u->sink_input_new_hook_slot =
-            pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_NEW], PA_HOOK_EARLY+10, (pa_hook_cb_t) sink_input_new_hook_callback, u);
-
-    u->sink_input_state_changed_slot =
-             pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_STATE_CHANGED], PA_HOOK_EARLY+10, (pa_hook_cb_t) sink_input_state_changed_hook_cb, u);
-
-    u->source_output_new_hook_slot =
-            pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_NEW], PA_HOOK_EARLY+10, (pa_hook_cb_t) source_output_new_hook_callback, u);
-#endif
-
-#ifndef DEVICE_MANAGER
-    if (on_hotplug) {
-        /* A little bit later than module-stream-restore */
-        u->sink_put_hook_slot =
-            pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_PUT], PA_HOOK_LATE+10, (pa_hook_cb_t) sink_put_hook_callback, u);
-    }
-
-    /* sink unlink comes before sink-input unlink */
-    u->sink_unlink_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_UNLINK], PA_HOOK_EARLY, (pa_hook_cb_t) sink_unlink_hook_callback, u);
-    u->sink_unlink_post_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_UNLINK_POST], PA_HOOK_EARLY, (pa_hook_cb_t) sink_unlink_post_hook_callback, u);
-#endif
-
-#ifndef DEVICE_MANAGER
-    u->sink_input_move_start_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_MOVE_START], PA_HOOK_LATE, (pa_hook_cb_t) sink_input_move_start_cb, u);
-    u->sink_input_move_finish_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_MOVE_FINISH], PA_HOOK_LATE, (pa_hook_cb_t) sink_input_move_finish_cb, u);
-#endif
 
     u->subscription = pa_subscription_new(u->core, PA_SUBSCRIPTION_MASK_SERVER | PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE, subscribe_cb, u);
 
@@ -3047,12 +2586,6 @@ int pa__init(pa_module *m)
     pa_native_protocol_install_ext(u->protocol, m, extension_cb);
 
     u->hal_manager = pa_hal_manager_get(u->core, (void *)u);
-#ifndef DEVICE_MANAGER /* For temporarily access hal directly, it'll be removed or moved later on */
-    u->hal_manager->intf.reset_volume = dlsym(u->hal_manager->dl_handle, "audio_reset_volume");
-//    u->hal_manager->intf.set_callback = dlsym(u->hal_manager->dl_handle, "audio_set_callback");
-    u->hal_manager->intf.set_session = dlsym(u->hal_manager->dl_handle, "audio_set_session");
-    u->hal_manager->intf.set_route = dlsym(u->hal_manager->dl_handle, "audio_set_route");
-#endif
 
     u->communicator.comm = pa_communicator_get(u->core);
     if (u->communicator.comm) {

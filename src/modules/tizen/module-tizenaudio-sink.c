@@ -54,8 +54,12 @@ PA_MODULE_DESCRIPTION("TizenAudio sink");
 PA_MODULE_VERSION(PACKAGE_VERSION);
 PA_MODULE_LOAD_ONCE(false);
 PA_MODULE_USAGE(
+        "name=<name of the sink, to be prefixed> "
         "sink_name=<name of sink> "
         "sink_properties=<properties for the sink> "
+        "namereg_fail=<when false attempt to synthesise new sink_name if it is already taken> "
+        "device=<ALSA device> "
+        "device_id=<ALSA card index> "
         "format=<sample format> "
         "rate=<sample rate> "
         "channels=<number of channels> "
@@ -86,8 +90,12 @@ struct userdata {
 };
 
 static const char* const valid_modargs[] = {
+    "name",
     "sink_name",
     "sink_properties",
+    "namereg_fail",
+    "device",
+    "device_id",
     "format",
     "rate",
     "channels",
@@ -386,7 +394,7 @@ int pa__init(pa_module*m) {
     pa_sink_new_data_set_name(&data, pa_modargs_get_value(ma, "sink_name", DEFAULT_SINK_NAME));
     pa_sink_new_data_set_sample_spec(&data, &ss);
     pa_sink_new_data_set_channel_map(&data, &map);
-    pa_proplist_sets(data.proplist, PA_PROP_DEVICE_DESCRIPTION, _("Null Output"));
+    pa_proplist_sets(data.proplist, PA_PROP_DEVICE_DESCRIPTION, _("Tizen audio sink"));
     pa_proplist_sets(data.proplist, PA_PROP_DEVICE_CLASS, "abstract");
 
     if (pa_modargs_get_proplist(ma, "sink_properties", data.proplist, PA_UPDATE_REPLACE) < 0) {
@@ -417,7 +425,7 @@ int pa__init(pa_module*m) {
     pa_sink_set_max_rewind(u->sink, 0);
     pa_sink_set_max_request(u->sink, nbytes);
 
-    if (!(u->thread = pa_thread_new("null-sink", thread_func, u))) {
+    if (!(u->thread = pa_thread_new("tizenaudio-sink", thread_func, u))) {
         pa_log("Failed to create thread.");
         goto fail;
     }

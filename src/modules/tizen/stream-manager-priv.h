@@ -51,13 +51,6 @@ typedef struct _prior_max_priority_stream {
     pa_bool_t need_to_update_so;
 } cur_max_priority_stream;
 
-struct primary_volume_type_info {
-    void* key;
-    int volumetype;
-    int priority;
-    PA_LLIST_FIELDS(struct primary_volume_type_info);
-};
-
 struct _stream_manager {
     pa_core *core;
     pa_hal_manager *hal;
@@ -70,6 +63,8 @@ struct _stream_manager {
         *sink_input_put_slot,
         *sink_input_unlink_slot,
         *sink_input_state_changed_slot,
+        *sink_input_move_start_slot,
+        *sink_input_move_finish_slot,
         *source_output_new_slot,
         *source_output_put_slot,
         *source_output_unlink_slot,
@@ -87,9 +82,6 @@ struct _stream_manager {
         pa_hook_slot *comm_hook_device_connection_changed_slot;
         pa_hook_slot *comm_hook_device_information_changed_slot;
     } comm;
-#ifdef PRIMARY_VOLUME
-    PA_LLIST_HEAD(struct primary_volume_type_info, primary_volume);
-#endif
 };
 
 

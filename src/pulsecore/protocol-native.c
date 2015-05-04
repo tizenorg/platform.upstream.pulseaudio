@@ -2487,6 +2487,9 @@ static void command_create_record_stream(pa_pdispatch *pd, uint32_t command, uin
     CHECK_VALIDITY_GOTO(c->pstream, source_index == PA_INVALID_INDEX || !source_name, tag, PA_ERR_INVALID, finish);
     CHECK_VALIDITY_GOTO(c->pstream, !source_name || source_index == PA_INVALID_INDEX, tag, PA_ERR_INVALID, finish);
 
+#ifdef USE_SECURITY
+    CHECK_VALIDITY(c->pstream, pa_pstream_check_security(c->pstream), tag, PA_ERR_ACCESS_BY_SECURITY);
+#endif /* USE_SECURITY */
     p = pa_proplist_new();
 
     if (name)

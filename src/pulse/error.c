@@ -64,6 +64,9 @@ const char*pa_strerror(int error) {
         [PA_ERR_FORKED] = N_("Client forked"),
         [PA_ERR_IO] = N_("Input/Output error"),
         [PA_ERR_BUSY] = N_("Device or resource busy")
+#ifdef __TIZEN__
+        ,[PA_ERR_ACCESS_BY_SECURITY] = N_("Access denied by security check")
+#endif
     };
 
     pa_init_i18n();

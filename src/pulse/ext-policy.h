@@ -120,81 +120,6 @@ pa_operation *pa_ext_policy_test(
         pa_ext_policy_test_cb_t cb,
         void *userdata);
 
-/** Enable the mono mode. \since 0.9.21 */
-pa_operation *pa_ext_policy_set_mono (
-        pa_context *c,
-        int enable,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
-/** Enable the balance mode. \since 0.9.21 */
-pa_operation *pa_ext_policy_set_balance (
-        pa_context *c,
-        double *balance,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
-/** Enable the muteall mode. \since 0.9.21 */
-pa_operation *pa_ext_policy_set_muteall (
-        pa_context *c,
-        int enable,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
-pa_operation *pa_ext_policy_set_use_case (
-        pa_context *c,
-        const char *verb,
-        const char *devices[],
-        const int num_devices,
-        const char *modifiers[],
-        const int num_modifiers,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
-pa_operation *pa_ext_policy_set_session (
-        pa_context *c,
-        uint32_t session,
-        uint32_t start,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
-pa_operation *pa_ext_policy_set_subsession (
-        pa_context *c,
-        uint32_t subsession,
-        uint32_t subsession_opt,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
-typedef void (*pa_ext_policy_set_active_device_cb_t)(
-        pa_context *c,
-        int success,
-        uint32_t need_update,
-        void *userdata);
-
-pa_operation *pa_ext_policy_set_active_device (
-        pa_context *c,
-        uint32_t device_in,
-        uint32_t device_out,
-        pa_ext_policy_set_active_device_cb_t cb,
-        void *userdata);
-
-pa_operation *pa_ext_policy_reset (
-        pa_context *c,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
-/** Callback prototype for pa_ext_policy_get_volume_level_max(). \since 0.9.21 */
-typedef void (*pa_ext_policy_get_volume_level_max_cb_t)(
-        pa_context *c,
-        uint32_t volume_level,
-        void *userdata);
-
-pa_operation *pa_ext_policy_get_volume_level_max (
-        pa_context *c,
-        uint32_t volume_type,
-        pa_ext_policy_get_volume_level_max_cb_t cb,
-        void *userdata);
-
 /** Callback prototype for pa_ext_policy_get_volume_level(). \since 0.9.21 */
 typedef void (*pa_ext_policy_get_volume_level_cb_t)(
         pa_context *c,
@@ -205,7 +130,7 @@ pa_operation *pa_ext_policy_get_volume_level (
         pa_context *c,
         uint32_t stream_idx,
         uint32_t volume_type,
-        pa_ext_policy_get_volume_level_max_cb_t cb,
+        pa_ext_policy_get_volume_level_cb_t cb,
         void *userdata);
 
 pa_operation *pa_ext_policy_set_volume_level (
@@ -236,22 +161,6 @@ pa_operation *pa_ext_policy_set_mute (
         uint32_t volume_type,
         uint32_t direction,
         uint32_t mute,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
-/** Callback prototype for pa_ext_policy_get_mute(). \since 0.9.21 */
-typedef void (*pa_ext_policy_is_available_high_latency_cb_t)(
-        pa_context *c,
-        uint32_t available,
-        void *userdata);
-
-pa_operation *pa_ext_policy_is_available_high_latency (
-        pa_context *c,
-        pa_ext_policy_is_available_high_latency_cb_t cb,
-        void *userdata);
-
-pa_operation *pa_ext_policy_unload_hdmi (
-        pa_context *c,
         pa_context_success_cb_t cb,
         void *userdata);
 

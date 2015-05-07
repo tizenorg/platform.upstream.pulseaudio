@@ -46,39 +46,24 @@
 #include "hal-manager.h"
 #include "stream-manager.h"
 #include "stream-manager-volume.h"
-//#define DEVICE_MANAGER
+#define DEVICE_MANAGER
 #ifdef DEVICE_MANAGER
 #include "device-manager.h"
 #endif
-
-#define VCONFKEY_SOUND_HDMI_SUPPORT "memory/private/sound/hdmisupport"
 
 //To be changed
 #ifndef VCONFKEY_SOUND_CAPTURE_STATUS
 #define VCONFKEY_SOUND_CAPTURE_STATUS "memory/Sound/SoundCaptureStatus"
 #endif
-#define VCONFKEY_CALL_NOISE_REDUCTION_STATE_BOOL "memory/private/call/NoiseReduction"
-#define VCONFKEY_CALL_EXTRA_VOLUME_STATE_BOOL "memory/private/call/ExtraVolume"
-#define VCONFKEY_CALL_WBAMR_STATE_BOOL "memory/private/call/WBAMRState"
-
 
 
 PA_MODULE_AUTHOR("Seungbae Shin");
 PA_MODULE_DESCRIPTION("Media Policy module");
 PA_MODULE_VERSION(PACKAGE_VERSION);
-PA_MODULE_LOAD_ONCE(true);
-PA_MODULE_USAGE(
-        "on_hotplug=<When new device becomes available, recheck streams?> "
-        "use_wideband_voice=<Set to 1 to enable wb voice. Default nb>"
-        "fragment_size=<fragment size>"
-        "tsched_buffer_size=<buffer size when using timer based scheduling> ");
+PA_MODULE_LOAD_ONCE(TRUE);
+PA_MODULE_USAGE(" ");
 
 static const char* const valid_modargs[] = {
-    "on_hotplug",
-    "use_wideband_voice",
-    "fragment_size",
-    "tsched_buffersize",
-    "tsched_buffer_size",
     NULL
 };
 
@@ -248,76 +233,16 @@ static pa_dbus_interface_info policy_interface_info = {
 
 #endif
 
-/* Tunning Value */
-#define DEFAULT_TSCHED_BUFFER_SIZE 16384
-#define START_THRESHOLD    4096
-#ifdef TIZEN_MICRO
-#define DEFAULT_FRAGMENT_SIZE 4096
-#else
-#define DEFAULT_FRAGMENT_SIZE 8192
-#endif
-
 /* Sink & Source names */
-#define AEC_SINK            "alsa_output.0.analog-stereo.echo-cancel"
-#define AEC_SOURCE          "alsa_input.0.analog-stereo.echo-cancel"
-#define SINK_VOIP           "alsa_output.3.analog-stereo"
-#define SINK_VIRTUAL        "alsa_output.virtual.analog-stereo"
-#define ALSA_VIRTUAL_CARD   "VIRTUALAUDIO"
-#define SOURCE_ALSA         "alsa_input.0.analog-stereo"
-#define SOURCE_VIRTUAL      "alsa_input.virtual.analog-stereo"
-#define SOURCE_VOIP         "alsa_input.3.analog-stereo"
-#define SINK_ALSA           "alsa_output.0.analog-stereo"
-#define SINK_ALSA_UHQA      "alsa_output.0.analog-stereo-uhqa"
-#define SINK_COMBINED       "combined"
-#define SINK_MONO_ALSA		"mono_alsa"
-#define SINK_MONO_BT		"mono_bt"
-#define SINK_MONO_COMBINED	"mono_combined"
 #define SINK_HIGH_LATENCY   "alsa_output.4.analog-stereo"
 #define SINK_HIGH_LATENCY_UHQA   "alsa_output.4.analog-stereo-uhqa"
-#define SINK_HDMI           "alsa_output.1.analog-stereo"
-#define SINK_HDMI_UHQA           "alsa_output.1.analog-stereo-uhqa"
-#define SOURCE_MIRRORING    "alsa_input.8.analog-stereo"
-#define ALSA_MONITOR_SOURCE "alsa_output.0.analog-stereo.monitor"
-
 
 /* Policies */
-#define POLICY_AUTO         "auto"
-#define POLICY_AUTO_UHQA    "auto-uhqa"
-#define POLICY_PHONE        "phone"
-#define POLICY_ALL          "all"
-#define POLICY_VOIP         "voip"
 #define POLICY_HIGH_LATENCY "high-latency"
 #define POLICY_HIGH_LATENCY_UHQA "high-latency-uhqa"
-#define POLICY_MIRRORING    "mirroring"
-#define POLICY_LOOPBACK    "loopback"
-
-/* API */
-#define BLUEZ_API           "bluez"
-#define ALSA_API            "alsa"
-#define HIGH_LATENCY_API    "high-latency"
-#define NULL_SOURCE         "source.null"
-#define ALSA_SAUDIOVOIP_CARD "saudiovoip"
-#define MONO_KEY			VCONFKEY_SETAPPL_ACCESSIBILITY_MONO_AUDIO
 
 /* Sink Identify Macros */
-#define sink_is_hdmi(sink) !strncmp(sink->name, SINK_HDMI, strlen(SINK_HDMI))
 #define sink_is_highlatency(sink) !strncmp(sink->name, SINK_HIGH_LATENCY, strlen(SINK_HIGH_LATENCY))
-#define sink_is_alsa(sink) !strncmp(sink->name, SINK_ALSA, strlen(SINK_ALSA))
-#define sink_is_voip(sink) !strncmp(sink->name, SINK_VOIP, strlen(SINK_VOIP))
-
-/* Channels */
-#define CH_5_1 6
-#define CH_7_1 8
-#define CH_STEREO 2
-
-/* UHQA */
-/**
-  * UHQA sampling rate vary from 96 KHz to 192 KHz, currently the plan is to configure sink with highest sampling
-  * rate possible i.e. 192 KHz. So that < 192 KHz will be resampled and played. This will avoid creating multiple sinks
-  * for multiple rates
-  */
-#define UHQA_SAMPLING_RATE 192000
-#define UHQA_BASE_SAMPLING_RATE 96000
 
 /* PCM Dump */
 #define PA_DUMP_INI_DEFAULT_PATH                "/usr/etc/mmfw_audio_pcm_dump.ini"
@@ -339,54 +264,8 @@ struct userdata {
     pa_core *core;
     pa_module *module;
 
-    pa_hook_slot *sink_input_new_hook_slot,*sink_put_hook_slot;
-
-    pa_hook_slot *sink_unlink_slot;
-
-    pa_hook_slot *sink_input_unlink_post_slot, *sink_unlink_post_slot;
-    pa_hook_slot *sink_input_move_start_slot,*sink_input_move_finish_slot;
-    pa_hook_slot *source_output_new_hook_slot;
-
-    pa_hook_slot *sink_state_changed_slot;
-    pa_hook_slot *sink_input_state_changed_slot;
-
-    pa_subscription *subscription;
-
-    pa_bool_t on_hotplug:1;
-    int bt_off_idx;
-
-    uint32_t session;
-    uint32_t subsession;
-    uint32_t subsession_opt;
-    uint32_t active_device_in;
-    uint32_t active_device_out;
-    uint32_t active_route_flag;
-
-    int is_mono;
-    float balance;
-    int muteall;
-    int call_muted;
-    pa_bool_t wideband;
-    int fragment_size;
-    int tsched_buffer_size;
-    pa_module* module_mono_bt;
-    pa_module* module_combined;
-    pa_module* module_mono_combined;
     pa_native_protocol *protocol;
 
-    pa_hal_manager *hal_manager;
-
-    struct  { // for burst-shot
-        pa_bool_t is_running;
-        pa_mutex* mutex;
-        int count; /* loop count */
-        pa_time_event *time_event;
-        pa_scache_entry *e;
-        pa_sink_input *i;
-        pa_memblockq *q;
-        pa_usec_t time_interval;
-        pa_usec_t factor; /* timer boosting */
-    } audio_sample_userdata;
 #ifdef HAVE_DBUS
     pa_dbus_connection *dbus_conn;
     int32_t test_property1;
@@ -399,6 +278,7 @@ struct userdata {
         pa_hook_slot *comm_hook_update_route_options_slot;
     } communicator;
 
+    pa_hal_manager *hal_manager;
     pa_stream_manager *stream_manager;
 #ifdef DEVICE_MANAGER
     pa_device_manager *device_manager;
@@ -406,45 +286,12 @@ struct userdata {
 };
 
 enum {
-    CUSTOM_EXT_3D_LEVEL,
-    CUSTOM_EXT_BASS_LEVEL,
-    CUSTOM_EXT_CONCERT_HALL_VOLUME,
-    CUSTOM_EXT_CONCERT_HALL_LEVEL,
-    CUSTOM_EXT_CLARITY_LEVEL,
-    CUSTOM_EXT_PARAM_MAX
-};
-
-enum {
     SUBCOMMAND_TEST,
-    SUBCOMMAND_MONO,
-    SUBCOMMAND_BALANCE,
-    SUBCOMMAND_MUTEALL,
-    SUBCOMMAND_SET_USE_CASE,
-    SUBCOMMAND_SET_SESSION,
-    SUBCOMMAND_SET_SUBSESSION,
-    SUBCOMMAND_SET_ACTIVE_DEVICE,
-    SUBCOMMAND_RESET,
     SUBCOMMAND_GET_VOLUME_LEVEL,
     SUBCOMMAND_SET_VOLUME_LEVEL,
     SUBCOMMAND_GET_MUTE,
     SUBCOMMAND_SET_MUTE,
-    SUBCOMMAND_IS_AVAILABLE_HIGH_LATENCY,
-    SUBCOMMAND_UNLOAD_HDMI,
-
 };
-typedef enum
-{
-    DOCK_NONE      = 0,
-    DOCK_DESKDOCK  = 1,
-    DOCK_CARDOCK   = 2,
-    DOCK_AUDIODOCK = 7,
-    DOCK_SMARTDOCK = 8
-} DOCK_STATUS;
-
-static audio_return_t policy_volume_reset(struct userdata *u);
-static audio_return_t policy_set_session(struct userdata *u, uint32_t session, uint32_t start);
-static audio_return_t policy_set_active_device(struct userdata *u, uint32_t device_in, uint32_t device_out, uint32_t* need_update);
-static pa_bool_t policy_is_filter (pa_sink_input* si);
 
 static int __convert_volume_type_to_string(uint32_t volume_type, const char **volume_type_str) {
     int ret = 0;
@@ -483,68 +330,6 @@ static int __convert_volume_type_to_string(uint32_t volume_type, const char **vo
     return ret;
 }
 
-static const char *__get_session_str(uint32_t session)
-{
-    switch (session) {
-        case AUDIO_SESSION_MEDIA:                       return "media";
-        case AUDIO_SESSION_VOICECALL:                   return "voicecall";
-        case AUDIO_SESSION_VIDEOCALL:                   return "videocall";
-        case AUDIO_SESSION_VOIP:                        return "voip";
-        case AUDIO_SESSION_FMRADIO:                     return "fmradio";
-        case AUDIO_SESSION_CAMCORDER:                   return "camcorder";
-        case AUDIO_SESSION_NOTIFICATION:                return "notification";
-        case AUDIO_SESSION_ALARM:                       return "alarm";
-        case AUDIO_SESSION_EMERGENCY:                   return "emergency";
-        case AUDIO_SESSION_VOICE_RECOGNITION:           return "vr";
-        default:                                        return "invalid";
-    }
-}
-
-static const char *__get_subsession_str(uint32_t subsession)
-{
-    switch (subsession) {
-        case AUDIO_SUBSESSION_NONE:                     return "none";
-        case AUDIO_SUBSESSION_VOICE:                    return "voice";
-        case AUDIO_SUBSESSION_RINGTONE:                 return "ringtone";
-        case AUDIO_SUBSESSION_MEDIA:                    return "media";
-        case AUDIO_SUBSESSION_INIT:                     return "init";
-        case AUDIO_SUBSESSION_VR_NORMAL:                return "vr_normal";
-        case AUDIO_SUBSESSION_VR_DRIVE:                 return "vr_drive";
-        case AUDIO_SUBSESSION_STEREO_REC:               return "stereo_rec";
-        case AUDIO_SUBSESSION_MONO_REC:                 return "mono_rec";
-        default:                                        return "invalid";
-    }
-}
-
-static const char *__get_device_in_str(uint32_t device_in)
-{
-    switch (device_in) {
-        case AUDIO_DEVICE_IN_NONE:                      return "none";
-        case AUDIO_DEVICE_IN_MIC:                       return "mic";
-        case AUDIO_DEVICE_IN_WIRED_ACCESSORY:           return "wired";
-        case AUDIO_DEVICE_IN_BT_SCO:                    return "bt_sco";
-        default:                                        return "invalid";
-    }
-}
-
-static const char *__get_device_out_str(uint32_t device_out)
-{
-    switch (device_out) {
-        case AUDIO_DEVICE_OUT_NONE:                     return "none";
-        case AUDIO_DEVICE_OUT_SPEAKER:                  return "spk";
-        case AUDIO_DEVICE_OUT_RECEIVER:                 return "recv";
-        case AUDIO_DEVICE_OUT_WIRED_ACCESSORY:          return "wired";
-        case AUDIO_DEVICE_OUT_BT_SCO:                   return "bt_sco";
-        case AUDIO_DEVICE_OUT_BT_A2DP:                  return "bt_a2dp";
-        case AUDIO_DEVICE_OUT_DOCK:                     return "dock";
-        case AUDIO_DEVICE_OUT_HDMI:                     return "hdmi";
-        case AUDIO_DEVICE_OUT_MIRRORING:                return "mirror";
-        case AUDIO_DEVICE_OUT_USB_AUDIO:                return "usb";
-        case AUDIO_DEVICE_OUT_MULTIMEDIA_DOCK:          return "multi_dock";
-        default:                                        return "invalid";
-    }
-}
-
 static void __load_dump_config(struct userdata *u)
 {
     dictionary * dict = NULL;
@@ -574,765 +359,6 @@ static void __load_dump_config(struct userdata *u)
     if (vconf_set_int(PA_DUMP_VCONF_KEY, vconf_dump)) {
         pa_log_warn("vconf_set_int %s=%x failed", PA_DUMP_VCONF_KEY, vconf_dump);
     }
-}
-
-static inline pa_bool_t __is_mute_policy(void)
-{
-    int sound_status = 1;
-
-    /* If sound is mute mode, force ringtone/notification path to headset */
-    if (vconf_get_bool(VCONFKEY_SETAPPL_SOUND_STATUS_BOOL, &sound_status)) {
-        pa_log_warn("vconf_get_bool for %s failed", VCONFKEY_SETAPPL_SOUND_STATUS_BOOL);
-    }
-
-    return (sound_status) ? false : true;
-}
-
-static inline pa_bool_t __is_recording(void)
-{
-    int capture_status = 0;
-
-    /* Check whether audio is recording */
-    if (vconf_get_int(VCONFKEY_SOUND_CAPTURE_STATUS, &capture_status)) {
-        pa_log_warn("vconf_get_bool for %s failed", VCONFKEY_SOUND_CAPTURE_STATUS);
-    }
-
-    return (capture_status) ? true : false;
-}
-
-static inline pa_bool_t __is_noise_reduction_on(void)
-{
-    int noise_reduction_on = 1;
-
-    if (vconf_get_bool(VCONFKEY_CALL_NOISE_REDUCTION_STATE_BOOL, &noise_reduction_on)) {
-        pa_log_warn("vconf_get_bool for %s failed", VCONFKEY_CALL_NOISE_REDUCTION_STATE_BOOL);
-    }
-
-    return (noise_reduction_on == 1) ? true : false;
-}
-
-static bool __is_extra_volume_on(void)
-{
-    int extra_volume_on = 1;
-
-    if (vconf_get_bool(VCONFKEY_CALL_EXTRA_VOLUME_STATE_BOOL, &extra_volume_on)) {
-        pa_log_warn("vconf_get_bool for %s failed", VCONFKEY_CALL_EXTRA_VOLUME_STATE_BOOL);
-    }
-
-    return (extra_volume_on == 1) ? true : false;
-}
-
-static bool __is_wideband(void)
-{
-    int wbamr = 1;
-
-    if (vconf_get_bool(VCONFKEY_CALL_WBAMR_STATE_BOOL, &wbamr)) {
-        pa_log_warn("vconf_get_bool for %s failed", VCONFKEY_CALL_WBAMR_STATE_BOOL);
-    }
-
-    return (wbamr == 1) ? true : false;
-}
-
-
-/* check if this sink is bluez */
-static bool policy_is_bluez (pa_sink* sink)
-{
-    const char* api_name = NULL;
-
-    if (sink == NULL) {
-        pa_log_warn ("input param sink is null");
-        return false;
-    }
-
-    api_name = pa_proplist_gets(sink->proplist, PA_PROP_DEVICE_API);
-    if (api_name) {
-        if (pa_streq (api_name, BLUEZ_API)) {
-#ifdef DEBUG_DETAIL
-            pa_log_debug("[POLICY][%s] [%s] exists and it is [%s]...true !!", __func__, PA_PROP_DEVICE_API, api_name);
-#endif
-            return true;
-        } else {
-#ifdef DEBUG_DETAIL
-            pa_log_debug("[POLICY][%s] [%s] exists, but not bluez...false !!", __func__, PA_PROP_DEVICE_API);
-#endif
-        }
-    } else {
-#ifdef DEBUG_DETAIL
-        pa_log_debug("[POLICY][%s] No [%s] exists...false!!", __func__, PA_PROP_DEVICE_API);
-#endif
-    }
-
-    return false;
-}
-
-/* check if this sink is bluez */
-static bool policy_is_usb_alsa (pa_sink* sink)
-{
-    const char* api_name = NULL;
-    const char* device_bus_name = NULL;
-
-    if (sink == NULL) {
-        pa_log_warn ("input param sink is null");
-        return false;
-    }
-
-    api_name = pa_proplist_gets(sink->proplist, PA_PROP_DEVICE_API);
-    if (api_name) {
-        if (pa_streq (api_name, ALSA_API)) {
-#ifdef DEBUG_DETAIL
-            pa_log_debug("[POLICY][%s] [%s] exists and it is [%s]...true !!", __func__, PA_PROP_DEVICE_API, api_name);
-#endif
-            device_bus_name = pa_proplist_gets(sink->proplist, PA_PROP_DEVICE_BUS);
-            if (device_bus_name) {
-                if (pa_streq (device_bus_name, "usb")) {
-                    return true;
-                }
-            }
-        } else {
-#ifdef DEBUG_DETAIL
-            pa_log_debug("[POLICY][%s] [%s] exists, but not alsa...false !!", __func__, PA_PROP_DEVICE_API);
-#endif
-        }
-    } else {
-#ifdef DEBUG_DETAIL
-        pa_log_debug("[POLICY][%s] No [%s] exists...false!!", __func__, PA_PROP_DEVICE_API);
-#endif
-    }
-
-    return false;
-}
-
-/* Get sink by name */
-static pa_sink* policy_get_sink_by_name (pa_core *c, const char* sink_name)
-{
-    pa_sink *s = NULL;
-    uint32_t idx;
-
-    if (c == NULL || sink_name == NULL) {
-        pa_log_warn ("input param is null");
-        return NULL;
-    }
-
-    PA_IDXSET_FOREACH(s, c->sinks, idx) {
-        if (pa_streq (s->name, sink_name)) {
-            pa_log_debug ("[POLICY][%s] return [%p] for [%s]\n",  __func__, s, sink_name);
-            return s;
-        }
-    }
-    return NULL;
-}
-
-/* Get bt sink if available */
-static pa_sink* policy_get_bt_sink (pa_core *c)
-{
-    pa_sink *s = NULL;
-    uint32_t idx;
-
-    if (c == NULL) {
-        pa_log_warn ("input param is null");
-        return NULL;
-    }
-
-    PA_IDXSET_FOREACH(s, c->sinks, idx) {
-        if (policy_is_bluez (s)) {
-            pa_log_debug ("[POLICY][%s] return [%p] for [%s]\n", __func__, s, s->name);
-            return s;
-        }
-    }
-    return NULL;
-}
-/** This function chages the sink from normal sink to UHQA sink if UHQA sink is available*/
-static pa_sink* switch_to_uhqa_sink(pa_core *c, const char* policy)
-{
-    pa_sink_input *si = NULL;
-    uint32_t idx;
-    pa_sink* sink = NULL;
-    pa_sink* uhqa_sink = NULL;
-    pa_sink* def = pa_namereg_get_default_sink(c);
-    /** If default sink is HDMI sink*/
-    if (sink_is_hdmi(def)) {
-        uhqa_sink = policy_get_sink_by_name(c, SINK_HDMI_UHQA);
-        sink = policy_get_sink_by_name(c, SINK_HDMI);
-    /** If high latency UHQA policy means h:0,4 UHQA sink to be selected if h:0,4 UHQA sink already created*/
-    } else if (pa_streq(policy, POLICY_HIGH_LATENCY_UHQA)) {
-        uhqa_sink = policy_get_sink_by_name(c, SINK_HIGH_LATENCY_UHQA);
-        sink = policy_get_sink_by_name(c, SINK_HIGH_LATENCY);
-    } else if (pa_streq(policy, POLICY_AUTO_UHQA)) {   /** If UHQA policy choose UHQA sink*/
-        pa_log_info ("---------------------------------");
-
-        uhqa_sink = policy_get_sink_by_name(c, SINK_ALSA_UHQA);
-        sink = policy_get_sink_by_name(c, SINK_ALSA);
-    }
-    pa_log_info ("---------------------------------");
-    if (uhqa_sink != NULL) {
-        if (sink != NULL) {/** if the sink is null due to some reason ,it need to add protect code */
-
-            /** Check if normal sink is in not suspended state then suspend normal sik so that pcm handle is closed*/
-            if (PA_SINK_SUSPENDED != pa_sink_get_state(sink) ) {
-                pa_sink_suspend(sink, true, PA_SUSPEND_USER);
-            }
-            pa_log_info ("---------------------------------");
-
-            /** Check any sink input connected to normal sink then move them to UHQA sink*/
-            PA_IDXSET_FOREACH (si, sink->inputs, idx) {
-
-                /* Get role (if role is filter, skip it) */
-                if (policy_is_filter(si)) {
-                    continue;
-                }
-                pa_sink_input_move_to(si, uhqa_sink, false);
-            }
-        }
-        if (PA_SINK_SUSPENDED == pa_sink_get_state(uhqa_sink)) {
-            pa_sink_suspend(uhqa_sink, false, PA_SUSPEND_USER);
-        }
-        sink = uhqa_sink;
-    }
-
-    return sink;
-}
-/** This function choose normal sink if UHQA sink is in suspended state*/
-static pa_sink* switch_to_normal_sink(pa_core *c, const char* policy)
-{
-    pa_sink_input *si = NULL;
-    uint32_t idx;
-    pa_sink* sink = NULL;
-    pa_sink* uhqa_sink = NULL;
-    const char *sink_name  = SINK_ALSA;
-    pa_sink* def = NULL;
-
-    def = pa_namereg_get_default_sink(c);
-
-    if (pa_streq(policy, POLICY_PHONE) || pa_streq(policy, POLICY_ALL)) {
-      /** Get the UHQA sink */
-      uhqa_sink = policy_get_sink_by_name (c, SINK_ALSA_UHQA);
-    } else if (sink_is_hdmi(def)) {    /** If default sink is HDMI sink*/
-        /** Get the UHQA sink handle, if it exists then suspend it if not in use*/
-        uhqa_sink = policy_get_sink_by_name (c, SINK_HDMI_UHQA);
-        sink_name  = SINK_HDMI;
-    } else if(pa_streq(policy, POLICY_HIGH_LATENCY)) {      /** Choose the normal sink based on policy*/
-        /** Get the UHQA sink handle, if it exists then suspend it if not in use*/
-        uhqa_sink =  policy_get_sink_by_name(c, SINK_HIGH_LATENCY_UHQA);
-        sink_name  = SINK_HIGH_LATENCY;
-    } else {
-        /** Get the UHQA sink */
-        uhqa_sink = policy_get_sink_by_name(c, SINK_ALSA_UHQA);
-    }
-    sink = uhqa_sink;
-
-    /**
-      * If UHQA sink is in used or any UHQA sink is connected to UHQA sink then return UHQA sink else return normal sink
-      */
-    if ((sink != NULL) && pa_sink_used_by(sink)) {
-        sink = uhqa_sink;
-    } else {
-        sink = policy_get_sink_by_name(c, sink_name);
-        if (sink != NULL) {/**if the sink is null ,it need to add protect code*/
-            /** Move all sink inputs from UHQA sink to normal sink*/
-            if (uhqa_sink != NULL) {
-                if (PA_SINK_SUSPENDED != pa_sink_get_state(uhqa_sink)) {
-                    pa_sink_suspend(uhqa_sink, true, PA_SUSPEND_USER);
-                }
-                PA_IDXSET_FOREACH (si, uhqa_sink->inputs, idx) {
-                    /* Get role (if role is filter, skip it) */
-                    if (policy_is_filter(si)) {
-                       continue;
-                    }
-                   pa_sink_input_move_to(si, sink, false);
-               }
-            }
-            if (PA_SINK_SUSPENDED == pa_sink_get_state(policy_get_sink_by_name(c, sink_name)) ) {
-                /** unsuspend this sink */
-                pa_sink_suspend( policy_get_sink_by_name(c, sink_name), false, PA_SUSPEND_USER);
-            }
-        } else {/** if sink is null,it can not move to the normal sink ,still use uhqa sink */
-            pa_log_warn ("The %s sink is null", sink_name);
-            sink = uhqa_sink;
-        }
-    }
-
-    return sink;
-}
-/*Select sink for given condition */
-static pa_sink* policy_select_proper_sink (struct userdata *u, const char* policy, pa_sink_input *sink_input, int is_mono)
-{
-    pa_core *c = u->core;
-    pa_sink* sink = NULL;
-    pa_sink* bt_sink = NULL;
-    pa_sink* def = NULL;
-    pa_sink* sink_null;
-    uint32_t idx;
-    const char *si_policy_str;
-    pa_sink_input *si = NULL;
-    if (c == NULL || policy == NULL) {
-        pa_log_warn ("input param is null");
-        return NULL;
-    }
-
-    pa_assert (c);
-
-    bt_sink = policy_get_bt_sink(c);
-    def = pa_namereg_get_default_sink(c);
-    if (def == NULL) {
-        pa_log_warn ("POLICY][%s] pa_namereg_get_default_sink() returns null", __func__);
-        return NULL;
-    }
-
-    pa_log_debug ("[POLICY][%s] policy[%s], is_mono[%d], current default[%s], bt sink[%s]\n",
-            __func__, policy, is_mono, def->name, (bt_sink)? bt_sink->name:"null");
-
-    sink_null = (pa_sink *)pa_namereg_get(c, "null", PA_NAMEREG_SINK);
-    /* if default sink is set as null sink, we will use null sink */
-    if (def == sink_null)
-        return def;
-
-    /* Select sink to */
-    if (pa_streq(policy, POLICY_ALL)) {
-        /* all */
-        if (bt_sink) {
-            sink = policy_get_sink_by_name(c, (is_mono)? SINK_MONO_COMBINED : SINK_COMBINED);
-        } else {
-#ifdef TIZEN_MICRO
-            sink = policy_get_sink_by_name (c, (is_mono)? SINK_MONO_ALSA : SINK_ALSA);
-#else
-            sink = switch_to_normal_sink(c, policy);
-#endif
-        }
-
-    } else if (pa_streq(policy, POLICY_PHONE)) {
-        /* phone */
-#ifdef TIZEN_MICRO
-        if (u->subsession == AUDIO_SUBSESSION_RINGTONE)
-            sink = policy_get_sink_by_name(c, AEC_SINK);
-        if (!sink)
-            sink = policy_get_sink_by_name (c, (is_mono)? SINK_MONO_ALSA : SINK_ALSA);
-#else
-        sink = switch_to_normal_sink(c, policy);
-#endif
-    } else if (pa_streq(policy, POLICY_VOIP)) {
-        /* VOIP */
-        /* NOTE: Check voip sink first, if not available, use AEC sink */
-        sink = policy_get_sink_by_name (c,SINK_VOIP);
-        if (sink == NULL) {
-            pa_log_info ("VOIP sink is not available, try to use AEC sink");
-            sink = policy_get_sink_by_name (c, AEC_SINK);
-            if (sink == NULL) {
-                pa_log_info ("AEC sink is not available, set to default sink");
-                sink = def;
-            }
-        }
-    } else {
-        /* auto */
-        if (policy_is_bluez(def)) {
-            sink = (is_mono)? policy_get_sink_by_name (c, SINK_MONO_BT) : def;
-        } else if (policy_is_usb_alsa(def)) {
-            sink = def;
-        } else if (sink_is_hdmi(def)) {
-#ifdef TIZEN_MICRO
-            sink = def;
-#else
-            if (pa_streq(policy, POLICY_AUTO_UHQA) || (pa_streq(policy, POLICY_HIGH_LATENCY_UHQA))) {
-                sink = switch_to_uhqa_sink(c,policy);
-            }
-            else {
-                sink = switch_to_normal_sink(c, policy);
-            }
-#endif
-        } else {
-            pa_bool_t highlatency_exist = 0;
-
-#ifdef TIZEN_MICRO
-            if(pa_streq(policy, POLICY_HIGH_LATENCY)) {
-#else
-            if ((pa_streq(policy, POLICY_HIGH_LATENCY)) || (pa_streq(policy, POLICY_HIGH_LATENCY_UHQA))) {
-#endif
-                PA_IDXSET_FOREACH(si, c->sink_inputs, idx) {
-                    if ((si_policy_str = pa_proplist_gets(si->proplist, PA_PROP_MEDIA_POLICY))) {
-                        if (pa_streq(si_policy_str, POLICY_HIGH_LATENCY) && sink_is_highlatency(si->sink)
-                            && (sink_input == NULL || sink_input->index != si->index)) {
-                            highlatency_exist = 1;
-                            break;
-                        }
-                    }
-                }
-
-#ifdef TIZEN_MICRO
-                if (!highlatency_exist) {
-                    sink = policy_get_sink_by_name(c, SINK_HIGH_LATENCY);
-                }
-#else
-                /** If high latency UHQA policy means h:0,4 UHQA sink to be selected if h:0,4 UHQA sink already created*/
-                if (pa_streq(policy, POLICY_HIGH_LATENCY_UHQA)) {
-                    sink = switch_to_uhqa_sink(c,policy);
-                }
-
-                /**
-                  * If still sink is null means either policy is high-latency or UHQA sink does not exist
-                  * Normal sink need to be selected
-                  */
-                if (!highlatency_exist && (sink == NULL)) {
-                    sink = switch_to_normal_sink(c, policy);
-                }
-#endif
-            }
-#ifdef TIZEN_MICRO
-            if (!sink)
-                sink = policy_get_sink_by_name (c, (is_mono)? SINK_MONO_ALSA : SINK_ALSA);
-
-#else
-            /** If sink is still null then it is required to choose hw:0,0 UHQA sink or normal sink  based on policy*/
-            if (!sink) {
-                /** If UHQA policy choose UHQA sink*/
-                if (pa_streq(policy, POLICY_AUTO_UHQA)) {
-                    sink = switch_to_uhqa_sink(c,policy);
-                }
-
-                /** If still no sink selected then select hw:0,0 normal sink this is the default case*/
-                if (!sink) {
-                    sink = switch_to_normal_sink(c,POLICY_AUTO);
-                }
-             }
-#endif
-        }
-    }
-
-    pa_log_debug ("[POLICY][%s] selected sink : [%s]\n", __func__, (sink)? sink->name : "null");
-    return sink;
-}
-static pa_bool_t policy_is_filter (pa_sink_input* si)
-{
-    const char* role = NULL;
-
-    if (si == NULL) {
-        pa_log_warn ("input param sink-input is null");
-        return false;
-    }
-
-    if ((role = pa_proplist_gets(si->proplist, PA_PROP_MEDIA_ROLE))) {
-#ifdef DEBUG_DETAIL
-        pa_log_debug("[POLICY][%s] Role of sink input [%d] = %s", __func__, si->index, role);
-#endif
-        if (pa_streq(role, "filter")) {
-#ifdef DEBUG_DETAIL
-            pa_log_debug("[POLICY] no need to change of sink for %s", role);
-#endif
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static uint32_t __get_route_flag(struct userdata *u) {
-    uint32_t route_flag = 0;
-
-    if (u->session == AUDIO_SESSION_VOICECALL || u->session == AUDIO_SESSION_VIDEOCALL) {
-        if (u->subsession == AUDIO_SUBSESSION_RINGTONE) {
-            if (__is_mute_policy()) {
-                route_flag |= AUDIO_ROUTE_FLAG_MUTE_POLICY;
-            }
-            else if (!__is_recording()) {
-               route_flag |= AUDIO_ROUTE_FLAG_DUAL_OUT;
-            }
-        } else {
-            if (__is_noise_reduction_on())
-                route_flag |= AUDIO_ROUTE_FLAG_NOISE_REDUCTION;
-            if (__is_extra_volume_on())
-                route_flag |= AUDIO_ROUTE_FLAG_EXTRA_VOL;
-            if (__is_wideband())
-                route_flag |= AUDIO_ROUTE_FLAG_NETWORK_WB;
-        }
-    } else if (u->session == AUDIO_SESSION_NOTIFICATION) {
-        if (__is_mute_policy()) {
-            route_flag |= AUDIO_ROUTE_FLAG_MUTE_POLICY;
-        }
-        else if (!__is_recording()) {
-            route_flag |= AUDIO_ROUTE_FLAG_DUAL_OUT;
-        }
-    } else if(u->session == AUDIO_SESSION_ALARM) {
-        if (!__is_recording()) {
-            route_flag |= AUDIO_ROUTE_FLAG_DUAL_OUT;
-        }
-    }
-    if (u->session == AUDIO_SESSION_VOICE_RECOGNITION) {
-        /* add flag if needed */
-    }
-
-    return route_flag;
-}
-
-/* It will be removed soon. This operation will be moved to stream-manager using dbus */
-/* This is for the volume tunning app. for product. It needs to reset volume table of stream-manager itself as well as HAL's */
-static audio_return_t policy_volume_reset(struct userdata *u)
-{
-    audio_return_t audio_ret = AUDIO_RET_OK;
-
-    pa_log_debug("reset");
-    __load_dump_config(u);
-
-    audio_ret = pa_hal_manager_reset_volume(u->hal_manager);
-
-    return audio_ret;
-}
-
-static audio_return_t policy_set_session(struct userdata *u, uint32_t session, uint32_t start) {
-    uint32_t prev_session = u->session;
-    uint32_t prev_subsession = u->subsession;
-    pa_bool_t need_route = false;
-
-    pa_log_info("set_session:%s %s (current:%s,%s)",
-            __get_session_str(session), (start) ? "start" : "end", __get_session_str(u->session), __get_subsession_str(u->subsession));
-
-    if (start) {
-        u->session = session;
-
-        if ((u->session == AUDIO_SESSION_VOICECALL) || (u->session == AUDIO_SESSION_VIDEOCALL)) {
-            u->subsession = AUDIO_SUBSESSION_MEDIA;
-            u->call_muted = 0;
-        } else if (u->session == AUDIO_SESSION_VOIP) {
-            u->subsession = AUDIO_SUBSESSION_VOICE;
-        } else if (u->session == AUDIO_SESSION_VOICE_RECOGNITION) {
-            u->subsession = AUDIO_SUBSESSION_INIT;
-        } else {
-            u->subsession = AUDIO_SUBSESSION_NONE;
-        }
-        /* it will be removed soon */
-        if (u->hal_manager->intf.set_session) {
-            u->hal_manager->intf.set_session(u->hal_manager->data, session, u->subsession, AUDIO_SESSION_CMD_START);
-        }
-    } else {
-        /* it will be removed soon */
-        if (u->hal_manager->intf.set_session) {
-            u->hal_manager->intf.set_session(u->hal_manager->data, session, u->subsession, AUDIO_SESSION_CMD_END);
-        }
-        u->session = AUDIO_SESSION_MEDIA;
-        u->subsession = AUDIO_SUBSESSION_NONE;
-    }
-    if (prev_session != session) {
-        if ((session == AUDIO_SESSION_ALARM) || (session == AUDIO_SESSION_NOTIFICATION)) {
-            pa_log_info("switch route to dual output due to new session");
-            need_route = true;
-        } else if ((prev_session == AUDIO_SESSION_ALARM) || (prev_session == AUDIO_SESSION_NOTIFICATION)
-            || (((prev_session == AUDIO_SESSION_VOICECALL) || (prev_session == AUDIO_SESSION_VIDEOCALL)) && (prev_subsession == AUDIO_SUBSESSION_RINGTONE))) {
-            pa_log_info("switch route from dual output due to previous session");
-            need_route = true;
-        }
-    }
-
-
-    if (need_route) {
-        /* it will be removed soon */
-        uint32_t route_flag = __get_route_flag(u);
-        if (u->hal_manager->intf.set_route) {
-            u->hal_manager->intf.set_route(u->hal_manager->data, u->session, u->subsession, u->active_device_in, u->active_device_out, route_flag);
-        }
-        u->active_route_flag = route_flag;
-    } else {
-        /* route should be updated */
-        u->active_route_flag = (uint32_t)-1;
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static audio_return_t policy_set_subsession(struct userdata *u, uint32_t subsession, uint32_t subsession_opt) {
-    uint32_t prev_subsession = u->subsession;
-    pa_bool_t need_route = false;
-
-    pa_log_info("set_subsession:%s->%s opt:%x->%x (session:%s)",
-            __get_subsession_str(u->subsession), __get_subsession_str(subsession), u->subsession_opt, subsession_opt,
-            __get_session_str(u->session));
-
-    if (u->subsession == subsession && u->subsession_opt == subsession_opt) {
-        pa_log_debug("duplicated request is ignored subsession(%d) opt(0x%x)", subsession, subsession_opt);
-        return AUDIO_RET_OK;
-    }
-
-    u->subsession = subsession;
-#ifndef _TIZEN_PUBLIC_
-    if (u->subsession == AUDIO_SUBSESSION_VR_NORMAL || u->subsession == AUDIO_SUBSESSION_VR_DRIVE)
-        u->subsession_opt = subsession_opt;
-    else
-        u->subsession_opt = 0;
-#else
-    u->subsession_opt = subsession_opt;
-#endif
-    /* it will be removed soon */
-    if (u->hal_manager->intf.set_session) {
-        u->hal_manager->intf.set_session(u->hal_manager->data, u->session, u->subsession, AUDIO_SESSION_CMD_SUBSESSION);
-    }
-
-    if (prev_subsession!= subsession) {
-        if ((u->session == AUDIO_SESSION_VOICECALL) || (u->session == AUDIO_SESSION_VIDEOCALL)) {
-            if (subsession == AUDIO_SUBSESSION_RINGTONE) {
-                pa_log_info("switch route to dual output due to new subsession");
-                need_route = true;
-            } else if (prev_subsession == AUDIO_SUBSESSION_RINGTONE) {
-                pa_log_info("switch route from dual output due to previous subsession");
-                need_route = true;
-            }
-        }
-    }
-
-    if (need_route) {
-        uint32_t route_flag = __get_route_flag(u);
-        /* it will be removed soon */
-        if (u->hal_manager->intf.set_route) {
-            u->hal_manager->intf.set_route(u->hal_manager->data, u->session, u->subsession, u->active_device_in, u->active_device_out, route_flag);
-        }
-        u->active_route_flag = route_flag;
-    } else {
-        /* route should be updated */
-        u->active_route_flag = (uint32_t)-1;
-    }
-    return AUDIO_RET_OK;
-
-}
-static pa_bool_t pa_sink_input_get_mute(pa_sink_input *i) {
-    pa_sink_input_assert_ref(i);
-    pa_assert_ctl_context();
-    pa_assert(PA_SINK_INPUT_IS_LINKED(i->state));
-
-    return i->muted;
-}
-static audio_return_t policy_set_active_device(struct userdata *u, uint32_t device_in, uint32_t device_out, uint32_t* need_update) {
-    pa_sink_input *si = NULL;
-    uint32_t idx;
-    uint32_t route_flag = 0;
-
-#ifndef TIZEN_MICRO
-    *need_update = true;
-#endif
-    route_flag = __get_route_flag(u);
-
-    pa_log_info("set_active_device session:%s,%s in:%s->%s out:%s->%s flag:%x->%x muteall:%d call_muted:%d",
-            __get_session_str(u->session), __get_subsession_str(u->subsession),
-            __get_device_in_str(u->active_device_in), __get_device_in_str(device_in),
-            __get_device_out_str(u->active_device_out), __get_device_out_str(device_out),
-            u->active_route_flag, route_flag, u->muteall, u->call_muted);
-
-    /* Skip duplicated request */
-    if ((device_in == AUDIO_DEVICE_IN_NONE || u->active_device_in == device_in) &&
-        (device_out == AUDIO_DEVICE_OUT_NONE || u->active_device_out == device_out) &&
-        u->active_route_flag == route_flag) {
-#ifdef TIZEN_MICRO
-        pa_log_debug("duplicated request is ignored device_in(%d) device_out(%d) flag(0x%x)", device_in, device_out, route_flag);
-#else
-        pa_log_debug("duplicated request is ignored device_in(%d) device_out(%d) flag(0x%x) need_update(%d)", device_in, device_out, route_flag, *need_update);
-#endif
-        return AUDIO_RET_OK;
-    }
-
-#ifdef TIZEN_MICRO
-    /* it will be removed soon */
-    if (u->hal_manager->intf.set_route) {
-        u->hal_manager->intf.set_route(u->hal_manager->data, u->session, u->subsession, device_in, device_out, route_flag);
-    }
-#else
-
-    /* skip volume changed callback */
-    if(u->active_device_out == device_out) {
-        *need_update = false;
-    }
-    /* it will be removed soon */
-    if (u->hal_manager->intf.set_route) {
-        int32_t audio_ret = 0;
-        const char *device_switching_str;
-        uint32_t device_switching = 0;
-#ifdef PA_SLEEP_DURING_UCM
-        uint32_t need_sleep_for_ucm = 0;
-#endif
-
-        /* Mute sink inputs which are unmuted */
-        PA_IDXSET_FOREACH(si, u->core->sink_inputs, idx) {
-            if ((device_switching_str = pa_proplist_gets(si->proplist, "module-policy.device_switching"))) {
-                pa_atou(device_switching_str, &device_switching);
-                if (device_switching) {
-                    audio_ret = pa_stream_manager_volume_set_mute_by_idx(u->stream_manager, STREAM_SINK_INPUT, si->index, 1);
-                    if (audio_ret) {
-                        pa_log_warn("pa_stream_manager_volume_set_mute_by_idx(1) for stream[%d] returns error:0x%x", si->index, audio_ret);
-                    }
-#ifdef PA_SLEEP_DURING_UCM
-                    need_sleep_for_ucm = 1;
-#endif
-                }
-            }
-        }
-
-#ifdef PA_SLEEP_DURING_UCM
-        /* FIXME : sleep for ucm. Will enable if needed */
-        if (need_sleep_for_ucm) {
-            usleep(150000);
-        }
-#endif
-        /* it will be removed soon */
-        u->hal_manager->intf.set_route(u->hal_manager->data, u->session, u->subsession, device_in, device_out, route_flag);
-        /* Unmute sink inputs which are muted due to device switching */
-        PA_IDXSET_FOREACH(si, u->core->sink_inputs, idx) {
-            if ((device_switching_str = pa_proplist_gets(si->proplist, "module-policy.device_switching"))) {
-                pa_atou(device_switching_str, &device_switching);
-                if (device_switching) {
-                    pa_proplist_sets(si->proplist, "module-policy.device_switching", "0");
-//                    if (AUDIO_IS_ERROR((audio_ret = __update_volume(u, si->index, (uint32_t)-1, (uint32_t)-1)))) {
-//                        pa_log_warn("__update_volume for stream[%d] returns error:0x%x", si->index, audio_ret);
-//                    }
-                    audio_ret = pa_stream_manager_volume_set_mute_by_idx(u->stream_manager, STREAM_SINK_INPUT, si->index, 0);
-                    if (audio_ret) {
-                        pa_log_warn("pa_stream_manager_volume_set_mute_by_idx(0) for stream[%d] returns error:0x%x", si->index, audio_ret);
-                    }
-                }
-            }
-        }
-    }
-#endif
-
-    /* sleep for avoiding sound leak during UCM switching
-       this is just a workaround, we should synchronize in future */
-    if (device_out != AUDIO_DEVICE_OUT_NONE && u->active_device_out != device_out &&
-        u->session != AUDIO_SESSION_VOICECALL && u->session != AUDIO_SESSION_VIDEOCALL) {
-        /* Mute sink inputs which are unmuted */
-        PA_IDXSET_FOREACH(si, u->core->sink_inputs, idx) {
-            if (!pa_sink_input_get_mute(si)) {
-                pa_proplist_sets(si->proplist, "module-policy.device_switching", "1");
-            }
-        }
-    }
-
-    /* Update active devices */
-    if (device_in != AUDIO_DEVICE_IN_NONE)
-        u->active_device_in = device_in;
-    if (device_out != AUDIO_DEVICE_OUT_NONE)
-        u->active_device_out = device_out;
-    u->active_route_flag = route_flag;
-
-    if (u->session == AUDIO_SESSION_VOICECALL) {
-        if (u->muteall) {
-            pa_stream_manager_volume_set_mute(u->stream_manager, STREAM_SINK_INPUT, "call", 1);
-        }
-        /* workaround for keeping call mute setting */
-        //policy_set_mute(u, (-1), AUDIO_VOLUME_TYPE_CALL, AUDIO_DIRECTION_IN, u->call_muted);
-        pa_stream_manager_volume_set_mute(u->stream_manager, STREAM_SOURCE_OUTPUT, "call", 1); /* FOR IN? */
-    }
-
-    return AUDIO_RET_OK;
-}
-
-static pa_bool_t policy_is_available_high_latency(struct userdata *u)
-{
-    pa_sink_input *si = NULL;
-    uint32_t idx;
-    const char *si_policy_str;
-
-    PA_IDXSET_FOREACH(si, u->core->sink_inputs, idx) {
-        if ((si_policy_str = pa_proplist_gets(si->proplist, PA_PROP_MEDIA_POLICY))) {
-            if (pa_streq(si_policy_str, POLICY_HIGH_LATENCY) && sink_is_highlatency(si->sink)) {
-                pa_log_info("high latency is exists");
-                return false;
-            }
-        }
-    }
-
-    return true;
 }
 
 #define EXT_VERSION 1
@@ -1433,17 +459,6 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
                 pa_stream_manager_volume_set_mute_by_idx(u->stream_manager, STREAM_SINK_INPUT, stream_idx, mute);
             break;
         }
-        case SUBCOMMAND_IS_AVAILABLE_HIGH_LATENCY: {
-            pa_bool_t available = FALSE;
-
-            available = policy_is_available_high_latency(u);
-
-            pa_tagstruct_putu32(reply, (uint32_t)available);
-            break;
-        }
-        case SUBCOMMAND_UNLOAD_HDMI: {
-            break;
-        }
 
         default:
             goto fail;
@@ -1458,248 +473,6 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
         pa_tagstruct_free(reply);
 
     return -1;
-}
-
-static void __set_sink_input_role_type(pa_proplist *p, int gain_type)
-{
-    const char* role = NULL;
-
-    if ((role = pa_proplist_gets(p, PA_PROP_MEDIA_ROLE))) {
-        /* "solo" has priority over other roles */
-        if (pa_streq(role, "solo")) {
-            pa_log_info("already set role to [%s]", role);
-            return;
-        } else {
-            if(gain_type == AUDIO_GAIN_TYPE_SHUTTER1 || gain_type == AUDIO_GAIN_TYPE_SHUTTER2)
-                role = "camera";
-            else
-                role = "normal";
-        }
-    } else {
-        role = "normal";
-    }
-    pa_proplist_sets (p, PA_PROP_MEDIA_ROLE, role);
-    pa_log_info("set role [%s]", role);
-
-    return;
-}
-
-static void subscribe_cb(pa_core *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata)
-{
-    struct userdata *u = userdata;
-    pa_sink *def;
-    pa_sink_input *si;
-    uint32_t idx2;
-    pa_sink *sink_to_move = NULL;
-    pa_sink *sink_cur = NULL;
-    pa_source *source_cur = NULL;
-    pa_source_state_t source_state;
-    int vconf_source_status = 0;
-    uint32_t si_index;
-
-	pa_assert(u);
-
-    pa_log_debug("[POLICY][%s] subscribe_cb() t=[0x%x], idx=[%d]", __func__, t, idx);
-
-    /* We only handle server changes */
-    if (t == (PA_SUBSCRIPTION_EVENT_SERVER|PA_SUBSCRIPTION_EVENT_CHANGE)) {
-
-    def = pa_namereg_get_default_sink(c);
-        if (def == NULL) {
-            pa_log_warn("[POLICY][%s] pa_namereg_get_default_sink() returns null", __func__);
-            return;
-        }
-    pa_log_debug("[POLICY][%s] trying to move stream to current default sink = [%s]", __func__, def->name);
-
-    /* Iterate each sink inputs to decide whether we should move to new DEFAULT sink */
-    PA_IDXSET_FOREACH(si, c->sink_inputs, idx2) {
-            const char *policy = NULL;
-
-            if (!si->sink)
-                continue;
-
-            /* Get role (if role is filter, skip it) */
-            if (policy_is_filter(si))
-                continue;
-
-            if (pa_streq (def->name, "null")) {
-#ifdef TIZEN_MICRO
-                /* alarm is not comming via speaker after disconnect bluetooth. */
-                if(pa_streq(si->sink->name, "null")) {
-                    pa_log_warn("try to move sink-input from null-sink to null-sink(something wrong state). sink-input[%d] will move to proper sink", si->index);
-                } else {
-#endif
-                    pa_log_debug("Moving sink-input[%d] from [%s] to [%s]", si->index, si->sink->name, def->name);
-                    pa_sink_input_move_to(si, def, false);
-                    continue;
-#ifdef TIZEN_MICRO
-                }
-#endif
-            }
-
-            /* Get policy */
-            if (!(policy = pa_proplist_gets(si->proplist, PA_PROP_MEDIA_POLICY))) {
-                /* No policy exists, this means auto */
-                pa_log_debug("[POLICY][%s] set policy of sink-input[%d] from [%s] to [auto]", __func__, si->index, "null");
-                policy = POLICY_AUTO;
-            }
-
-#ifdef TIZEN_MICRO
-            sink_to_move = policy_select_proper_sink (u, policy, si, u->is_mono);
-#else
-            /** If sink input is an UHQA sink then connect the sink to UHQA sink*/
-            if ((si->sample_spec.rate >= UHQA_BASE_SAMPLING_RATE)
-                 && (pa_streq(policy, POLICY_HIGH_LATENCY) || pa_streq(policy, POLICY_AUTO))) {
-                char tmp_policy[100] = {0};
-
-                sprintf(tmp_policy, "%s-uhqa", policy);
-                sink_to_move = policy_select_proper_sink (u, tmp_policy, si, u->is_mono);
-            } else {
-                sink_to_move = policy_select_proper_sink (u, policy, si, u->is_mono);
-            }
-#endif
-            if (sink_to_move) {
-                /* Move sink-input to new DEFAULT sink */
-                pa_log_debug("[POLICY][%s] Moving sink-input[%d] from [%s] to [%s]", __func__, si->index, si->sink->name, sink_to_move->name);
-                pa_sink_input_move_to(si, sink_to_move, false);
-            }
-        }
-        pa_log_info("All moved to proper sink finished!!!!");
-    } else if (t == (PA_SUBSCRIPTION_EVENT_SINK|PA_SUBSCRIPTION_EVENT_CHANGE)) {
-        if ((sink_cur = pa_idxset_get_by_index(c->sinks, idx))) {
-            pa_sink_state_t state = pa_sink_get_state(sink_cur);
-            pa_log_debug("sink[%s] changed to state[%d]", sink_cur->name, state);
-
-            if (pa_streq (sink_cur->name, SINK_HIGH_LATENCY) && state == PA_SINK_RUNNING) {
-                PA_IDXSET_FOREACH(si, c->sink_inputs, si_index) {
-                    if (!si->sink)
-                        continue;
-                    if (pa_streq (si->sink->name, SINK_HIGH_LATENCY)) {
-//                        if (AUDIO_IS_ERROR((audio_ret = __update_volume(u, si->index, (uint32_t)-1, (uint32_t)-1)))) {
-//                            pa_log_debug("__update_volume for stream[%d] returns error:0x%x", si->index, audio_ret);
-//                        }
-                    }
-                }
-            }
-        }
-    } else if (t == (PA_SUBSCRIPTION_EVENT_SOURCE|PA_SUBSCRIPTION_EVENT_CHANGE)) {
-        if ((source_cur = pa_idxset_get_by_index(c->sources, idx))) {
-            if (pa_streq (source_cur->name, SOURCE_ALSA)) {
-                source_state = pa_source_get_state(source_cur);
-                pa_log_debug("source[%s] changed to state[%d]", source_cur->name, source_state);
-                if (source_state == PA_SOURCE_RUNNING) {
-                    vconf_set_int (VCONFKEY_SOUND_CAPTURE_STATUS, 1);
-                } else {
-                    vconf_get_int (VCONFKEY_SOUND_CAPTURE_STATUS, &vconf_source_status);
-                    if (vconf_source_status)
-                        vconf_set_int (VCONFKEY_SOUND_CAPTURE_STATUS, 0);
-                }
-            }
-        }
-    }
-}
-
-static pa_hook_result_t sink_state_changed_hook_cb(pa_core *c, pa_object *o, struct userdata *u) {
-    return PA_HOOK_OK;
-}
-/* Select source for given condition */
-static pa_source* policy_select_proper_source (pa_core *c, const char* policy)
-{
-    pa_source* source = NULL;
-    pa_source* def = NULL;
-    pa_source* source_null;
-
-    if (c == NULL || policy == NULL) {
-        pa_log_warn ("input param is null");
-        return NULL;
-    }
-
-    pa_assert (c);
-    def = pa_namereg_get_default_source(c);
-    if (def == NULL) {
-        pa_log_warn ("POLICY][%s] pa_namereg_get_default_source() returns null", __func__);
-        return NULL;
-    }
-    source_null = (pa_source *)pa_namereg_get(c, "null", PA_NAMEREG_SOURCE);
-    /* if default source is set as null source, we will use it */
-    if (def == source_null)
-        return def;
-
-    /* Select source  to */
-    if (pa_streq(policy, POLICY_VOIP)) {
-        /* NOTE: Check voip source first, if not available, use AEC source  */
-        source = policy_get_source_by_name (c, SOURCE_VOIP);
-        if (source == NULL) {
-            pa_log_info ("VOIP source is not available, try to use AEC source");
-            source = policy_get_source_by_name (c, AEC_SOURCE);
-            if (source == NULL) {
-                pa_log_warn ("AEC source is not available, set to default source");
-                source = def;
-            }
-        }
-    } else if (pa_streq(policy, POLICY_MIRRORING)) {
-        source = policy_get_source_by_name (c, SOURCE_MIRRORING);
-        if (source == NULL) {
-            pa_log_info ("MIRRORING source is not available, try to use ALSA MONITOR SOURCE");
-            source = policy_get_source_by_name (c, ALSA_MONITOR_SOURCE);
-            if (source == NULL) {
-                pa_log_warn (" ALSA MONITOR SOURCE source is not available, set to default source");
-                source = def;
-            }
-        }
-    } else if (pa_streq(policy, POLICY_LOOPBACK)) {
-        source = policy_get_source_by_name (c, ALSA_MONITOR_SOURCE);
-        if (source == NULL) {
-            pa_log_warn (" ALSA MONITOR SOURCE source is not available, set to default source");
-            source = def;
-        }
-    } else {
-        source = def;
-    }
-
-    pa_log_debug ("[POLICY][%s] selected source : [%s]\n", __func__, (source)? source->name : "null");
-    return source;
-}
-
-
-/*  Called when new source-output is creating  */
-static pa_hook_result_t source_output_new_hook_callback(pa_core *c, pa_source_output_new_data *new_data, struct userdata *u) {
-    const char *policy = NULL;
-
-    pa_assert(c);
-    pa_assert(new_data);
-    pa_assert(u);
-
-    if (!new_data->proplist) {
-        pa_log_debug("New stream lacks property data.");
-        return PA_HOOK_OK;
-    }
-
-    if (new_data->source) {
-        pa_log_debug("Not setting device for stream %s, because already set.", pa_strnull(pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_NAME)));
-        return PA_HOOK_OK;
-    }
-
-    /* If no policy exists, skip */
-    if (!(policy = pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_POLICY))) {
-        pa_log_debug("[POLICY][%s] Not setting device for stream [%s], because it lacks policy.",
-                __func__, pa_strnull(pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_NAME)));
-        return PA_HOOK_OK;
-    }
-    pa_log_debug("[POLICY][%s] Policy for stream [%s] = [%s]",
-            __func__, pa_strnull(pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_NAME)), policy);
-
-    /* Set proper source to source-output */
-    pa_source* new_source = policy_select_proper_source(c, policy);
-    if(new_source != new_data->source)
-    {
-        pa_source_output_new_data_set_source(new_data, new_source, false);
-    }
-    /*new_data->save_source= false;
-    new_data->source= policy_select_proper_source (c, policy);*/
-    pa_log_debug("[POLICY][%s] set source of source-input to [%s]", __func__, (new_data->source)? new_data->source->name : "null");
-
-    return PA_HOOK_OK;
 }
 
 /* Set the proper sink(source) according to the data of the parameter.  */
@@ -2537,8 +1310,6 @@ int pa__init(pa_module *m)
 {
     pa_modargs *ma = NULL;
     struct userdata *u;
-    pa_bool_t on_hotplug = true, on_rescue = true, wideband = false;
-    uint32_t frag_size = 0, tsched_size = 0;
 
     pa_assert(m);
 
@@ -2547,40 +1318,14 @@ int pa__init(pa_module *m)
         goto fail;
     }
 
-    if (pa_modargs_get_value_boolean(ma, "on_hotplug", &on_hotplug) < 0 ||
-        pa_modargs_get_value_boolean(ma, "on_rescue", &on_rescue) < 0) {
-        pa_log("on_hotplug= and on_rescue= expect boolean arguments");
-        goto fail;
-    }
-    if (pa_modargs_get_value_boolean(ma, "use_wideband_voice", &wideband) < 0 ||
-        pa_modargs_get_value_u32(ma, "fragment_size", &frag_size) < 0 ||
-        pa_modargs_get_value_u32(ma, "tsched_buffer_size", &tsched_size) < 0) {
-        pa_log("Failed to parse module arguments buffer info");
-        goto fail;
-    }
-
     m->userdata = u = pa_xnew0(struct userdata, 1);
     u->core = m->core;
     u->module = m;
-    u->on_hotplug = on_hotplug;
-    u->wideband = wideband;
-    u->fragment_size = frag_size;
-    u->tsched_buffer_size = tsched_size;
+
 #ifdef HAVE_DBUS
     u->dbus_conn = NULL;
     u->test_property1 = 123;
 #endif
-
-    /* A little bit later than module-stream-restore */
-    u->sink_state_changed_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_STATE_CHANGED], PA_HOOK_NORMAL, (pa_hook_cb_t)sink_state_changed_hook_cb, u);
-
-    u->subscription = pa_subscription_new(u->core, PA_SUBSCRIPTION_MASK_SERVER | PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE, subscribe_cb, u);
-
-    pa_log_debug("subscription done");
-
-    u->bt_off_idx = -1;    /* initial bt off sink index */
-    u->module_combined = NULL;
-    u->module_mono_combined = NULL;
 
     u->protocol = pa_native_protocol_get(m->core);
     pa_native_protocol_install_ext(u->protocol, m, extension_cb);
@@ -2589,12 +1334,15 @@ int pa__init(pa_module *m)
 
     u->communicator.comm = pa_communicator_get(u->core);
     if (u->communicator.comm) {
-        u->communicator.comm_hook_select_proper_sink_or_source_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_SELECT_INIT_SINK_OR_SOURCE),
-                    PA_HOOK_EARLY, (pa_hook_cb_t) select_proper_sink_or_source_hook_cb, u);
-        u->communicator.comm_hook_change_route_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_CHANGE_ROUTE),
-                    PA_HOOK_EARLY, (pa_hook_cb_t) route_change_hook_cb, u);
-        u->communicator.comm_hook_update_route_options_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTIONS),
-                    PA_HOOK_EARLY, (pa_hook_cb_t) route_options_update_hook_cb, u);
+        u->communicator.comm_hook_select_proper_sink_or_source_slot = pa_hook_connect(
+                pa_communicator_hook(u->communicator.comm, PA_COMMUNICATOR_HOOK_SELECT_INIT_SINK_OR_SOURCE),
+                PA_HOOK_EARLY, (pa_hook_cb_t)select_proper_sink_or_source_hook_cb, u);
+        u->communicator.comm_hook_change_route_slot = pa_hook_connect(
+                pa_communicator_hook(u->communicator.comm, PA_COMMUNICATOR_HOOK_CHANGE_ROUTE),
+                PA_HOOK_EARLY, (pa_hook_cb_t)route_change_hook_cb, u);
+        u->communicator.comm_hook_update_route_options_slot = pa_hook_connect(
+                pa_communicator_hook(u->communicator.comm, PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTIONS),
+                PA_HOOK_EARLY, (pa_hook_cb_t)route_options_update_hook_cb, u);
     }
     u->stream_manager = pa_stream_manager_init(u->core);
 
@@ -2639,29 +1387,10 @@ void pa__done(pa_module *m)
     if (u->device_manager)
         pa_device_manager_done(u->device_manager);
 #endif
-
-    if (u->sink_input_new_hook_slot)
-        pa_hook_slot_free(u->sink_input_new_hook_slot);
-    if (u->sink_put_hook_slot)
-        pa_hook_slot_free(u->sink_put_hook_slot);
-    if (u->sink_unlink_slot)
-        pa_hook_slot_free(u->sink_unlink_slot);
-    if (u->sink_unlink_post_slot)
-        pa_hook_slot_free(u->sink_unlink_post_slot);
-    if(u->sink_input_state_changed_slot)
-         pa_hook_slot_free(u->sink_input_state_changed_slot);
-    if (u->sink_input_move_start_slot)
-        pa_hook_slot_free(u->sink_input_move_start_slot);
-    if (u->sink_input_move_finish_slot)
-        pa_hook_slot_free(u->sink_input_move_finish_slot);
-    if (u->subscription)
-        pa_subscription_free(u->subscription);
     if (u->protocol) {
         pa_native_protocol_remove_ext(u->protocol, m);
         pa_native_protocol_unref(u->protocol);
     }
-    if (u->source_output_new_hook_slot)
-        pa_hook_slot_free(u->source_output_new_hook_slot);
 
     if (u->stream_manager)
         pa_stream_manager_done(u->stream_manager);

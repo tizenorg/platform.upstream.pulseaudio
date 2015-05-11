@@ -30,7 +30,7 @@
 
 #define DEVICE_MAP_FILE                    "/etc/pulse/device-map.json"
 #define DEVICE_PROFILE_MAX                  2
-#define DEVICE_STR_MAX                      10
+#define DEVICE_STR_MAX                      30
 #define DEVICE_DIRECTION_MAX                3
 #define DEVICE_PARAM_STRING_MAX             50
 #define DEVICE_AVAIL_COND_NUM_MAX           2
@@ -80,11 +80,17 @@
 #define DBUS_INTERFACE_SOUND_SERVER         "org.tizen.SoundServer1"
 #define DBUS_OBJECT_SOUND_SERVER            "/org/tizen/SoundServer1"
 
+#define DBUS_SERVICE_BLUEZ                  "org.bluez"
 #define DBUS_INTERFACE_BLUEZ_HEADSET        "org.bluez.Headset"
+#define DBUS_INTERFACE_BLUEZ_DEVICE         "org.bluez.Device1"
 #define DBUS_OBJECT_BLUEZ                   "/org/bluez"
 
 #define DBUS_INTERFACE_MIRRORING_SERVER     "org.tizen.scmirroring.server"
 #define DBUS_OBJECT_MIRRORING_SERVER        "/org/tizen/scmirroring/server"
+
+#define DBUS_SERVICE_HFP_AGENT "org.bluez.ag_agent"
+#define DBUS_OBJECT_HFP_AGENT "/org/bluez/hfp_agent"
+#define DBUS_INTERFACE_HFP_AGENT "Org.Hfp.App.Interface"
 
 #define DEVICE_MANAGER_INTROSPECT_XML                                                       \
     DBUS_INTROSPECT_1_0_XML_DOCTYPE_DECL_NODE                                               \
@@ -204,6 +210,10 @@ static const char* const valid_alsa_device_modargs[] = {
 
 #define PA_DEVICES(core, pdt) \
     pdt == PA_DEVICE_TYPE_SINK ? (((pa_core *) core)->sinks) : (((pa_core *) core)->sources)
+
+
+#define BT_CVSD_CODEC_ID 1 // narrow-band
+#define BT_MSBC_CODEC_ID 2 // wide-band
 /*
     Enums for represent values which is defined on other module.
     This is needed to identify values which are sent by dbus or vconf.
@@ -435,6 +445,10 @@ static void handle_test_device_status_change(DBusConnection *conn, DBusMessage *
 
 static void notify_device_connection_changed(dm_device *device_item, pa_bool_t connected, pa_device_manager *dm);
 static void notify_device_info_changed(dm_device *device_item, dm_device_changed_info_t changed_type, pa_device_manager *dm);
+
+static int method_call_bt_sco(DBusConnection *conn, pa_bool_t onoff);
+static int method_call_bt_sco_get_property(DBusConnection *conn, pa_bool_t *is_wide_band, pa_bool_t *nrec);
+static int method_call_bt_get_name(DBusConnection *conn, const char *device_path, char **name);
 
 enum method_handler_index {
     METHOD_HANDLER_GET_CONNECTED_DEVICE_LIST,
@@ -836,6 +850,8 @@ static struct device_status_info* _device_manager_get_status_info(pa_idxset *sta
 static struct device_file_info* _device_manager_get_file_info(pa_idxset *file_infos, const char *device_string) {
     struct device_file_info *file_info;
     uint32_t file_idx;
+    if (!file_infos)
+        return NULL;
 
     PA_IDXSET_FOREACH(file_info, file_infos, file_idx) {
         if (file_info->device_string) {
@@ -1044,6 +1060,33 @@ static int pulse_device_get_alsa_card_device_num(pa_proplist *prop, int *card, i
     return 0;
 }
 
+static int pulse_device_get_alsa_device_string(pa_proplist *prop, char **device_string) {
+    char *device_string_prop = NULL, *device_string_tmp;
+
+    if (!prop || !device_string) {
+        pa_log_error("Invalid Parameter");
+        return -1;
+    }
+
+    if (!(device_string_prop = pa_proplist_gets(prop, "device.string"))) {
+        pa_log_error("failed to get property 'device.string'");
+        return -1;
+    }
+    if (!(device_string_tmp = strchr(device_string_prop, ':'))) {
+        pa_log_error("failed to parse device string");
+        return -1;
+    }
+
+    if (((device_string_tmp + 1) == '\0')) {
+        pa_log_error("no device string value");
+        return -1;
+    }
+
+    *device_string = device_string_tmp + 1;
+
+    return 0;
+}
+
 static const char* build_params_to_load_device(const char *device_string, const char *params, dm_device_class_t device_class) {
     pa_strbuf *args_buf;
     static char args[DEVICE_PARAM_STRING_MAX] = {0,};
@@ -1198,6 +1241,7 @@ static const char* pulse_device_get_device_string(void *pulse_device, pa_device_
     int card = 0, device = 0;
     dm_device_class_t device_class;
     static char device_string[DEVICE_STR_MAX] = {0,};
+    char *device_string_val = NULL;
     pa_sink *sink;
     pa_source *source;
 
@@ -1214,9 +1258,9 @@ static const char* pulse_device_get_device_string(void *pulse_device, pa_device_
         source = (pa_source *) pulse_device;
 
     if (device_class == DM_DEVICE_CLASS_ALSA) {
-        if (pulse_device_get_alsa_card_device_num(pdt == PA_DEVICE_TYPE_SINK ? sink->proplist : source->proplist, &card, &device) < 0)
+        if (pulse_device_get_alsa_device_string(pdt == PA_DEVICE_TYPE_SINK ? sink->proplist : source->proplist, &device_string_val) < 0)
             return NULL;
-        snprintf(device_string, DEVICE_STR_MAX, "alsa:%d,%d", card, device);
+        snprintf(device_string, DEVICE_STR_MAX, "alsa:%s", device_string_val);
         return device_string;
     } else if (device_class == DM_DEVICE_CLASS_NULL) {
         return "null";
@@ -1244,13 +1288,99 @@ static pa_bool_t pulse_device_same_device_string(void *pulse_device, pa_device_t
     return !strcmp(pulse_device_string, device_string);
 }
 
-static dm_device* _device_item_set_active_profile(dm_device *device_item, uint32_t idx) {
+static dm_device* _device_item_set_active_profile(dm_device *device_item, const char *device_profile) {
+    dm_device_profile *profile_item = NULL;
+    uint32_t idx, active_profile_idx = PA_INVALID_INDEX, prev_active_profile = PA_INVALID_INDEX;
+
     if (!device_item || !device_item->profiles ) {
         pa_log_error("Invalid Parameter");
         return NULL;
     }
 
-    device_item->active_profile = idx;
+    prev_active_profile = device_item->active_profile;
+    PA_IDXSET_FOREACH(profile_item,  device_item->profiles, idx) {
+        if (!compare_device_profile(profile_item->profile, device_profile)) {
+            active_profile_idx = idx;
+        }
+    }
+
+    if (active_profile_idx != PA_INVALID_INDEX) {
+        device_item->active_profile = active_profile_idx;
+    } else {
+        return NULL;
+    }
+
+    if (prev_active_profile != device_item->active_profile) {
+        pa_log_debug("%s's active profile : %u", device_item->name, device_item->active_profile);
+        notify_device_info_changed(device_item, DM_DEVICE_CHANGED_INFO_SUBTYPE, device_item->dm);
+    }
+
+    return device_item;
+}
+
+static int get_profile_priority(const char *device_profile) {
+    if (!device_profile) {
+        return 0;
+    } else if (!strcmp(device_profile,  DEVICE_PROFILE_BT_SCO)) {
+        return 1;
+    } else if (!strcmp(device_profile,  DEVICE_PROFILE_BT_A2DP)) {
+        return 2;
+    } else {
+        return -1;
+    }
+}
+
+static int compare_profile_priority(const char *device_profile1,  const char *device_profile2) {
+    int priority1, priority2;
+
+    priority1 = get_profile_priority(device_profile1);
+    priority2 = get_profile_priority(device_profile2);
+
+    if (priority1 > priority2) {
+        return 1;
+    } else if (priority1 == priority2) {
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
+static dm_device* _device_item_set_active_profile_auto(dm_device *device_item) {
+    dm_device_profile *profile_item = NULL, *prev_profile_item = NULL;
+    uint32_t idx, prev_active_profile;
+    unsigned int device_size;
+    const char *profile_priority[] = { DEVICE_PROFILE_BT_A2DP, DEVICE_PROFILE_BT_SCO };
+
+    if (!device_item || !device_item->profiles ) {
+        pa_log_error("Invalid Parameter");
+        return NULL;
+    }
+
+    prev_active_profile = device_item->active_profile;
+
+    device_size = pa_idxset_size(device_item->profiles);
+    if (device_size == 1) {
+        pa_idxset_first(device_item->profiles,  &idx);
+        device_item->active_profile = idx;
+    } else if (device_size == 0) {
+        device_item->active_profile = PA_INVALID_INDEX;
+        return device_item;
+    } else {
+        PA_IDXSET_FOREACH(profile_item, device_item->profiles, idx) {
+            if (prev_profile_item) {
+                if (compare_profile_priority(profile_item->profile, prev_profile_item->profile) > 0) {
+                    device_item->active_profile = idx;
+                }
+            }
+            prev_profile_item = profile_item;
+        }
+    }
+
+    if (prev_active_profile != device_item->active_profile) {
+        pa_log_debug("%s's active profile : %u", device_item->name, device_item->active_profile);
+        notify_device_info_changed(device_item, DM_DEVICE_CHANGED_INFO_SUBTYPE, device_item->dm);
+    }
+
     return device_item;
 }
 
@@ -1266,14 +1396,8 @@ static dm_device* _device_item_add_profile(dm_device *device_item, dm_device_pro
     profile_num = pa_idxset_size(device_item->profiles);
 
     pa_idxset_put(device_item->profiles, profile_item, &profile_idx);
-    _device_item_set_active_profile(device_item, profile_idx);
+    _device_item_set_active_profile_auto(device_item);
     profile_item->device_item = device_item;
-    if (idx)
-        *idx = profile_idx;
-
-    if (profile_num > 0) {
-        notify_device_info_changed(device_item, DM_DEVICE_CHANGED_INFO_SUBTYPE, dm);
-    }
 
     return device_item;
 }
@@ -1363,19 +1487,14 @@ static dm_device* _device_item_remove_profile(dm_device *device_item, dm_device_
 
     profile_num = pa_idxset_size(device_item->profiles);
 
-    if (profile_num > 1) {
-        notify_device_info_changed(device_item, DM_DEVICE_CHANGED_INFO_SUBTYPE, dm);
-    } else {
+    if (profile_num == 0) {
         pa_log_error("Already Empty device_item");
         return NULL;
     }
 
     pa_idxset_remove_by_data(device_item->profiles, profile_item, NULL);
-    if(pa_idxset_size(device_item->profiles) > 0) {
-        uint32_t new_idx;
-        pa_idxset_first(device_item->profiles, &new_idx);
-        device_item->active_profile = new_idx;
-    }
+    _device_item_set_active_profile_auto(device_item);
+
     return device_item;
 }
 
@@ -1619,7 +1738,7 @@ static int pulse_device_get_device_type(void *pulse_device, pa_device_type_t pdt
     } else if (device_class == DM_DEVICE_CLASS_BT) {
         *device_type = DEVICE_TYPE_BT;
         *device_profile = DEVICE_PROFILE_BT_A2DP;
-        *device_name = pa_proplist_gets(prop, PA_PROP_DEVICE_DESCRIPTION);
+        *device_name = pa_proplist_gets(prop, "bluez.alias");
     } else {
         pa_log_warn("Invalid device type, neither alsa nor bluez");
         return -1;
@@ -2017,7 +2136,7 @@ static const char* device_file_info_get_role_with_params(struct device_file_info
     return NULL;
 }
 
-static dm_device* handle_device_type_available(struct device_type_info *type_info, pa_device_manager *dm) {
+static dm_device* handle_device_type_available(struct device_type_info *type_info, const char *name, pa_device_manager *dm) {
     dm_device_profile *profile_item = NULL;
     dm_device *device_item = NULL;
     pa_bool_t made_newly = FALSE;
@@ -2027,7 +2146,7 @@ static dm_device* handle_device_type_available(struct device_type_info *type_inf
     pa_assert(dm);
     pa_assert(dm->type_infos);
 
-    pa_log_debug("handle_device_type_available, type:%s, profile:%s", type_info->type, type_info->profile);
+    pa_log_debug("handle_device_type_available, type:%s, profile:%s, name:%s", type_info->type, type_info->profile, name);
 
 
 
@@ -2054,7 +2173,7 @@ static dm_device* handle_device_type_available(struct device_type_info *type_inf
 
     if (!(device_item = _device_manager_get_device(dm->device_list, type_info->type))) {
         pa_log_debug("No device item for %s, Create", type_info->type);
-        device_item = create_device_item(type_info->type, NULL, profile_item, dm);
+        device_item = create_device_item(type_info->type, name, profile_item, dm);
         made_newly = TRUE;
     } else {
         _device_item_add_profile(device_item, profile_item, NULL, dm);
@@ -2134,7 +2253,7 @@ static void handle_predefined_device_loaded(void *pulse_device, pa_device_type_t
             if (status_info->detected == DEVICE_DETECTED) {
                 pa_log_debug("%s.%s type is detected status", type_info->type, type_info->profile);
 
-                handle_device_type_available(type_info, dm);
+                handle_device_type_available(type_info, NULL, dm);
             } else {
                 pa_log_debug("  This type is not detected status");
             }
@@ -2470,43 +2589,46 @@ static int load_builtin_devices(pa_device_manager *dm) {
 
     pa_log_debug("\n==================== Load Builtin Devices ====================");
 
-    PA_IDXSET_FOREACH(file_info, dm->file_map->playback, file_idx) {
-        pa_log_debug("---------------- load sink for '%s' ------------------", file_info->device_string);
+    if (dm->file_map->playback) {
+        PA_IDXSET_FOREACH(file_info, dm->file_map->playback, file_idx) {
+            pa_log_debug("---------------- load sink for '%s' ------------------", file_info->device_string);
 
-        /* if normal device exists , load first */
-        if ((params = pa_hashmap_get(file_info->roles, DEVICE_ROLE_NORMAL))) {
-            if (!load_device(dm->core, PA_DEVICE_TYPE_SINK, file_info->device_string, params))
-                pa_log_error("load normal playback device failed");
-        }
-
-        PA_HASHMAP_FOREACH_KEY(params, file_info->roles, role_state, role) {
-            if (!strcmp(role, DEVICE_ROLE_NORMAL))
-                continue;
-            pa_log_debug("load sink for role %s", role);
-            if (!pulse_device_loaded_with_param(dm->core, PA_DEVICE_TYPE_SINK, file_info->device_string, params)) {
+            /* if normal device exists , load first */
+            if ((params = pa_hashmap_get(file_info->roles, DEVICE_ROLE_NORMAL))) {
                 if (!load_device(dm->core, PA_DEVICE_TYPE_SINK, file_info->device_string, params))
-                    pa_log_error("load playback device failed");
+                    pa_log_error("load normal playback device failed");
+            }
+
+            PA_HASHMAP_FOREACH_KEY(params, file_info->roles, role_state, role) {
+                if (!strcmp(role, DEVICE_ROLE_NORMAL))
+                    continue;
+                pa_log_debug("load sink for role %s", role);
+                if (!pulse_device_loaded_with_param(dm->core, PA_DEVICE_TYPE_SINK, file_info->device_string, params)) {
+                    if (!load_device(dm->core, PA_DEVICE_TYPE_SINK, file_info->device_string, params))
+                        pa_log_error("load playback device failed");
+                }
             }
         }
     }
 
 
-    PA_IDXSET_FOREACH(file_info, dm->file_map->capture, file_idx) {
-        pa_log_debug("---------------- load source for '%s' ------------------", file_info->device_string);
 
-        /* if normal device exists , load first */
-        if ((params = pa_hashmap_get(file_info->roles, DEVICE_ROLE_NORMAL))) {
-            if (!load_device(dm->core, PA_DEVICE_TYPE_SOURCE, file_info->device_string, params))
-                pa_log_error("load normal capture device failed");
-        }
+    if (dm->file_map->capture) {
+        PA_IDXSET_FOREACH(file_info, dm->file_map->capture, file_idx) {
+            pa_log_debug("---------------- load source for '%s' ------------------", file_info->device_string);
 
-        PA_HASHMAP_FOREACH_KEY (params, file_info->roles, role_state, role) {
-            if (!strcmp(role, DEVICE_ROLE_NORMAL))
-                continue;
-            pa_log_debug("load source for role %s", role);
-            if (!pulse_device_loaded_with_param(dm->core, PA_DEVICE_TYPE_SOURCE, file_info->device_string, params)) {
-                if (!load_device(dm->core, PA_DEVICE_TYPE_SOURCE, file_info->device_string, params)) {
-                    pa_log_error("load capture device failed");
+            /* if normal device exists , load first */
+            if ((params = pa_hashmap_get(file_info->roles, DEVICE_ROLE_NORMAL))) {
+                if (!load_device(dm->core, PA_DEVICE_TYPE_SOURCE, file_info->device_string, params)) pa_log_error("load normal capture device failed");
+            }
+
+            PA_HASHMAP_FOREACH_KEY(params, file_info->roles, role_state, role) {
+                if (!strcmp(role, DEVICE_ROLE_NORMAL)) continue;
+                pa_log_debug("load source for role %s", role);
+                if (!pulse_device_loaded_with_param(dm->core, PA_DEVICE_TYPE_SOURCE, file_info->device_string, params)) {
+                    if (!load_device(dm->core, PA_DEVICE_TYPE_SOURCE, file_info->device_string, params)) {
+                        pa_log_error("load capture device failed");
+                    }
                 }
             }
         }
@@ -2669,15 +2791,17 @@ static struct device_file_map *parse_device_file_map() {
         return NULL;
     }
 
-    file_map = pa_xmalloc(sizeof(struct device_file_map));
+    file_map = pa_xmalloc0(sizeof(struct device_file_map));
 
     if ((device_files_o = json_object_object_get(o, DEVICE_FILE_OBJECT)) && json_object_is_type(device_files_o, json_type_object)) {
-        pa_log_debug("[DEBUG_PARSE] ----------------- Playback Device Files ------------------");
-        playback_devices_o = json_object_object_get(device_files_o, "playback-devices");
-        file_map->playback = parse_device_file_array_object(playback_devices_o);
-        pa_log_debug("[DEBUG_PARSE] ----------------- Capture Device Files ------------------");
-        capture_devices_o = json_object_object_get(device_files_o, "capture-devices");
-        file_map->capture = parse_device_file_array_object(capture_devices_o);
+        if ((playback_devices_o = json_object_object_get(device_files_o, "playback-devices"))) {
+            pa_log_debug("[DEBUG_PARSE] ----------------- Playback Device Files ------------------");
+            file_map->playback = parse_device_file_array_object(playback_devices_o);
+        }
+        if ((capture_devices_o = json_object_object_get(device_files_o, "capture-devices"))) {
+            pa_log_debug("[DEBUG_PARSE] ----------------- Capture Device Files ------------------");
+            file_map->capture = parse_device_file_array_object(capture_devices_o);
+        }
     }
     else {
         pa_log_error("Get device files object failed");
@@ -2859,7 +2983,7 @@ failed :
     And if correnspondent sink/sources for device_type exist, should make device_item and notify it.
     Use [device_type->roles] mappings in sink/source for find proper sink/source.
 */
-static int handle_device_connected(pa_device_manager *dm, const char *device_type, const char *device_profile, const char *identifier, int detected_type) {
+static int handle_device_connected(pa_device_manager *dm, const char *device_type, const char *device_profile, const char *name, const char *identifier, int detected_type) {
     struct device_status_info *status_info;
     struct device_type_info *type_info;
     dm_device *device_item;
@@ -2887,7 +3011,7 @@ static int handle_device_connected(pa_device_manager *dm, const char *device_typ
         }
     }
 
-    handle_device_type_available(type_info, dm);
+    handle_device_type_available(type_info, name, dm);
 
     return 0;
 }
@@ -2932,7 +3056,7 @@ static int handle_device_disconnected(pa_device_manager *dm, const char *device_
    device_type, device_profile : which type of device is detected
    identifier : identifier among same device types for support multi-device
 */
-static int handle_device_status_changed(pa_device_manager *dm, const char *device_type, const char *device_profile, const char *identifier, int detected_status) {
+static int handle_device_status_changed(pa_device_manager *dm, const char *device_type, const char *device_profile, const char *name, const char *identifier, int detected_status) {
     pa_assert(dm);
     pa_assert(device_type_is_valid(device_type));
 
@@ -2941,9 +3065,9 @@ static int handle_device_status_changed(pa_device_manager *dm, const char *devic
         if (detected_status == EARJACK_DISCONNECTED) {
             handle_device_disconnected(dm, device_type, device_profile, identifier);
         } else if (detected_status == EARJACK_TYPE_SPK_ONLY) {
-            handle_device_connected(dm, device_type, device_profile, identifier, DEVICE_DETECTED_AUDIO_JACK_OUT_DIREC);
+            handle_device_connected(dm, device_type, device_profile, name, identifier, DEVICE_DETECTED_AUDIO_JACK_OUT_DIREC);
         } else if (detected_status == EARJACK_TYPE_SPK_WITH_MIC) {
-            handle_device_connected(dm, device_type, device_profile, identifier, DEVICE_DETECTED_AUDIO_JACK_BOTH_DIREC);
+            handle_device_connected(dm, device_type, device_profile, name, identifier, DEVICE_DETECTED_AUDIO_JACK_BOTH_DIREC);
         } else {
             pa_log_warn("Got invalid audio-jack detected value");
             return -1;
@@ -2952,7 +3076,7 @@ static int handle_device_status_changed(pa_device_manager *dm, const char *devic
         if (detected_status == BT_SCO_DISCONNECTED) {
             handle_device_disconnected(dm, device_type, device_profile, identifier);
         } else if (detected_status == BT_SCO_CONNECTED) {
-            handle_device_connected(dm, device_type, device_profile, identifier, DEVICE_DETECTED_BT_SCO);
+            handle_device_connected(dm, device_type, device_profile, name, identifier, DEVICE_DETECTED_BT_SCO);
         } else {
             pa_log_warn("Got invalid bt-sco detected value");
             return -1;
@@ -2961,7 +3085,7 @@ static int handle_device_status_changed(pa_device_manager *dm, const char *devic
         if (detected_status == HDMI_AUDIO_DISCONNECTED) {
             handle_device_disconnected(dm, device_type, device_profile, identifier);
         } else if (detected_status >= HDMI_AUDIO_AVAILABLE) {
-            handle_device_connected(dm, device_type, device_profile, identifier, DEVICE_DETECTED_HDMI);
+            handle_device_connected(dm, device_type, device_profile, name, identifier, DEVICE_DETECTED_HDMI);
         } else if (detected_status == HDMI_AUDIO_NOT_AVAILABLE) {
             pa_log_debug("HDMI audio not available");
             return -1;
@@ -2973,7 +3097,7 @@ static int handle_device_status_changed(pa_device_manager *dm, const char *devic
         if (detected_status == FORWARDING_DISCONNECTED) {
             handle_device_disconnected(dm, device_type, device_profile, identifier);
         } else if (detected_status == FORWARDING_CONNECTED) {
-            handle_device_connected(dm, device_type, device_profile, identifier, DEVICE_DETECTED_FORWARDING);
+            handle_device_connected(dm, device_type, device_profile, name, identifier, DEVICE_DETECTED_FORWARDING);
         } else {
             pa_log_warn("Got invalid mirroring detected value");
             return -1;
@@ -3072,6 +3196,7 @@ static int device_list_init(pa_device_manager *dm) {
 static DBusHandlerResult dbus_filter_device_detect_handler(DBusConnection *c, DBusMessage *s, void *userdata) {
     DBusError error;
     int status = 0;
+    pa_device_manager *dm = (pa_device_manager *) userdata;
 
     pa_assert(userdata);
 
@@ -3091,19 +3216,19 @@ static DBusHandlerResult dbus_filter_device_detect_handler(DBusConnection *c, DB
         if (!dbus_message_get_args(s, NULL, DBUS_TYPE_INT32, &status, DBUS_TYPE_INVALID)) {
             goto fail;
         } else {
-            handle_device_status_changed(userdata, DEVICE_TYPE_AUDIO_JACK, NULL, NULL, status);
+            handle_device_status_changed(dm, DEVICE_TYPE_AUDIO_JACK, NULL, NULL, NULL, status);
         }
     } else if (dbus_message_is_signal(s, DBUS_INTERFACE_DEVICED_SYSNOTI, "ChangedHDMIAudio")) {
         if (!dbus_message_get_args(s, NULL, DBUS_TYPE_INT32, &status, DBUS_TYPE_INVALID)) {
             goto fail;
         } else {
-            handle_device_status_changed(userdata, DEVICE_TYPE_HDMI, NULL, NULL, status);
+            handle_device_status_changed(dm, DEVICE_TYPE_HDMI, NULL, NULL, NULL, status);
         }
     } else if (dbus_message_is_signal(s, DBUS_INTERFACE_MIRRORING_SERVER, "miracast_wfd_source_status_changed")) {
         if (!dbus_message_get_args(s, NULL, DBUS_TYPE_INT32, &status, DBUS_TYPE_INVALID)) {
             goto fail;
         } else {
-            handle_device_status_changed(userdata, DEVICE_TYPE_FORWARDING, NULL, NULL, status);
+            handle_device_status_changed(dm, DEVICE_TYPE_FORWARDING, NULL, NULL, NULL, status);
         }
     } else if (dbus_message_is_signal(s, DBUS_INTERFACE_BLUEZ_HEADSET, "PropertyChanged")) {
         DBusMessageIter msg_iter, variant_iter;
@@ -3132,17 +3257,26 @@ static DBusHandlerResult dbus_filter_device_detect_handler(DBusConnection *c, DB
 
         if (DBUS_TYPE_BOOLEAN == dbus_message_iter_get_arg_type(&variant_iter)) {
             dbus_bool_t value;
+            char *name;
             dbus_message_iter_get_basic(&variant_iter, &value);
             if (!strcmp(property_name, "Playing")) {
-                pa_log_debug("SCO Playing %d", value);
-                if (value)
-                    status = BT_SCO_CONNECTED;
-                else
-                    status = BT_SCO_DISCONNECTED;
-                handle_device_status_changed(userdata, DEVICE_TYPE_BT, DEVICE_PROFILE_BT_SCO, NULL, status);
+                dm_device *device_item;
+                pa_log_debug("SCO Playing : %d", value);
+                if ((device_item = _device_manager_get_device(dm->device_list, DEVICE_TYPE_BT))) {
+                    if (value)
+                        _device_item_set_active_profile(device_item, DEVICE_PROFILE_BT_SCO);
+                    else
+                        _device_item_set_active_profile_auto(device_item);
+                }
             } else if (!strcmp(property_name, "Connected")) {
-                // just for debug
-                pa_log_debug("HFP Connection %d", value);
+                pa_log_debug("HFP Connection : %d", value);
+                if (value) {
+                    method_call_bt_get_name(c, dbus_message_get_path(s), &name);
+                    status = BT_SCO_CONNECTED;
+                } else {
+                    status = BT_SCO_DISCONNECTED;
+                }
+                handle_device_status_changed(dm, DEVICE_TYPE_BT, DEVICE_PROFILE_BT_SCO, name, NULL, status);
             }
         }
     } else {
@@ -3339,6 +3473,140 @@ static pa_bool_t device_item_match_for_mask(dm_device *device_item, int device_f
     return FALSE;
 }
 
+
+static int method_call_bt_sco(DBusConnection *conn, pa_bool_t onoff) {
+    DBusMessage *msg, *reply;
+    DBusError err;
+    const char *method;
+
+    method = onoff ? "Play" : "Stop";
+    if (!(msg = dbus_message_new_method_call(DBUS_SERVICE_HFP_AGENT, DBUS_OBJECT_HFP_AGENT, DBUS_INTERFACE_HFP_AGENT, method))) {
+        pa_log_error("dbus method call failed");
+        return -1;
+    }
+
+    dbus_error_init(&err);
+    if (!(reply = dbus_connection_send_with_reply_and_block(conn, msg, -1, &err))) {
+        pa_log_error("Failed to method call %s.%s, %s", DBUS_INTERFACE_HFP_AGENT, method, err.message);
+        dbus_error_free(&err);
+        return -1;
+    }
+
+    dbus_message_unref(reply);
+    return 0;
+}
+
+static int method_call_bt_sco_get_property(DBusConnection *conn, pa_bool_t *is_wide_band, pa_bool_t *nrec) {
+    DBusMessage *msg, *reply;
+    DBusMessageIter reply_iter, reply_iter_entry;
+    DBusError err;
+    unsigned int codec;
+    const char *property;
+
+    pa_assert(conn);
+
+    if (!is_wide_band && !nrec) {
+        return -1;
+    }
+
+    if (!(msg = dbus_message_new_method_call(DBUS_SERVICE_HFP_AGENT, DBUS_OBJECT_HFP_AGENT, DBUS_INTERFACE_HFP_AGENT, "GetProperties"))) {
+        pa_log_error("dbus method call failed");
+        return -1;
+    }
+
+    dbus_error_init(&err);
+    if (!(reply = dbus_connection_send_with_reply_and_block(conn, msg, -1, &err))) {
+        pa_log_error("Failed to method call %s.%s, %s", DBUS_INTERFACE_HFP_AGENT, "GetProperties", err.message);
+        dbus_error_free(&err);
+        return -1;
+    }
+
+    dbus_message_iter_init(reply,  &reply_iter);
+
+    if (dbus_message_iter_get_arg_type(&reply_iter) != DBUS_TYPE_ARRAY) {
+        pa_log_error("Cannot get reply argument");
+        return -1;
+    }
+
+    dbus_message_iter_recurse(&reply_iter,  &reply_iter_entry);
+
+    while (dbus_message_iter_get_arg_type(&reply_iter_entry) == DBUS_TYPE_DICT_ENTRY) {
+        DBusMessageIter dict_entry, dict_entry_val;
+        dbus_message_iter_recurse(&reply_iter_entry, &dict_entry);
+        dbus_message_iter_get_basic(&dict_entry, &property);
+        pa_log_debug("String received = %s", property);
+        if (property) {
+            if (!strcmp("codec", property) && is_wide_band) {
+                dbus_message_iter_next(&dict_entry);
+                dbus_message_iter_recurse(&dict_entry, &dict_entry_val);
+                if (dbus_message_iter_get_arg_type(&dict_entry_val) != DBUS_TYPE_UINT32)
+                    continue;
+                dbus_message_iter_get_basic(&dict_entry_val, &codec);
+                pa_log_debug("Codec = [%d]", codec);
+                *is_wide_band= codec == BT_MSBC_CODEC_ID ? TRUE : FALSE;
+            } else if (!strcmp("nrec", property) && nrec) {
+                dbus_message_iter_next(&dict_entry);
+                dbus_message_iter_recurse(&dict_entry, &dict_entry_val);
+                if (dbus_message_iter_get_arg_type(&dict_entry_val) != DBUS_TYPE_BOOLEAN)
+                    continue;
+                dbus_message_iter_get_basic(&dict_entry_val, nrec);
+                pa_log_debug("nrec= [%d]", *nrec);
+            }
+        }
+        dbus_message_iter_next(&reply_iter_entry);
+    }
+
+
+    dbus_message_unref(reply);
+    return 0;
+}
+
+
+static int method_call_bt_get_name(DBusConnection *conn, const char *device_path, char **name) {
+    const char *intf = DBUS_INTERFACE_BLUEZ_DEVICE, *prop = "Alias";
+    DBusMessage *msg, *reply;
+    DBusMessageIter reply_iter, variant_iter;
+    DBusError err;
+
+    pa_assert(conn);
+    pa_assert(device_path);
+    pa_assert(name);
+
+    if (!(msg = dbus_message_new_method_call(DBUS_SERVICE_BLUEZ, device_path, "org.freedesktop.DBus.Properties", "Get"))) {
+        pa_log_error("dbus method call failed");
+        return -1;
+    }
+
+    dbus_message_append_args(msg,
+                DBUS_TYPE_STRING, &intf,
+                DBUS_TYPE_STRING, &prop,
+                DBUS_TYPE_INVALID);
+
+    dbus_error_init(&err);
+    if (!(reply = dbus_connection_send_with_reply_and_block(conn, msg, -1, &err))) {
+        pa_log_error("Failed to method call %s.%s, %s", DBUS_INTERFACE_BLUEZ_DEVICE, "Get", err.message);
+        dbus_error_free(&err);
+        return -1;
+    }
+
+    dbus_message_iter_init(reply,  &reply_iter);
+
+    if (dbus_message_iter_get_arg_type(&reply_iter) != DBUS_TYPE_VARIANT) {
+        pa_log_error("Cannot get reply argument");
+        return -1;
+    }
+
+    dbus_message_iter_recurse(&reply_iter,  &variant_iter);
+
+    if (dbus_message_iter_get_arg_type(&variant_iter) == DBUS_TYPE_STRING) {
+        dbus_message_iter_get_basic(&variant_iter, name);
+    }
+
+    dbus_message_unref(reply);
+    return 0;
+}
+
+
 static void handle_get_connected_device_list(DBusConnection *conn, DBusMessage *msg, void *userdata) {
     pa_device_manager *dm;
     DBusMessage *reply = NULL;
@@ -3429,6 +3697,7 @@ static void handle_load_sink(DBusConnection *conn, DBusMessage *msg, void *userd
     pa_device_manager *dm;
     char *device_type, *device_profile, *role;
     DBusMessage *reply = NULL;
+    pa_bool_t is_wide_band = FALSE, nrec = FALSE;;
 
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
     dm = (pa_device_manager *) userdata;
@@ -3454,8 +3723,6 @@ static void handle_test_device_status_change(DBusConnection *conn, DBusMessage *
 
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
 
-    pa_log_debug("[DEBUG_LOG] handle_test_device_status_change");
-    pa_log_debug("[DEBUG_LOG] signature: '%s'", dbus_message_get_signature(msg));
     dbus_error_init(&error);
     if(!dbus_message_get_args(msg, NULL,
                                        DBUS_TYPE_STRING, &device_type,
@@ -3471,7 +3738,7 @@ static void handle_test_device_status_change(DBusConnection *conn, DBusMessage *
     if (!strcmp(device_profile, "none"))
         device_profile = NULL;
 
-    handle_device_status_changed(dm, device_type, device_profile, NULL, status);
+    handle_device_status_changed(dm, device_type, device_profile, NULL,  NULL, status);
     pa_assert_se(dbus_connection_send(conn, reply, NULL));
     dbus_message_unref(reply);
 }
@@ -3711,6 +3978,77 @@ dm_device_direction_t pa_device_manager_get_device_direction(dm_device *device_i
     pa_assert(profile_item = _device_item_get_active_profile(device_item));
 
     return profile_item->direction;
+}
+
+int pa_device_manager_bt_sco_open(pa_device_manager *dm) {
+    DBusConnection *conn;
+    struct device_status_info *status_info;
+
+    pa_assert(dm);
+    pa_assert(dm->dbus_conn);
+
+    if (!(status_info = _device_manager_get_status_info(dm->device_status, DEVICE_TYPE_BT, DEVICE_PROFILE_BT_SCO, NULL))) {
+        pa_log_error("No status info for bt-sco");
+        return -1;
+    }
+    if (!status_info->detected) {
+        pa_log_error("bt-sco not detected");
+        return -1;
+    }
+
+    pa_log_debug("bt sco open start");
+    if (method_call_bt_sco(pa_dbus_connection_get(dm->dbus_conn), TRUE) < 0) {
+        pa_log_error("Failed to bt sco on");
+        return -1;
+    }
+
+    pa_log_debug("bt sco open end");
+
+    return 0;
+}
+
+int pa_device_manager_bt_sco_close(pa_device_manager *dm) {
+    DBusConnection *conn;
+    struct device_status_info *status_info;
+
+    pa_assert(dm);
+    pa_assert(dm->dbus_conn);
+
+    if (!(status_info = _device_manager_get_status_info(dm->device_status, DEVICE_TYPE_BT, DEVICE_PROFILE_BT_SCO, NULL))) {
+        pa_log_error("No status info for bt-sco");
+        return -1;
+    }
+    if (!status_info->detected) {
+        pa_log_error("bt-sco not detected");
+        return -1;
+    }
+
+    pa_log_debug("bt sco close start");
+    if (method_call_bt_sco(pa_dbus_connection_get(dm->dbus_conn), FALSE) < 0) {
+        pa_log_error("Failed to bt sco close");
+        return -1;
+    }
+    pa_log_debug("bt sco close end");
+
+    return 0;
+}
+
+int pa_device_manager_bt_sco_get_property(pa_device_manager *dm, pa_bool_t *is_wide_band, pa_bool_t *nrec) {
+    DBusConnection *conn;
+
+    pa_assert(dm);
+    pa_assert(dm->dbus_conn);
+
+    pa_log_debug("bt sco get property start");
+
+    if (method_call_bt_sco_get_property(pa_dbus_connection_get(dm->dbus_conn), is_wide_band, nrec) < 0) {
+        pa_log_error("Failed to get bt property");
+        return -1;
+    }
+
+    pa_log_debug("bt sco get property end");
+
+    return 0;
 }
 
 int pa_device_manager_load_sink(const char *device_type, const char *device_profile, const char *role, pa_device_manager *dm) {

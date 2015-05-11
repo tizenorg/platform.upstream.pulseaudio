@@ -69,3 +69,7 @@ dm_device_direction_t pa_device_manager_get_device_direction(dm_device *device);
 
 int pa_device_manager_load_sink(const char *device_type, const char *device_profile, const char *role, pa_device_manager *dm);
 int pa_device_manager_load_source(const char *device_type, const char *device_profile, const char *role, pa_device_manager *dm);
+
+int pa_device_manager_bt_sco_open(pa_device_manager *dm);
+int pa_device_manager_bt_sco_close(pa_device_manager *dm);
+int pa_device_manager_bt_sco_get_property(pa_device_manager *dm, pa_bool_t *is_wide_band, pa_bool_t *nrec);

@@ -696,6 +696,27 @@ static void handle_set_stream_route_options(DBusConnection *conn, DBusMessage *m
     return;
 }
 
+static void send_volume_changed_signal(DBusConnection *conn, const char *direction, const char *volume_type, const uint32_t volume_level) {
+    DBusMessage *signal_msg;
+    DBusMessageIter msg_iter;
+
+    pa_assert(conn);
+    pa_assert(volume_type);
+
+    pa_log_debug("Send volume changed signal : direction %s, type %s, level %d", direction, volume_type, volume_level);
+
+    pa_assert_se(signal_msg = dbus_message_new_signal(STREAM_MANAGER_OBJECT_PATH, STREAM_MANAGER_INTERFACE, "VolumeChanged"));
+    dbus_message_iter_init_append(signal_msg, &msg_iter);
+
+    dbus_message_iter_append_basic(&msg_iter, DBUS_TYPE_STRING, &direction);
+    dbus_message_iter_append_basic(&msg_iter, DBUS_TYPE_STRING, &volume_type);
+    dbus_message_iter_append_basic(&msg_iter, DBUS_TYPE_UINT32, &volume_level);
+
+    pa_assert_se(dbus_connection_send(conn, signal_msg, NULL));
+    dbus_message_unref(signal_msg);
+    return;
+}
+
 static void handle_set_volume_level(DBusConnection *conn, DBusMessage *msg, void *userdata) {
     const char *direction = NULL;
     const char *type = NULL;
@@ -703,6 +724,7 @@ static void handle_set_volume_level(DBusConnection *conn, DBusMessage *msg, void
     stream_type_t stream_type = STREAM_SINK_INPUT;
     DBusMessage *reply = NULL;
     pa_stream_manager *m = (pa_stream_manager*)userdata;
+    int ret = 0;
 
     pa_assert(conn);
     pa_assert(msg);
@@ -726,7 +748,7 @@ static void handle_set_volume_level(DBusConnection *conn, DBusMessage *msg, void
         goto FAILURE;
     }
 
-    if (set_volume_level_by_type(m, stream_type, type, level))
+    if ((ret = set_volume_level_by_type(m, stream_type, type, level)))
         pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
     else
         pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
@@ -734,6 +756,9 @@ static void handle_set_volume_level(DBusConnection *conn, DBusMessage *msg, void
 FAILURE:
     pa_assert_se(dbus_connection_send(conn, reply, NULL));
     dbus_message_unref(reply);
+
+    if (!ret)
+        send_volume_changed_signal(conn, direction, type, level);
     return;
 }
 

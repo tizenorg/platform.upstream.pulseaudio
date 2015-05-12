@@ -6,6 +6,8 @@
 %bcond_with pulseaudio_samsung_policy
 %bcond_with x
 
+%define udev_dir %{_prefix}/lib/udev
+
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
@@ -249,7 +251,7 @@ NOCONFIGURE=yes ./bootstrap.sh
 %if %{with pulseaudio_samsung_policy}
         --enable-samsung-policy \
 %endif
-        --with-udev-rules-dir=%{_libdir}/udev/rules.d \
+        --with-udev-rules-dir=%{udev_dir}/rules.d \
         --with-system-user=pulse \
         --with-system-group=pulse \
         --with-access-group=pulse-access
@@ -348,7 +350,7 @@ fi
 %{_bindir}/pulseaudio
 %{_libexecdir}/pulse/*
 %{_libdir}/libpulsecore-%{version}.so
-%{_libdir}/udev/rules.d/90-pulseaudio.rules
+%{udev_dir}/rules.d/90-pulseaudio.rules
 %config(noreplace) /etc/dbus-1/system.d/pulseaudio-system.conf
 # list all modules
 %{_libdir}/pulse-%{version}/modules/libalsa-util.so

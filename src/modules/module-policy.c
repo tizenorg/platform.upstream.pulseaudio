@@ -1260,7 +1260,7 @@ static audio_return_t __load_n_open_device (struct userdata *u, audio_device_inf
                     if (!so->source)
                         continue;
                     /* Get role (if role is filter, skip it) */
-                    if (policy_is_filter(so->proplist))
+                    if (policy_is_filter((pa_sink_input *)so->proplist))
                         continue;
 
                     pa_source_output_move_to(so, source, false);
@@ -1297,7 +1297,7 @@ static audio_return_t __load_n_open_device (struct userdata *u, audio_device_inf
                         continue;
 
                     /* Get role (if role is filter, skip it) */
-                    if (policy_is_filter(si->proplist))
+                    if (policy_is_filter((pa_sink_input*)si->proplist))
                         continue;
 
                     pa_sink_input_move_to(si, sink, false);
@@ -2830,7 +2830,10 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
 
     case SUBCOMMAND_BALANCE: {
         float balance;
+        float x;
+        const float EPSINON = 0.00000001;
         pa_cvolume cvol;
+        pa_cvolume* scvol;
         pa_channel_map map;
 
         if (pa_tagstruct_get_cvolume(t, &cvol) < 0)
@@ -2840,8 +2843,8 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
         balance = pa_cvolume_get_balance(&cvol, &map);
 
         pa_log_debug ("[POLICY][%s] new balance value = [%f]\n", __func__, balance);
-
-        if (balance == u->balance) {
+        x = u->balance - balance;
+        if ((x >= - EPSINON)&& (x <= EPSINON)) {
             pa_log_debug ("[POLICY][%s] No changes in balance value = [%f]", __func__, u->balance);
             break;
         }
@@ -2850,9 +2853,9 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
 
         /* Apply balance value to each Sinks */
         PA_IDXSET_FOREACH(s, u->core->sinks, idx) {
-            pa_cvolume* cvol = pa_sink_get_volume (s, false);
-            pa_cvolume_set_balance (cvol, &s->channel_map, u->balance);
-            pa_sink_set_volume(s, cvol, true, true);
+            scvol = pa_sink_get_volume (s, false);
+            pa_cvolume_set_balance (scvol, &s->channel_map, u->balance);
+            pa_sink_set_volume(s, scvol, true, true);
         }
         break;
     }
@@ -3603,9 +3606,6 @@ static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, voi
     pa_sink *sink_to_move;
     pa_sink_input	*si;
 
-    const char *si_volume_type_str;
-    uint32_t volume_type = AUDIO_VOLUME_TYPE_SYSTEM;
-
     pa_assert(c);
     pa_assert(sink);
     pa_assert(u);
@@ -3628,7 +3628,6 @@ static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, voi
 
     /* BT sink is unloading, move sink-input to proper sink */
     PA_IDXSET_FOREACH(si, c->sink_inputs, idx) {
-        const char *policy = NULL;
         if (!si->sink)
             continue;
 

@@ -123,11 +123,10 @@ pa_bluetooth_discovery* pa_bluetooth_discovery_get(pa_core *core);
 pa_bluetooth_discovery* pa_bluetooth_discovery_ref(pa_bluetooth_discovery *y);
 void pa_bluetooth_discovery_unref(pa_bluetooth_discovery *y);
 
-/*
 #ifdef BLUETOOTH_APTX_SUPPORT
 int pa_load_aptx(const char *aptx_lib_name);
 int pa_unload_aptx(void);
 void* pa_aptx_get_handle(void);
 #endif
-*/
+
 #endif

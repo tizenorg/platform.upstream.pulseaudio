@@ -642,7 +642,7 @@ static int a2dp_aptx_process_render(struct userdata *u) {
         size_t written;
         ssize_t encoded;
 
-        mybuffer=(uint8_t *)p;
+        mybuffer=(short*)p;
 
         for (i = 0; i < 4; i += 1) {
            pcmL[i] = mybuffer[2*i];
@@ -1571,7 +1571,7 @@ static void thread_func(void *userdata) {
 
                 if (writable && do_write > 0) {
                     int n_written;
-
+                    n_written = 0;
                     if (u->write_index <= 0)
                         u->started_at = pa_rtclock_now();
 #ifdef __TIZEN_BT__
@@ -2286,6 +2286,9 @@ int pa__init(pa_module* m) {
     struct userdata *u;
     const char *path;
     pa_modargs *ma;
+#ifdef BLUETOOTH_APTX_SUPPORT
+    void *handle;
+#endif
 
     pa_assert(m);
 
@@ -2343,6 +2346,15 @@ int pa__init(pa_module* m) {
 
     u->msg->parent.process_msg = device_process_msg;
     u->msg->card = u->card;
+
+#ifdef BLUETOOTH_APTX_SUPPORT
+    handle = pa_aptx_get_handle();
+
+    if (handle) {
+            pa_log_debug("Aptx Library loaded\n");
+            pa_load_aptx_sym(handle);
+    }
+#endif
 
     if (u->profile != PA_BLUETOOTH_PROFILE_OFF)
         if (init_profile(u) < 0)

@@ -209,7 +209,7 @@ echo "%{version}" > .tarball-version
 cp %{SOURCE1001} .
 
 %build
-export CFLAGS="%{optflags} -fno-strict-aliasing -D__TIZEN__ -D__TIZEN_BT__ -D__TIZEN_LOG__ -DTIZEN_MICRO -DBLUETOOTH_APTX_SUPPORT"
+export CFLAGS="%{optflags} -fno-strict-aliasing -D__TIZEN__ -D__TIZEN_BT__ -D__TIZEN_LOG__ -DTIZEN_MICRO -DBLUETOOTH_APTX_SUPPORT -DPRIMARY_VOLUME"
 %if 0%{?sec_build_binary_debug_enable}
 export CFLAGS+=" -DTIZEN_DEBUG_ENABLE"
 export CXXFLAGS="$CXXFLAGS –DTIZEN_DEBUG_ENABLE"

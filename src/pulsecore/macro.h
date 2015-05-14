@@ -57,10 +57,10 @@
 #define PA_PAGE_SIZE ((size_t) 4096)
 #endif
 
-#ifdef __TIZEN__
-typedef int  pa_bool_t;
+#ifdef HAVE_STD_BOOL
+typedef bool  pa_bool_t;
 #else
-typedef bool pa_bool_t;
+typedef int pa_bool_t;
 #endif
 
 

@@ -492,7 +492,7 @@ static void ext_policy_set_active_device_cb(pa_pdispatch *pd, uint32_t command, 
     }
 
     if (o->callback) {
-        pa_ext_policy_set_active_device_cb_t cb = (pa_ext_policy_get_mute_cb_t) o->callback;
+        pa_ext_policy_set_active_device_cb_t cb = (pa_ext_policy_set_active_device_cb_t) o->callback;
         cb(o->context, success, need_update, o->userdata);
     }
 

@@ -4037,17 +4037,15 @@ static void command_cork_playback_stream_all(pa_pdispatch *pd, uint32_t command,
     pa_native_connection *c = PA_NATIVE_CONNECTION(userdata);
     uint32_t idx;
     uint32_t sink_idx;
-    pa_bool_t b;
-    playback_stream *s;
+    bool b;
     pa_sink_input* si;
     pa_sink* sink;
-    char* role = NULL;
+    const char* role = NULL;
     int ret;
-    char* is_manual_corked_str = NULL;
-    int is_manual_corked;
+    const char* is_manual_corked_str = NULL;
+    uint32_t is_manual_corked;
     pa_sink_input_state_t si_state;
 
-    void *state = NULL;
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);

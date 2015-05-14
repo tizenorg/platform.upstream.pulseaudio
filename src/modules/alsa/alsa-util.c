@@ -727,8 +727,6 @@ snd_pcm_t *pa_alsa_open_by_device_string(
     snd_pcm_t *pcm_handle;
     bool reformat = false;
 #ifdef __TIZEN__
-    int ret = 0;
-    int hdmi_ch_enum_val = 0;
     void *audio_data = NULL;
     audio_interface_t *audio_intf = NULL;
 #endif
@@ -1513,7 +1511,7 @@ bool pa_alsa_pcm_is_modem(snd_pcm_t *pcm) {
 
 #ifdef __TIZEN__
 pa_bool_t pa_alsa_pcm_is_voip(snd_pcm_t *pcm) {
-    char *id = NULL;
+    const char *id = NULL;
     snd_pcm_info_t* info;
     snd_pcm_info_alloca(&info);
 

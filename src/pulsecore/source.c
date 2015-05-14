@@ -77,7 +77,7 @@ static void pa_source_volume_change_push(pa_source *s);
 static void pa_source_volume_change_flush(pa_source *s);
 
 #ifdef __TIZEN__
-static void __toggle_open_close_n_write_dump_source(pa_source *s, pa_memchunk *target)
+static void __toggle_open_close_n_write_dump_source(pa_source *s, const pa_memchunk *target)
 {
 
     /* open file for dump pcm */

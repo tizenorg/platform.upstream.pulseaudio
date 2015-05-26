@@ -100,6 +100,10 @@ static const char* const valid_modargs[] = {
 #define UPDATE_PM_LOCK(current,type)	(current |= type)
 #define UPDATE_PM_UNLOCK(current,type)	(current &= ~type)
 #endif /* USE_PM_LOCK */
+
+#ifdef __TIZEN__
+#define _MAX_TIMEOUT 100
+#endif
 struct userdata {
     pa_core *core;
     pa_usec_t timeout;
@@ -258,12 +262,31 @@ static void restart(struct device_info *d) {
     pa_assert(d->sink || d->source);
 
     d->last_use = now = pa_rtclock_now();
+#ifdef __TIZEN__
+    /* Assume that timeout is milli seconds unit if large (>=100) enough */
+    if (d->timeout >= _MAX_TIMEOUT) {
+        pa_core_rttime_restart(d->userdata->core, d->time_event, now + (d->timeout) * PA_USEC_PER_MSEC);
+
+        if (d->sink)
+            pa_log_debug("Sink %s becomes idle, timeout in %u msec.", d->sink->name, d->timeout);
+        if (d->source)
+            pa_log_debug("Source %s becomes idle, timeout in %u msec.", d->source->name, d->timeout);
+    } else {
+        pa_core_rttime_restart(d->userdata->core, d->time_event, now + d->timeout * PA_USEC_PER_SEC);
+
+        if (d->sink)
+            pa_log_debug("Sink %s becomes idle, timeout in %u seconds.", d->sink->name, d->timeout);
+        if (d->source)
+            pa_log_debug("Source %s becomes idle, timeout in %u seconds.", d->source->name, d->timeout);
+    }
+#else
     pa_core_rttime_restart(d->userdata->core, d->time_event, now + d->timeout);
 
     if (d->sink)
         pa_log_debug("Sink %s becomes idle, timeout in %" PRIu64 " seconds.", d->sink->name, d->timeout / PA_USEC_PER_SEC);
     if (d->source)
         pa_log_debug("Source %s becomes idle, timeout in %" PRIu64 " seconds.", d->source->name, d->timeout / PA_USEC_PER_SEC);
+#endif
 }
 
 static void resume(struct device_info *d) {

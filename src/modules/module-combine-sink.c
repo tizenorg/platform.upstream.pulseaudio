@@ -1387,8 +1387,18 @@ void pa__done(pa_module*m) {
     if (u->sink_state_changed_slot)
         pa_hook_slot_free(u->sink_state_changed_slot);
 
+#ifdef __TIZEN_BT__
+    if (u->outputs) {
+	struct output *o;
+        while ((o = pa_idxset_first(u->outputs, NULL)))
+            output_free(o);
+
+        pa_idxset_free(u->outputs, NULL);
+    }
+#else
     if (u->outputs)
         pa_idxset_free(u->outputs, (pa_free_cb_t) output_free);
+#endif
 
     if (u->sink)
         pa_sink_unlink(u->sink);

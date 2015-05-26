@@ -2868,6 +2868,14 @@ int pa_reset_sigsv(const int except[]) {
         switch (sig) {
             case SIGKILL:
             case SIGSTOP:
+#ifdef __TIZEN__
+            /*for crash-walker*/
+            case SIGILL:
+            case SIGABRT:
+            case SIGBUS:
+            case SIGFPE:
+            case SIGSEGV:
+#endif
                 reset = false;
                 break;
 

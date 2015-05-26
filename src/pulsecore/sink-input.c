@@ -665,8 +665,13 @@ static void update_n_corked(pa_sink_input *i, pa_sink_input_state_t state) {
 
     if (i->state == PA_SINK_INPUT_CORKED && state != PA_SINK_INPUT_CORKED)
         pa_assert_se(i->sink->n_corked -- >= 1);
-    else if (i->state != PA_SINK_INPUT_CORKED && state == PA_SINK_INPUT_CORKED)
+    else if (i->state != PA_SINK_INPUT_CORKED && state == PA_SINK_INPUT_CORKED) {
+#ifdef __TIZEN__
+        if (i->thread_info.resampler)
+            pa_resampler_reset(i->thread_info.resampler);
+#endif
         i->sink->n_corked++;
+    }
 }
 
 /* Called from main context */
@@ -2259,6 +2264,34 @@ void pa_sink_input_request_rewind(
     /* We don't take rewind requests while we are corked */
     if (i->thread_info.state == PA_SINK_INPUT_CORKED)
         return;
+
+#ifdef __TIZEN__
+    /* FIXME: due to current observation, rewinding with resampler generates noise,
+     * following code will avoid just conflict but we need to investigate more about this */
+    if (i->sink) {
+        pa_log_debug("sample rate : sink-input [%d], sink [%d], if not same, skip rewind",
+            i->sample_spec.rate, i->sink->sample_spec.rate);
+        if (i->sample_spec.rate != i->sink->sample_spec.rate) {
+            return;
+        }
+    } else {
+        pa_log_warn("sink is not available for sink-input [%d]", i->index);
+    }
+
+    /* FIXME: remove tick noise during playing keysound */
+    {
+        uint32_t gain_type = 0;
+        const char *si_gain_type_str = NULL;
+        if ((si_gain_type_str = pa_proplist_gets(i->proplist, PA_PROP_MEDIA_TIZEN_GAIN_TYPE))) {
+            pa_atou(si_gain_type_str, &gain_type);
+            if(gain_type == AUDIO_GAIN_TYPE_TOUCH) {
+                pa_log_debug("skip rewind");
+                return; // skip rewind.
+            }
+        }
+    }
+#endif
+
 
     nbytes = PA_MAX(i->thread_info.rewrite_nbytes, nbytes);
 

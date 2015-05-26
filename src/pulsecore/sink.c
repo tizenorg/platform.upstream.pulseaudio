@@ -1485,6 +1485,25 @@ void pa_sink_render_into(pa_sink*s, pa_memchunk *target) {
         pa_memblock_release(target->memblock);
     }
 
+#ifdef __TIZEN__
+    {
+        /**
+          * This section is added to pack 24bits of data in upper 3bytes of s24-32le format.
+          * This is required because ALSA expect the 24bits of data to be filled in upper three byte of 32bitf of S24_LE format.
+          * But pulseaudio expects the 24bits of data in lower 3bytes of s24-32le format.
+          */
+        int *siptr = (int *) ( pa_memblock_acquire(target->memblock) + target->index);
+        if( PA_SAMPLE_S24_32LE == s->sample_spec.format){
+
+            int max_iteration = target->length/4;
+            for(int tmp = 0; tmp<max_iteration; tmp++){
+                *siptr = (*siptr)<<8;
+                siptr++;
+            }
+        }
+        pa_memblock_release(target->memblock);
+    }
+#endif
     inputs_drop(s, info, n, target);
 
 #ifdef __TIZEN__

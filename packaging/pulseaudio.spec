@@ -282,6 +282,9 @@ mkdir -p %{buildroot}%{_includedir}/pulsemodule/pulsecore
 
 cp %{buildroot}%{_includedir}/pulse/*.h %{buildroot}%{_includedir}/pulsemodule/pulse
 
+mkdir -p %{buildroot}%{_unitdir}/multi-user.target.wants/
+ln -s  ../pulseaudio.service  %{buildroot}%{_unitdir}/multi-user.target.wants/pulseaudio.service
+
 fdupes  %{buildroot}%{_datadir}
 fdupes  %{buildroot}%{_includedir}
 
@@ -424,6 +427,8 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-role-ducking.so
 %{_libdir}/pulse-%{version}/modules/module-systemd-login.so
 %{_unitdir_user}/pulseaudio.service
+%{_unitdir}/pulseaudio.service
+%{_unitdir}/multi-user.target.wants/pulseaudio.service
 %{_unitdir_user}/pulseaudio.socket
 %if %{with pulseaudio_samsung_policy}
 %{_libdir}/pulse-%{version}/modules/module-policy.so

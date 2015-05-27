@@ -1,9 +1,14 @@
 [Unit]
-Description = PulseAudio system instance
+Description=pulseaudio service
+After=syslog.target dbus.service
 
 [Service]
-ExecStart = @PA_BINARY@ --system --daemonize=no --disallow-exit
-Restart = on-failure
+Type=forking
+ExecStart=/usr/bin/pulseaudio
+Restart=always
+KillSignal=SIGKILL
+MemoryLimit=50M
+PIDFile=/var/run/pulse/pid
 
 [Install]
-Also = pulseaudio.socket
+WantedBy=multi-user.target

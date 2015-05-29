@@ -89,7 +89,11 @@ static pa_hook_result_t source_put_hook_callback(pa_core *c, pa_source *source, 
     }
 
     /* Load module-loopback */
-    args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=%s\"", source->name, role);
+#ifdef __TIZEN__
+    args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=%s media.policy=auto media.tizen_volume_type=4\" adjust_time=0", source->name, role);
+#else
+    args = pa_sprintf_malloc("source=\"%s\" source_dont_move=\"true\" sink_input_properties=\"media.role=%s\" adjust_time=0", source->name, role);
+#endif
     (void) pa_module_load(c, "module-loopback", args);
     pa_xfree(args);
 
@@ -126,7 +130,7 @@ static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, void *
     }
 
     /* Load module-loopback */
-    args = pa_sprintf_malloc("sink=\"%s\" sink_dont_move=\"true\" source_output_properties=\"media.role=%s\"", sink->name, role);
+    args = pa_sprintf_malloc("sink=\"%s\" sink_dont_move=\"true\" source_output_properties=\"media.role=%s\" adjust_time=0", sink->name, role);
     (void) pa_module_load(c, "module-loopback", args);
     pa_xfree(args);
 
@@ -170,7 +174,7 @@ static pa_hook_result_t profile_available_hook_callback(pa_core *c, pa_card_prof
         return PA_HOOK_OK;
 
     /* Do not automatically switch profiles for headsets, just in case */
-    if (pa_streq(profile->name, "hsp") || pa_streq(profile->name, "a2dp"))
+    if (pa_streq(profile->name, "hsp") || pa_streq(profile->name, "a2dp_sink"))
         return PA_HOOK_OK;
 
     is_active_profile = card->active_profile == profile;

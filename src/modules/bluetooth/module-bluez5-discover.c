@@ -41,6 +41,9 @@ PA_MODULE_VERSION(PACKAGE_VERSION);
 #ifdef __TIZEN_BT__
 PA_MODULE_USAGE("sco_sink=<name of sink> "
 					"sco_source=<name of source> "
+#ifdef BLUETOOTH_APTX_SUPPORT
+					"aptx_lib_name=<name of aptx library name>"
+#endif
 );
 #endif
 PA_MODULE_LOAD_ONCE(true);
@@ -49,6 +52,9 @@ PA_MODULE_LOAD_ONCE(true);
 static const char* const valid_modargs[] = {
     "sco_sink",
     "sco_source",
+#ifdef BLUETOOTH_APTX_SUPPORT
+    "aptx_lib_name",
+#endif
     NULL
 };
 #endif
@@ -87,11 +93,11 @@ static pa_hook_result_t device_connection_changed_cb(pa_bluetooth_discovery *y, 
 #endif
 
 #ifdef __TIZEN_BT__
-	if (pa_bluetooth_device_sink_transport_connected(d) == true) {
-		char *tmp = pa_sprintf_malloc("%s profile=\"a2dp_sink\"", args);
-		pa_xfree(args);
-		args = tmp;
-	}
+	if (pa_bluetooth_device_sink_transport_connected(d) == true)
+		args = pa_sprintf_malloc("%s profile=\"a2dp_sink\"", args);
+
+	if (pa_bluetooth_device_source_transport_connected(d) == true)
+		args = pa_sprintf_malloc("%s profile=\"a2dp_source\"", args);
 #endif
 
         pa_log_debug("Loading module-bluez5-device %s", args);
@@ -113,8 +119,28 @@ static pa_hook_result_t device_connection_changed_cb(pa_bluetooth_discovery *y, 
 
 int pa__init(pa_module *m) {
     struct userdata *u;
+#ifdef BLUETOOTH_APTX_SUPPORT
+    pa_modargs *ma = NULL;
+    const char *aptx_lib_name = NULL;
+#endif
 
     pa_assert(m);
+
+#ifdef BLUETOOTH_APTX_SUPPORT
+    if (!(ma = pa_modargs_new(m->argument, valid_modargs))) {
+        pa_log("Failed to parse module arguments");
+        goto fail;
+    }
+
+    if (pa_modargs_get_value(ma, "async", NULL))
+        pa_log_warn("The 'async' argument is deprecated and does nothing.");
+
+    aptx_lib_name = pa_modargs_get_value(ma, "aptx_lib_name", NULL);
+    if (aptx_lib_name)
+        pa_load_aptx(aptx_lib_name);
+    else
+        pa_log("Failed to parse aptx_lib_name argument.");
+#endif
 
     m->userdata = u = pa_xnew0(struct userdata, 1);
     u->module = m;
@@ -128,9 +154,15 @@ int pa__init(pa_module *m) {
         pa_hook_connect(pa_bluetooth_discovery_hook(u->discovery, PA_BLUETOOTH_HOOK_DEVICE_CONNECTION_CHANGED),
                         PA_HOOK_NORMAL, (pa_hook_cb_t) device_connection_changed_cb, u);
 
+    if (ma)
+	    pa_modargs_free(ma);
+
     return 0;
 
 fail:
+    if (ma)
+	    pa_modargs_free(ma);
+
     pa__done(m);
     return -1;
 }
@@ -151,6 +183,10 @@ void pa__done(pa_module *m) {
 
     if (u->loaded_device_paths)
         pa_hashmap_free(u->loaded_device_paths);
+
+#ifdef BLUETOOTH_APTX_SUPPORT
+    pa_unload_aptx();
+#endif
 
     pa_xfree(u);
 }

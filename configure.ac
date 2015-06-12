@@ -1289,9 +1289,10 @@ AS_IF([test "x$HAVE_SYSTEMD" = "x1"],
 
 AC_ARG_WITH([systemdsystemunitdir],
         AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd system service files]),
-        [systemdsystemunitdir=$withval], [systemdsystemunitdir="${libdir}/systemd/system"])
-
-AC_SUBST(systemdsystemunitdir)
+        [], [with_systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])
+if test "x$with_systemdsystemunitdir" != xno; then
+        AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
+fi
 
 AC_ARG_WITH([systemduserunitdir],
         AS_HELP_STRING([--with-systemduserunitdir=DIR], [Directory for systemd user service files]),
@@ -1557,7 +1558,7 @@ AC_CONFIG_FILES([src/system.pa:src/daemon/system.pa.in],
     [m4 src/system.pa > src/system.pa.gen && mv src/system.pa.gen src/system.pa])
 AS_IF([test "x$HAVE_SYSTEMD_DAEMON" = "x1"],
     [
-        AC_CONFIG_FILES([src/pulseaudio.service:src/daemon/systemd/user/pulseaudio.service.in])
+        AC_CONFIG_FILES([src/daemon/systemd/user/pulseaudio.service:src/daemon/systemd/user/pulseaudio.service.in])
         AC_CONFIG_FILES([src/daemon/systemd/system/pulseaudio.service:src/daemon/systemd/system/pulseaudio.service.in])
     ])
 

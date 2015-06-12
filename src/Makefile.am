@@ -258,7 +258,7 @@ systemdsystemunit_DATA = \
     daemon/systemd/system/pulseaudio.socket
 
 systemduserunit_DATA = \
-    pulseaudio.service \
+    daemon/systemd/user/pulseaudio.service \
     daemon/systemd/user/pulseaudio.socket
 
 endif

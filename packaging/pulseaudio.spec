@@ -427,9 +427,9 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-role-ducking.so
 %{_libdir}/pulse-%{version}/modules/module-systemd-login.so
 %{_unitdir_user}/pulseaudio.service
+%{_unitdir_user}/pulseaudio.socket
 %{_unitdir}/pulseaudio.service
 %{_unitdir}/multi-user.target.wants/pulseaudio.service
-%{_unitdir_user}/pulseaudio.socket
 %if %{with pulseaudio_samsung_policy}
 %{_libdir}/pulse-%{version}/modules/module-policy.so
 %endif
@@ -541,8 +541,8 @@ fi
 %files cascaded-setup
 %config(noreplace) %{_sysconfdir}/pulse/cascaded.pa
 %config(noreplace) %{_sysconfdir}/pulse/tunnel-manager.conf
-%{_libdir}/systemd/system/pulseaudio.service
-%{_libdir}/systemd/system/pulseaudio.socket
+%{_unitdir}/pulseaudio.service
+%{_unitdir}/pulseaudio.socket
 
 %files module-devel
 %manifest %{name}.manifest

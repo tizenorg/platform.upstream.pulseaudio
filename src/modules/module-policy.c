@@ -39,6 +39,8 @@
 
 #include "module-policy-symdef.h"
 #include "tizen-audio.h"
+#include "communicator.h"
+#include "stream-manager.h"
 
 #define VCONFKEY_SOUND_HDMI_SUPPORT "memory/private/sound/hdmisupport"
 #ifdef PRIMARY_VOLUME
@@ -256,7 +258,7 @@ struct userdata {
         void *dl_handle;
         void *data;
         audio_interface_t intf;
-    } audio_mgr;
+    } hal_manager;
 
     struct  { // for burst-shot
         pa_bool_t is_running;
@@ -269,6 +271,15 @@ struct userdata {
         pa_usec_t time_interval;
         pa_usec_t factor; /* timer boosting */
     } audio_sample_userdata;
+
+    struct {
+        pa_communicator *comm;
+        pa_hook_slot *comm_hook_select_proper_sink_or_source_slot;
+        pa_hook_slot *comm_hook_change_route_slot;
+        pa_hook_slot *comm_hook_update_route_option_slot;
+    } communicator;
+
+    pa_stream_manager *stream_manager;
 };
 
 enum {
@@ -1814,7 +1825,7 @@ static audio_return_t policy_play_sample_continuously(struct userdata *u, pa_nat
     /* FIXME : Add gain_type parameter to API like volume_type */
     audio_info.stream.gain_type = gain_type;
 
-    if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.get_volume_value(u->audio_mgr.data, &audio_info, volume_type, volume_level, &volume_linear)))) {
+    if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.get_volume_value(u->hal_manager.data, &audio_info, volume_type, volume_level, &volume_linear)))) {
         pa_log_warn("get_volume_value returns error:0x%x", audio_ret);
         goto exit;
     }
@@ -1958,7 +1969,7 @@ static audio_return_t policy_play_sample(struct userdata *u, pa_native_connectio
     /* FIXME : Add gain_type parameter to API like volume_type */
     audio_info.stream.gain_type = gain_type;
 
-    if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.get_volume_value(u->audio_mgr.data, &audio_info, volume_type, volume_level, &volume_linear)))) {
+    if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.get_volume_value(u->hal_manager.data, &audio_info, volume_type, volume_level, &volume_linear)))) {
         pa_log_warn("get_volume_value returns error:0x%x", audio_ret);
         goto exit;
     }
@@ -2004,9 +2015,10 @@ static audio_return_t policy_reset(struct userdata *u)
 
     pa_log_debug("reset");
     __load_dump_config(u);
-    if (u->audio_mgr.intf.reset) {
-        if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.reset(&u->audio_mgr.data)))) {
-            pa_log_error("audio_mgr reset failed");
+
+    if (u->hal_manager.intf.reset) {
+        if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.reset(&u->hal_manager.data)))) {
+            pa_log_error("hal_manager reset failed");
             return audio_ret;
         }
     }
@@ -2035,12 +2047,12 @@ static audio_return_t policy_set_session(struct userdata *u, uint32_t session, u
         } else {
             u->subsession = AUDIO_SUBSESSION_NONE;
         }
-        if (u->audio_mgr.intf.set_session) {
-            u->audio_mgr.intf.set_session(u->audio_mgr.data, session, u->subsession, AUDIO_SESSION_CMD_START);
+        if (u->hal_manager.intf.set_session) {
+            u->hal_manager.intf.set_session(u->hal_manager.data, session, u->subsession, AUDIO_SESSION_CMD_START);
         }
     } else {
-        if (u->audio_mgr.intf.set_session) {
-            u->audio_mgr.intf.set_session(u->audio_mgr.data, session, u->subsession, AUDIO_SESSION_CMD_END);
+        if (u->hal_manager.intf.set_session) {
+            u->hal_manager.intf.set_session(u->hal_manager.data, session, u->subsession, AUDIO_SESSION_CMD_END);
         }
         u->session = AUDIO_SESSION_MEDIA;
         u->subsession = AUDIO_SUBSESSION_NONE;
@@ -2060,8 +2072,8 @@ static audio_return_t policy_set_session(struct userdata *u, uint32_t session, u
     if (need_route) {
         uint32_t route_flag = __get_route_flag(u);
 
-        if (u->audio_mgr.intf.set_route) {
-            u->audio_mgr.intf.set_route(u->audio_mgr.data, u->session, u->subsession, u->active_device_in, u->active_device_out, route_flag);
+        if (u->hal_manager.intf.set_route) {
+            u->hal_manager.intf.set_route(u->hal_manager.data, u->session, u->subsession, u->active_device_in, u->active_device_out, route_flag);
         }
         u->active_route_flag = route_flag;
     } else {
@@ -2095,8 +2107,8 @@ static audio_return_t policy_set_subsession(struct userdata *u, uint32_t subsess
     u->subsession_opt = subsession_opt;
 #endif
 
-    if (u->audio_mgr.intf.set_session) {
-        u->audio_mgr.intf.set_session(u->audio_mgr.data, u->session, u->subsession, AUDIO_SESSION_CMD_SUBSESSION);
+    if (u->hal_manager.intf.set_session) {
+        u->hal_manager.intf.set_session(u->hal_manager.data, u->session, u->subsession, AUDIO_SESSION_CMD_SUBSESSION);
     }
 
     if (prev_subsession!= subsession) {
@@ -2114,8 +2126,8 @@ static audio_return_t policy_set_subsession(struct userdata *u, uint32_t subsess
     if (need_route) {
         uint32_t route_flag = __get_route_flag(u);
 
-        if (u->audio_mgr.intf.set_route) {
-            u->audio_mgr.intf.set_route(u->audio_mgr.data, u->session, u->subsession, u->active_device_in, u->active_device_out, route_flag);
+        if (u->hal_manager.intf.set_route) {
+            u->hal_manager.intf.set_route(u->hal_manager.data, u->session, u->subsession, u->active_device_in, u->active_device_out, route_flag);
         }
         u->active_route_flag = route_flag;
     } else {
@@ -2161,8 +2173,8 @@ static audio_return_t policy_set_active_device(struct userdata *u, uint32_t devi
     }
 
 #ifdef TIZEN_MICRO
-    if (u->audio_mgr.intf.set_route) {
-        u->audio_mgr.intf.set_route(u->audio_mgr.data, u->session, u->subsession, device_in, device_out, route_flag);
+    if (u->hal_manager.intf.set_route) {
+        u->hal_manager.intf.set_route(u->hal_manager.data, u->session, u->subsession, device_in, device_out, route_flag);
     }
 #else
 
@@ -2170,7 +2182,7 @@ static audio_return_t policy_set_active_device(struct userdata *u, uint32_t devi
     if(u->active_device_out == device_out) {
         *need_update = false;
     }
-    if (u->audio_mgr.intf.set_route) {
+    if (u->hal_manager.intf.set_route) {
         audio_return_t audio_ret = AUDIO_RET_OK;
         const char *device_switching_str;
         uint32_t device_switching = 0;
@@ -2200,7 +2212,7 @@ static audio_return_t policy_set_active_device(struct userdata *u, uint32_t devi
         }
 #endif
 
-        u->audio_mgr.intf.set_route(u->audio_mgr.data, u->session, u->subsession, device_in, device_out, route_flag);
+        u->hal_manager.intf.set_route(u->hal_manager.data, u->session, u->subsession, device_in, device_out, route_flag);
         /* Unmute sink inputs which are muted due to device switching */
         PA_IDXSET_FOREACH(si, u->core->sink_inputs, idx) {
             if ((device_switching_str = pa_proplist_gets(si->proplist, "module-policy.device_switching"))) {
@@ -2253,8 +2265,8 @@ static audio_return_t policy_get_volume_level_max(struct userdata *u, uint32_t v
     audio_return_t audio_ret = AUDIO_RET_OK;
 
     /* Call HAL function if exists */
-    if (u->audio_mgr.intf.get_volume_level_max) {
-        if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.get_volume_level_max(u->audio_mgr.data, volume_type, volume_level)))) {
+    if (u->hal_manager.intf.get_volume_level_max) {
+        if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.get_volume_level_max(u->hal_manager.data, volume_type, volume_level)))) {
             pa_log_error("get_volume_level_max returns error:0x%x", audio_ret);
             return audio_ret;
         }
@@ -2289,8 +2301,8 @@ static audio_return_t __update_volume(struct userdata *u, uint32_t stream_idx, u
     }
 
     /* Call HAL function if exists */
-    if (u->audio_mgr.intf.set_volume_level && (stream_idx == PA_INVALID_INDEX)) {
-        if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.set_volume_level(u->audio_mgr.data, NULL, volume_type, volume_level)))) {
+    if (u->hal_manager.intf.set_volume_level && (stream_idx == PA_INVALID_INDEX)) {
+        if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.set_volume_level(u->hal_manager.data, NULL, volume_type, volume_level)))) {
             pa_log_error("set_volume_level returns error:0x%x", audio_ret);
             return audio_ret;
         }
@@ -2309,8 +2321,8 @@ static audio_return_t __update_volume(struct userdata *u, uint32_t stream_idx, u
             pa_cvolume cv;
 
             /* Call HAL function if exists */
-            if (u->audio_mgr.intf.set_volume_level) {
-                if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.set_volume_level(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, volume_level)))) {
+            if (u->hal_manager.intf.set_volume_level) {
+                if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.set_volume_level(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, volume_level)))) {
                     pa_log_error("set_volume_level for sink-input[%d] returns error:0x%x", idx, audio_ret);
                     __free_audio_info(&audio_info);
                     return audio_ret;
@@ -2318,8 +2330,8 @@ static audio_return_t __update_volume(struct userdata *u, uint32_t stream_idx, u
             }
 
             /* Get volume value by type & level */
-            if (u->audio_mgr.intf.get_volume_value && (audio_ret != AUDIO_RET_USE_HW_CONTROL)) {
-                if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.get_volume_value(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, volume_level, &volume_linear)))) {
+            if (u->hal_manager.intf.get_volume_value && (audio_ret != AUDIO_RET_USE_HW_CONTROL)) {
+                if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.get_volume_value(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, volume_level, &volume_linear)))) {
                     pa_log_warn("get_volume_value for sink-input[%d] returns error:0x%x", idx, audio_ret);
                     __free_audio_info(&audio_info);
                     return audio_ret;
@@ -2362,8 +2374,8 @@ static audio_return_t __update_volume_by_value(struct userdata *u, uint32_t stre
             pa_cvolume cv;
 
             // 1. get gain first
-            if (u->audio_mgr.intf.get_gain_value) {
-                if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.get_gain_value(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, &gain)))) {
+            if (u->hal_manager.intf.get_gain_value) {
+                if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.get_gain_value(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, &gain)))) {
                     pa_log_warn("get_gain_value for sink-input[%d] volume_type(%d), returns error:0x%x", idx, audio_info.stream.volume_type, audio_ret);
                     __free_audio_info(&audio_info);
                     return audio_ret;
@@ -2374,8 +2386,8 @@ static audio_return_t __update_volume_by_value(struct userdata *u, uint32_t stre
             volume *= gain;
 
             /* 3. adjust hw volume(LPA), Call HAL function if exists */
-            if (u->audio_mgr.intf.set_volume_value) {
-                if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.set_volume_value(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, &volume)))) {
+            if (u->hal_manager.intf.set_volume_value) {
+                if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.set_volume_value(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, &volume)))) {
                     pa_log_error("set_volume_level for sink-input[%d] returns error:0x%x", idx, audio_ret);
                     __free_audio_info(&audio_info);
                     return audio_ret;
@@ -2516,8 +2528,8 @@ static audio_return_t policy_get_volume_level(struct userdata *u, uint32_t strea
         pa_log_warn("volume_type (%d) invalid", *volume_type);
         return AUDIO_ERR_PARAMETER;
     }
-    if (u->audio_mgr.intf.get_volume_level) {
-        u->audio_mgr.intf.get_volume_level(u->audio_mgr.data, *volume_type, volume_level);
+    if (u->hal_manager.intf.get_volume_level) {
+        u->hal_manager.intf.get_volume_level(u->hal_manager.data, *volume_type, volume_level);
     }
 
     pa_log_info("get_volume_level stream_idx:%d type:%d level:%d", stream_idx, *volume_type, *volume_level);
@@ -2538,8 +2550,8 @@ static audio_return_t policy_get_volume_value(struct userdata *u, uint32_t strea
             return AUDIO_ERR_UNDEFINED;
         }
 
-        if(u->audio_mgr.intf.get_volume_value) {
-            if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.get_volume_value(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, *volume_level, volume_linear)))) {
+        if(u->hal_manager.intf.get_volume_value) {
+            if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.get_volume_value(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, *volume_level, volume_linear)))) {
                 pa_log_warn("get_volume_value for stream_idx[%d] returns error:0x%x", stream_idx, audio_ret);
                 return audio_ret;
             }
@@ -2555,8 +2567,8 @@ static audio_return_t policy_set_volume_level(struct userdata *u, uint32_t strea
 
     /* Store volume level of type */
     if (volume_type != (uint32_t)-1) {
-        if (u->audio_mgr.intf.set_volume_level) {
-            u->audio_mgr.intf.set_volume_level(u->audio_mgr.data, NULL, volume_type, volume_level);
+        if (u->hal_manager.intf.set_volume_level) {
+            u->hal_manager.intf.set_volume_level(u->hal_manager.data, NULL, volume_type, volume_level);
         }
     }
 
@@ -2577,8 +2589,8 @@ static audio_return_t policy_update_volume(struct userdata *u) {
     pa_log_info("update_volume");
 
     for (volume_type = 0; volume_type < AUDIO_VOLUME_TYPE_MAX; volume_type++) {
-        if (u->audio_mgr.intf.get_volume_level) {
-            u->audio_mgr.intf.get_volume_level(u->audio_mgr.data, volume_type, &volume_level);
+        if (u->hal_manager.intf.get_volume_level) {
+            u->hal_manager.intf.get_volume_level(u->hal_manager.data, volume_type, &volume_level);
         }
         __update_volume(u, (uint32_t)-1, volume_type, volume_level);
 #ifdef WEARABLE_FIX // commit : update call mute status after changing audio pathupdate call mute status after changing audio path
@@ -2586,10 +2598,10 @@ static audio_return_t policy_update_volume(struct userdata *u) {
         if (u->session == AUDIO_SESSION_VOICECALL) {
             uint32_t call_muted = 0;
 
-            if (u->audio_mgr.intf.get_mute) {
-                u->audio_mgr.intf.get_mute(u->audio_mgr.data, NULL, AUDIO_VOLUME_TYPE_CALL, AUDIO_DIRECTION_IN, &call_muted);
-                if (u->call_muted != (int)call_muted && u->audio_mgr.intf.set_mute) {
-                    u->audio_mgr.intf.set_mute(u->audio_mgr.data, NULL, AUDIO_VOLUME_TYPE_CALL, AUDIO_DIRECTION_IN, u->call_muted);
+            if (u->hal_manager.intf.get_mute) {
+                u->hal_manager.intf.get_mute(u->hal_manager.data, NULL, AUDIO_VOLUME_TYPE_CALL, AUDIO_DIRECTION_IN, &call_muted);
+                if (u->call_muted != (int)call_muted && u->hal_manager.intf.set_mute) {
+                    u->hal_manager.intf.set_mute(u->hal_manager.data, NULL, AUDIO_VOLUME_TYPE_CALL, AUDIO_DIRECTION_IN, u->call_muted);
                 }
             }
         }
@@ -2605,8 +2617,8 @@ static audio_return_t policy_get_mute(struct userdata *u, uint32_t stream_idx, u
     uint32_t idx;
     audio_info_t audio_info;
 
-    if (u->audio_mgr.intf.get_mute && (stream_idx == PA_INVALID_INDEX)) {
-        audio_ret = u->audio_mgr.intf.get_mute(u->audio_mgr.data, NULL, volume_type, direction, mute);
+    if (u->hal_manager.intf.get_mute && (stream_idx == PA_INVALID_INDEX)) {
+        audio_ret = u->hal_manager.intf.get_mute(u->hal_manager.data, NULL, volume_type, direction, mute);
         if (audio_ret == AUDIO_RET_USE_HW_CONTROL) {
             return audio_ret;
         } else {
@@ -2626,8 +2638,8 @@ static audio_return_t policy_get_mute(struct userdata *u, uint32_t stream_idx, u
             if ((stream_idx == idx) || ((stream_idx == PA_INVALID_INDEX) && (audio_info.stream.volume_type == volume_type))) {
 
                 /* Call HAL function if exists */
-                if (u->audio_mgr.intf.get_mute) {
-                    audio_ret = u->audio_mgr.intf.get_mute(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, direction, mute);
+                if (u->hal_manager.intf.get_mute) {
+                    audio_ret = u->hal_manager.intf.get_mute(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, direction, mute);
                     if (audio_ret == AUDIO_RET_USE_HW_CONTROL) {
                         return audio_ret;
                     } else if (AUDIO_IS_ERROR(audio_ret)) {
@@ -2681,8 +2693,8 @@ static audio_return_t policy_set_mute(struct userdata *u, uint32_t stream_idx, u
     }
 
     /* Call HAL function if exists */
-    if (u->audio_mgr.intf.set_mute && (stream_idx == PA_INVALID_INDEX)) {
-        audio_ret = u->audio_mgr.intf.set_mute(u->audio_mgr.data, NULL, volume_type, direction, mute);
+    if (u->hal_manager.intf.set_mute && (stream_idx == PA_INVALID_INDEX)) {
+        audio_ret = u->hal_manager.intf.set_mute(u->hal_manager.data, NULL, volume_type, direction, mute);
         if (audio_ret == AUDIO_RET_USE_HW_CONTROL) {
             pa_log_info("set_mute(call) returns error:0x%x mute:%d", audio_ret, mute);
             return audio_ret;
@@ -2703,8 +2715,8 @@ static audio_return_t policy_set_mute(struct userdata *u, uint32_t stream_idx, u
             if ((stream_idx == idx) || ((stream_idx == PA_INVALID_INDEX) && (audio_info.stream.volume_type == volume_type))) {
 
                 /* Call HAL function if exists */
-                if (u->audio_mgr.intf.set_mute) {
-                    audio_ret = u->audio_mgr.intf.set_mute(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, direction, mute);
+                if (u->hal_manager.intf.set_mute) {
+                    audio_ret = u->hal_manager.intf.set_mute(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, direction, mute);
                     if (AUDIO_IS_ERROR(audio_ret)) {
                         pa_log_error("set_mute for sink-input[%d] returns error:0x%x", idx, audio_ret);
                         return audio_ret;
@@ -2758,9 +2770,9 @@ static void policy_get_buffer_attr(struct userdata       *u,
     assert(minreq);
     assert(fragsize);
 
-    pa_log_debug("hal-latency : u->intf.audio_mgr.get_buffer_attr(%p)", u->audio_mgr.intf.get_buffer_attr);
-    if (u->audio_mgr.intf.get_buffer_attr != NULL) {
-        audio_return_t ret = u->audio_mgr.intf.get_buffer_attr(u->audio_mgr.data, latency, samplerate, format, channels, maxlength, tlength, prebuf, minreq, fragsize);
+    pa_log_debug("hal-latency : u->intf.hal_manager.get_buffer_attr(%p)", u->hal_manager.intf.get_buffer_attr);
+    if (u->hal_manager.intf.get_buffer_attr != NULL) {
+        audio_return_t ret = u->hal_manager.intf.get_buffer_attr(u->hal_manager.data, latency, samplerate, format, channels, maxlength, tlength, prebuf, minreq, fragsize);
         if (ret != AUDIO_RET_OK) {
             pa_log_error("Failed get_buffer_attr() - ret:%d", ret);
         }
@@ -2978,7 +2990,7 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
             u->muteall = enable;
 
 /* Use mute instead of volume for muteall */
-#if 1
+#if 1 /* volume feature will be moved to stream-manager */
 #ifdef TIZEM_MICRO
             /* Special case. Set mute for call volume type in B3. */
             policy_set_mute(u, (-1), AUDIO_VOLUME_TYPE_CALL, AUDIO_DIRECTION_OUT, u->muteall);
@@ -3245,7 +3257,7 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
         pa_log_debug(" New stream lacks property data.");
         return PA_HOOK_OK;
     }
-
+#if 1
     /* If no policy exists, skip */
     if (!(policy = pa_proplist_gets(new_data->proplist, PA_PROP_MEDIA_POLICY))) {
         pa_log_debug("Not setting device for stream [%s], because it lacks policy.",
@@ -3292,7 +3304,7 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
     if(new_sink != new_data->sink)
         pa_sink_input_new_data_set_sink(new_data, new_sink, false);
     }
-
+#endif
     s = pa_strbuf_new();
     master_name = pa_proplist_gets(new_data->sink->proplist, PA_PROP_DEVICE_MASTER_DEVICE);
     if (master_name)
@@ -3308,8 +3320,8 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
         // set role type
         __set_sink_input_role_type(new_data->proplist, audio_info.stream.gain_type);
 
-        if (u->audio_mgr.intf.get_volume_level) {
-            u->audio_mgr.intf.get_volume_level(u->audio_mgr.data, audio_info.stream.volume_type, &volume_level);
+        if (u->hal_manager.intf.get_volume_level) {
+            u->hal_manager.intf.get_volume_level(u->hal_manager.data, audio_info.stream.volume_type, &volume_level);
         }
 
         pa_strbuf_printf(s, "[%s] policy[%s] ch[%d] rate[%d] volume&gain[%d,%d] level[%d]",
@@ -3324,16 +3336,16 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
         pa_strbuf_printf(s, " sink[%s]", (new_data->sink)? new_data->sink->name : "null");
 
         /* Call HAL function if exists */
-        if (u->audio_mgr.intf.set_volume_level) {
-            if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.set_volume_level(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, volume_level)))) {
+        if (u->hal_manager.intf.set_volume_level) {
+            if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.set_volume_level(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, volume_level)))) {
                 pa_log_warn("set_volume_level for new sink-input returns error:0x%x", audio_ret);
                 goto exit;
             }
         }
 
         /* Get volume value by type & level */
-        if (u->audio_mgr.intf.get_volume_value && (audio_ret != AUDIO_RET_USE_HW_CONTROL)) {
-            if (AUDIO_IS_ERROR((audio_ret = u->audio_mgr.intf.get_volume_value(u->audio_mgr.data, &audio_info, audio_info.stream.volume_type, volume_level, &volume_linear)))) {
+        if (u->hal_manager.intf.get_volume_value && (audio_ret != AUDIO_RET_USE_HW_CONTROL)) {
+            if (AUDIO_IS_ERROR((audio_ret = u->hal_manager.intf.get_volume_value(u->hal_manager.data, &audio_info, audio_info.stream.volume_type, volume_level, &volume_linear)))) {
                 pa_log_warn("get_volume_value for new sink-input returns error:0x%x", audio_ret);
                 goto exit;
             }
@@ -3349,10 +3361,6 @@ static pa_hook_result_t sink_input_new_hook_callback(pa_core *c, pa_sink_input_n
         }
         __free_audio_info(&audio_info);
     }
-
-    /* get buffer_attr by audio latency */
-    pa_log_info("hal-latency - get buffer attr by audio latency");
-    __add_hal_buffer_attr_by_latency(u, new_data->proplist, new_data->sample_spec);
 
 exit:
     if (s) {
@@ -3393,6 +3401,9 @@ static pa_hook_result_t sink_input_put_callback(pa_core *core, pa_sink_input *i,
     pa_sink_input_assert_ref(i);
     pa_assert(u);
 
+    /* get buffer_attr by audio latency */
+    pa_log_info("hal-latency - get buffer attr by audio latency");
+    __add_hal_buffer_attr_by_latency(u, i->proplist, i->sample_spec);
 #ifdef PRIMARY_VOLUME
     if ((si_volume_type_str = pa_proplist_gets(i->proplist, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE)) &&
         pa_sink_input_get_state(i) != PA_SINK_INPUT_CORKED /* if sink-input is created by pulsesink, sink-input init state is cork.*/) {
@@ -3411,8 +3422,10 @@ static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, struct
     uint32_t idx;
     char *args = NULL;
 
-    bool is_bt;
-    bool is_usb_alsa;
+    pa_bool_t is_bt;
+    pa_bool_t is_usb_alsa;
+    pa_bool_t is_need_to_move = true;
+	uint32_t device_out = AUDIO_DEVICE_OUT_BT_A2DP;
 
     pa_assert(c);
     pa_assert(sink);
@@ -3433,10 +3446,23 @@ static pa_hook_result_t sink_put_hook_callback(pa_core *c, pa_sink *sink, struct
     }
 
     if (is_bt) {
-        /* Load mono_bt sink */
-        args = pa_sprintf_malloc("sink_name=%s master=%s channels=1", SINK_MONO_BT, sink->name);
-        u->module_mono_bt = pa_module_load(u->module->core, "module-remap-sink", args);
-        pa_xfree(args);
+/*
+        pa_log_info("new bluetooth sink(card) is detected. volume level and route will be changed by sound_server a2dp_on function");
+        is_need_to_move = false;
+        */
+    }
+
+    if (is_need_to_move) {
+        int ret = 0;
+        uint32_t route_flag = 0;
+
+        /* Set active device out */
+        if (u->active_device_out != device_out) {
+            route_flag = __get_route_flag(u);
+            if (u->hal_manager.intf.set_route) {
+                ret = u->hal_manager.intf.set_route(u->hal_manager.data, u->session, u->subsession, u->active_device_in, device_out, route_flag);
+            }
+        }
 
         /* load combine sink */
         args = pa_sprintf_malloc("sink_name=%s slaves=\"%s,%s\"", SINK_COMBINED, sink->name, SINK_ALSA);
@@ -4040,6 +4066,65 @@ static pa_hook_result_t source_output_unlink_post_hook_callback(pa_core *c, pa_s
     return PA_HOOK_OK;
 }
 
+static pa_hook_result_t select_proper_sink_or_source_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_select *data, struct userdata *u) {
+    pa_log("select_proper_sink_or_source_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)", data, data->stream_type, data->stream_role, data->route_type);
+    int i = 0;
+    for (i = 0; i < data->device_list_len; i++)
+        pa_log(" - device : type[%s], direction[%d], id[%d]", data->device_list[i].type, data->device_list[i].direction, data->device_list[i].id);
+    return PA_HOOK_OK;
+}
+
+static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_route *data, struct userdata *u) {
+    pa_log("route_change_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)", data, data->stream_type, data->stream_role, data->route_type);
+    int i = 0;
+    for (i = 0; i < data->device_list_len; i++)
+        pa_log(" - device : type[%s], direction[%d], id[%d]", data->device_list[i].type, data->device_list[i].direction, data->device_list[i].id);
+#if 0
+    /* from stream manager */
+    typedef struct _device {
+        int device_type;
+        int direction;
+        int id;
+    } device;
+    typedef struct _hook_call_data_for_route {
+        stream_type stream_type;
+        char *stream_role;
+        device *device_list;
+        int device_list_len;
+        pa_sample_spec sample_spec;
+    } pa_stream_manager_hook_data_for_route;
+    typedef struct device_info {
+        int32_t type;
+        int32_t direction;
+        int32_t id;
+    } device_info_t;
+
+    /* to hal manager */
+    typedef struct audio_route_info {
+        char *role;
+        device_info_t *device_infos;
+        int32_t num_of_devices;
+    } audio_route_info_t;
+#endif
+    audio_route_info_t route_info;
+    route_info.role = data->stream_role;
+    if (u->hal_manager.intf.do_route) {
+        if (u->hal_manager.intf.do_route(&u->hal_manager.data, &route_info) != AUDIO_RET_OK) {
+            pa_log_error("do_route() failed");
+        }
+    }
+
+    return PA_HOOK_OK;
+}
+
+static pa_hook_result_t route_option_update_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_option *data, struct userdata *u) {
+    pa_log("route_option_update_hook_cb is called. (%p), stream_role(%d), option_list_len(%d)", data, data->stream_role, data->option_list_len);
+    int i = 0;
+    for (i = 0; i < data->option_list_len; i++)
+        pa_log(" - idx[%d] : option(%s)", data->option_list[i]);
+    return PA_HOOK_OK;
+}
+
 int pa__init(pa_module *m)
 {
     pa_modargs *ma = NULL;
@@ -4127,44 +4212,46 @@ int pa__init(pa_module *m)
 #ifdef PRIMARY_VOLUME
     vconf_set_int (VCONFKEY_SOUND_PRIMARY_VOLUME_TYPE, -1);
 #endif
-    /* Get mono key value for init */
-    vconf_get_bool(MONO_KEY, &u->is_mono);
-    /* Load library & init audio mgr */
-    u->audio_mgr.dl_handle = dlopen(LIB_TIZEN_AUDIO, RTLD_NOW);
-    if (u->audio_mgr.dl_handle) {
-        u->audio_mgr.intf.init = dlsym(u->audio_mgr.dl_handle, "audio_init");
-        u->audio_mgr.intf.deinit = dlsym(u->audio_mgr.dl_handle, "audio_deinit");
-        u->audio_mgr.intf.reset = dlsym(u->audio_mgr.dl_handle, "audio_reset");
-        u->audio_mgr.intf.set_callback = dlsym(u->audio_mgr.dl_handle, "audio_set_callback");
-        u->audio_mgr.intf.get_volume_level_max = dlsym(u->audio_mgr.dl_handle, "audio_get_volume_level_max");
-        u->audio_mgr.intf.get_volume_level = dlsym(u->audio_mgr.dl_handle, "audio_get_volume_level");
-        u->audio_mgr.intf.get_volume_value = dlsym(u->audio_mgr.dl_handle, "audio_get_volume_value");
-        u->audio_mgr.intf.set_volume_level = dlsym(u->audio_mgr.dl_handle, "audio_set_volume_level");
-        u->audio_mgr.intf.set_volume_value = dlsym(u->audio_mgr.dl_handle, "audio_set_volume_value");
-        u->audio_mgr.intf.get_gain_value = dlsym(u->audio_mgr.dl_handle, "audio_get_gain_value");
-        u->audio_mgr.intf.get_mute = dlsym(u->audio_mgr.dl_handle, "audio_get_mute");
-        u->audio_mgr.intf.set_mute = dlsym(u->audio_mgr.dl_handle, "audio_set_mute");
-        u->audio_mgr.intf.alsa_pcm_open = dlsym(u->audio_mgr.dl_handle, "audio_alsa_pcm_open");
-        u->audio_mgr.intf.alsa_pcm_close = dlsym(u->audio_mgr.dl_handle, "audio_alsa_pcm_close");
-        u->audio_mgr.intf.pcm_open = dlsym(u->audio_mgr.dl_handle, "audio_pcm_open");
-        u->audio_mgr.intf.pcm_close = dlsym(u->audio_mgr.dl_handle, "audio_pcm_close");
-        u->audio_mgr.intf.pcm_avail = dlsym(u->audio_mgr.dl_handle, "audio_pcm_avail");
-        u->audio_mgr.intf.pcm_write = dlsym(u->audio_mgr.dl_handle, "audio_pcm_write");
-        u->audio_mgr.intf.set_session = dlsym(u->audio_mgr.dl_handle, "audio_set_session");
-        u->audio_mgr.intf.set_route = dlsym(u->audio_mgr.dl_handle, "audio_set_route");
-        u->audio_mgr.intf.set_mixer_value_string = dlsym(u->audio_mgr.dl_handle, "audio_set_mixer_value_string");
+    /* Load library & init HAL manager */
+    u->hal_manager.dl_handle = dlopen(LIB_TIZEN_AUDIO, RTLD_NOW);
+    if (u->hal_manager.dl_handle) {
+        u->hal_manager.intf.init = dlsym(u->hal_manager.dl_handle, "audio_init");
+        u->hal_manager.intf.deinit = dlsym(u->hal_manager.dl_handle, "audio_deinit");
+        u->hal_manager.intf.reset = dlsym(u->hal_manager.dl_handle, "audio_reset");
+        u->hal_manager.intf.set_callback = dlsym(u->hal_manager.dl_handle, "audio_set_callback");
+        u->hal_manager.intf.get_volume_level_max = dlsym(u->hal_manager.dl_handle, "audio_get_volume_level_max");
+        u->hal_manager.intf.get_volume_level = dlsym(u->hal_manager.dl_handle, "audio_get_volume_level");
+        u->hal_manager.intf.get_volume_value = dlsym(u->hal_manager.dl_handle, "audio_get_volume_value");
+        u->hal_manager.intf.set_volume_level = dlsym(u->hal_manager.dl_handle, "audio_set_volume_level");
+        u->hal_manager.intf.set_volume_value = dlsym(u->hal_manager.dl_handle, "audio_set_volume_value");
+        u->hal_manager.intf.get_gain_value = dlsym(u->hal_manager.dl_handle, "audio_get_gain_value");
+        u->hal_manager.intf.get_mute = dlsym(u->hal_manager.dl_handle, "audio_get_mute");
+        u->hal_manager.intf.set_mute = dlsym(u->hal_manager.dl_handle, "audio_set_mute");
+        u->hal_manager.intf.alsa_pcm_open = dlsym(u->hal_manager.dl_handle, "audio_alsa_pcm_open");
+        u->hal_manager.intf.alsa_pcm_close = dlsym(u->hal_manager.dl_handle, "audio_alsa_pcm_close");
+        u->hal_manager.intf.pcm_open = dlsym(u->hal_manager.dl_handle, "audio_pcm_open");
+        u->hal_manager.intf.pcm_close = dlsym(u->hal_manager.dl_handle, "audio_pcm_close");
+        u->hal_manager.intf.pcm_avail = dlsym(u->hal_manager.dl_handle, "audio_pcm_avail");
+        u->hal_manager.intf.pcm_write = dlsym(u->hal_manager.dl_handle, "audio_pcm_write");
+        u->hal_manager.intf.set_session = dlsym(u->hal_manager.dl_handle, "audio_set_session");
+        u->hal_manager.intf.set_route = dlsym(u->hal_manager.dl_handle, "audio_set_route");
+        u->hal_manager.intf.set_mixer_value_string = dlsym(u->hal_manager.dl_handle, "audio_set_mixer_value_string");
+#ifdef ENABLE_NEW_ROUTE
+        u->hal_manager.intf.do_route = dlsym(u->hal_manager.dl_handle, "audio_do_route");
+        u->hal_manager.intf.update_route_option = dlsym(u->hal_manager.dl_handle, "audio_update_route_option");
+#endif
 
-        u->audio_mgr.intf.get_buffer_attr = dlsym(u->audio_mgr.dl_handle, "audio_get_buffer_attr");
-        if (u->audio_mgr.intf.init) {
-            if (u->audio_mgr.intf.init(&u->audio_mgr.data, (void *)u) != AUDIO_RET_OK) {
-                pa_log_error("audio_mgr init failed");
+        u->hal_manager.intf.get_buffer_attr = dlsym(u->hal_manager.dl_handle, "audio_get_buffer_attr");
+        if (u->hal_manager.intf.init) {
+            if (u->hal_manager.intf.init(&u->hal_manager.data, (void *)u) != AUDIO_RET_OK) {
+                pa_log_error("hal_manager init failed");
             }
         }
 
-        pa_shared_set(u->core, "tizen-audio-data", u->audio_mgr.data);
-        pa_shared_set(u->core, "tizen-audio-interface", &u->audio_mgr.intf);
+        pa_shared_set(u->core, "tizen-audio-data", u->hal_manager.data);
+        pa_shared_set(u->core, "tizen-audio-interface", &u->hal_manager.intf);
 
-        if (u->audio_mgr.intf.set_callback) {
+        if (u->hal_manager.intf.set_callback) {
             audio_cb_interface_t cb_interface;
 
             cb_interface.load_device = __load_device_callback;
@@ -4172,12 +4259,27 @@ int pa__init(pa_module *m)
             cb_interface.close_all_devices = __close_all_devices_callback;
             cb_interface.close_device = __close_device_callback;
             cb_interface.unload_device = __unload_device_callback;
-            u->audio_mgr.intf.set_callback(u->audio_mgr.data, &cb_interface);
+            u->hal_manager.intf.set_callback(u->hal_manager.data, &cb_interface);
         }
 
     } else {
-        pa_log_error("open audio_mgr failed :%s", dlerror());
+        pa_log_error("open hal_manager failed :%s", dlerror());
     }
+
+    u->communicator.comm = pa_communicator_get(u->core);
+    if (u->communicator.comm) {
+        u->communicator.comm_hook_select_proper_sink_or_source_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_SELECT_INIT_SINK_OR_SOURCE),
+                    PA_HOOK_EARLY, (pa_hook_cb_t) select_proper_sink_or_source_hook_cb, u);
+        u->communicator.comm_hook_change_route_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_CHANGE_ROUTE),
+                    PA_HOOK_EARLY, (pa_hook_cb_t) route_change_hook_cb, u);
+        u->communicator.comm_hook_update_route_option_slot = pa_hook_connect(pa_communicator_hook(u->communicator.comm,PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTION),
+                    PA_HOOK_EARLY, (pa_hook_cb_t) route_option_update_hook_cb, u);
+    }
+    u->stream_manager = pa_stream_manager_init(u->core);
+#if 0
+    u->device_manager = pa_device_manager_init(u->core);
+#endif
+
     __load_dump_config(u);
     pa_log_info("policy module is loaded\n");
 
@@ -4227,14 +4329,30 @@ void pa__done(pa_module *m)
     if (u->source_output_new_hook_slot)
         pa_hook_slot_free(u->source_output_new_hook_slot);
 
-    /* Deinit audio mgr & unload library */
-    if (u->audio_mgr.intf.deinit) {
-        if (u->audio_mgr.intf.deinit(&u->audio_mgr.data) != AUDIO_RET_OK) {
-            pa_log_error("audio_mgr deinit failed");
+    /* Deinit HAL manager & unload library */
+    if (u->hal_manager.intf.deinit) {
+        if (u->hal_manager.intf.deinit(&u->hal_manager.data) != AUDIO_RET_OK) {
+            pa_log_error("hal_manager deinit failed");
         }
     }
-    if (u->audio_mgr.dl_handle) {
-        dlclose(u->audio_mgr.dl_handle);
+    if (u->hal_manager.dl_handle) {
+        dlclose(u->hal_manager.dl_handle);
+    }
+
+    if (u->stream_manager) {
+        pa_stream_manager_done(u->stream_manager);
+    }
+#if 0
+    if (u->device_manager) {
+        pa_device_manager_done(u->device_manager);
+    }
+#endif
+    if (u->communicator.comm) {
+        if (u->communicator.comm_hook_change_route_slot)
+            pa_hook_slot_free(u->communicator.comm_hook_change_route_slot);
+        if (u->communicator.comm_hook_change_route_slot)
+            pa_hook_slot_free(u->communicator.comm_hook_update_route_option_slot);
+        pa_communicator_unref(u->communicator.comm);
     }
 
     pa_xfree(u);

@@ -33,18 +33,6 @@
 
 PA_C_DECL_BEGIN
 
-#ifdef __TIZEN__
-#define PA_PROP_MEDIA_TIZEN_VOLUME_TYPE        "media.tizen_volume_type"
-#define PA_PROP_MEDIA_TIZEN_GAIN_TYPE          "media.tizen_gain_type"
-#define PA_PROP_MEDIA_TIZEN_FADE_STATUS        "media.tizen_fade_status"
-#define PA_PROP_MEDIA_TIZEN_FADE_RETURN_VOLUME "media.tizen_fade_return_volume"
-/** For streams: the policy to ignore the preset sink rather use a sink picked by module-policy. One of the strings "yes", "no" */
-#define PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK  "media.policy.ignore_preset_sink"
-#define PA_PROP_MEDIA_TIZEN_AUDIO_LATENCY      "media.tizen_audio_latency"
-/** For streams: logic role of this media. One of the strings "auto", "phone" */
-#define PA_PROP_MEDIA_POLICY                "media.policy"
-#endif
-
 /** For streams: localized media name, formatted as UTF-8. E.g. "Guns'N'Roses: Civil War".*/
 #define PA_PROP_MEDIA_NAME                     "media.name"
 
@@ -85,6 +73,23 @@ PA_C_DECL_BEGIN
 
 /** For streams: the name of a filter that should specifically suppressed (i.e.\ overrides PA_PROP_FILTER_WANT). Useful for the times that PA_PROP_FILTER_WANT is automatically added (e.g. echo-cancellation for phone streams when $VOIP_APP does it's own, internal AEC) \since 1.0 */
 #define PA_PROP_FILTER_SUPPRESS                "filter.suppress"
+
+#ifdef __TIZEN__
+/** For streams: logic role of this media. One of the strings "auto", "phone" */
+#define PA_PROP_MEDIA_POLICY                "media.policy"
+
+/** For streams: the policy to ignore the preset sink rather use a sink picked by module-policy. One of the strings "yes", "no" */
+#define PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK  "media.policy.ignore_preset_sink"
+
+#define PA_PROP_MEDIA_ROLE_PRIORITY            "media.role.priority"
+#define PA_PROP_MEDIA_ROLE_ROUTE_TYPE          "media.role.route_type"
+#define PA_PROP_MEDIA_PARENT_ID                "media.parent_id"
+#define PA_PROP_MEDIA_TIZEN_VOLUME_TYPE        "media.tizen_volume_type"
+#define PA_PROP_MEDIA_TIZEN_GAIN_TYPE          "media.tizen_gain_type"
+#define PA_PROP_MEDIA_TIZEN_FADE_STATUS        "media.tizen_fade_status"
+#define PA_PROP_MEDIA_TIZEN_FADE_RETURN_VOLUME "media.tizen_fade_return_volume"
+#define PA_PROP_MEDIA_TIZEN_AUDIO_LATENCY      "media.tizen_audio_latency"
+#endif
 
 /** For event sound streams: XDG event sound name. e.g.\ "message-new-email" (Event sound streams are those with media.role set to "event") */
 #define PA_PROP_EVENT_ID                       "event.id"

@@ -148,6 +148,23 @@ typedef enum audio_device_param {
     AUDIO_DEVICE_PARAM_MAX,
 } audio_device_param_t;
 
+enum audio_device_type {
+    AUDIO_DEVICE_NONE,
+    AUDIO_DEVICE_BUILTIN_SPEAKER,
+    AUDIO_DEVICE_BUILTIN_RECEIVER,
+    AUDIO_DEVICE_BUILTIN_MIC,
+    AUDIO_DEVICE_AUDIO_JACK,
+    AUDIO_DEVICE_BT,
+    AUDIO_DEVICE_HDMI,
+    AUDIO_DEVICE_AUX,
+    AUDIO_DEVICE_MAX
+};
+
+enum audio_device_direction_type{
+    AUDIO_DEVICE_DIRECTION_IN,
+    AUDIO_DEVICE_DIRECTION_OUT
+};
+
 typedef struct audio_device_param_info {
     audio_device_param_t param;
     union {
@@ -180,6 +197,23 @@ typedef struct audio_device_info {
     };
 } audio_device_info_t;
 
+typedef struct device_info {
+    int32_t type;
+    int32_t direction;
+    int32_t id;
+} device_info_t;
+
+typedef struct audio_route_info {
+    char *role;
+    device_info_t *device_infos;
+    int32_t num_of_devices;
+} audio_route_info_t;
+
+typedef struct audio_route_option {
+    char *role;
+    char **options;
+    int32_t num_of_options;
+} audio_route_option_t;
 
 /* Stream */
 
@@ -297,6 +331,8 @@ typedef struct audio_interface {
     audio_return_t (*set_mute)(void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t direction, uint32_t mute);
     audio_return_t (*set_session)(void *userdata, uint32_t session, uint32_t subsession, uint32_t cmd);
     audio_return_t (*set_route)(void *userdata, uint32_t session, uint32_t subsession, uint32_t device_in, uint32_t device_out, uint32_t route_flag);
+    audio_return_t (*do_route)(void *userdata, audio_route_info_t *info);
+    audio_return_t (*update_route_option)(void *userdata, audio_route_option_t *option);
     audio_return_t (*alsa_pcm_open)(void *userdata, void **pcm_handle, char *device_name, uint32_t direction, int mode);
     audio_return_t (*alsa_pcm_close)(void *userdata, void *pcm_handle);
     audio_return_t (*pcm_open)(void *userdata, void **pcm_handle, void *sample_spec, uint32_t direction);
@@ -321,6 +357,8 @@ audio_return_t audio_get_gain_value (void *userdata, audio_info_t *info, uint32_
 audio_return_t audio_get_mute (void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t direction, uint32_t *mute);
 audio_return_t audio_set_mute (void *userdata, audio_info_t *info, uint32_t volume_type, uint32_t direction, uint32_t mute);
 audio_return_t audio_set_session (void *userdata, uint32_t session, uint32_t subsession, uint32_t cmd);
+audio_return_t audio_do_route (void *userdata, audio_route_info_t *info);
+audio_return_t audio_update_route_option (void *userdata, audio_route_option_t *option);
 audio_return_t audio_alsa_pcm_open (void *userdata, void **pcm_handle, char *device_name, uint32_t direction, int mode);
 audio_return_t audio_alsa_pcm_close (void *userdata, void *pcm_handle);
 audio_return_t audio_pcm_open(void *userdata, void **pcm_handle, void *sample_spec, uint32_t direction);

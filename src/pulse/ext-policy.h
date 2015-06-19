@@ -246,11 +246,6 @@ pa_operation *pa_ext_policy_set_volume_level (
         pa_context_success_cb_t cb,
         void *userdata);
 
-pa_operation *pa_ext_policy_update_volume (
-        pa_context *c,
-        pa_context_success_cb_t cb,
-        void *userdata);
-
 /** Callback prototype for pa_ext_policy_get_mute(). \since 0.9.21 */
 typedef void (*pa_ext_policy_get_mute_cb_t)(
         pa_context *c,

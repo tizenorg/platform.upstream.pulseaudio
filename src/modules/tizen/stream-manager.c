@@ -808,7 +808,7 @@ static pa_bool_t check_role_to_skip(const char *role, pa_stream_manager *m) {
             ret = FALSE;
     }
 
-    pa_log_info("role is %s, skip(%d)", role, ret);
+    pa_log_info("role is [%s], skip(%d)", role, ret);
 
     return ret;
 }
@@ -929,7 +929,7 @@ static pa_bool_t update_the_highest_priority_stream(stream_type type, void *mine
         cur_max_stream = m->cur_highest_priority.source_output;
     }
 
-    pa_log_error("stream : type(%d), role(%s), priority(%d) ", type, role, priority);
+    pa_log_info("update_the_highest_priority_stream(), stream_type(%d), role(%s), priority(%d)", type, role, priority);
     if (priority != -1) {
         if (cur_max_stream == NULL) {
             *need_to_update = TRUE;
@@ -1258,7 +1258,7 @@ static pa_process_stream_result_t process_stream(stream_type type, void *stream,
             /* set default value for role and priority */
             #define DEFAULT_ROLE "media"
             pa_proplist_sets(type==STREAM_SINK_INPUT?((pa_sink_input_new_data *)stream)->proplist:((pa_source_output_new_data *)stream)->proplist, PA_PROP_MEDIA_ROLE, DEFAULT_ROLE);
-            pa_log_error("role is null, set default to (%s)", DEFAULT_ROLE);
+            pa_log_error("role is null, set default to [%s]", DEFAULT_ROLE);
         } else {
             /* skip roles */
             if (check_role_to_skip(role, m))
@@ -1271,9 +1271,7 @@ static pa_process_stream_result_t process_stream(stream_type type, void *stream,
     } else {
         role = pa_proplist_gets(type==STREAM_SINK_INPUT?((pa_sink_input*)stream)->proplist:((pa_source_output*)stream)->proplist, PA_PROP_MEDIA_ROLE);
         if (command == PROCESS_COMMAND_START) {
-            pa_log_debug("stream(%s) is about to be started", role);
             int32_t priority = 0;
-            pa_log_error("role is (%s)", role);
 
             /* skip roles */
             if (check_role_to_skip(role, m))
@@ -1315,7 +1313,6 @@ static pa_process_stream_result_t process_stream(stream_type type, void *stream,
                 do_notify(NOTIFY_COMMAND_CHANGE_ROUTE, type, m, NULL);
 
         } else if (command == PROCESS_COMMAND_END) {
-            pa_log_debug("stream(%s) is about to be ended", role);
             if (role) {
                 /* skip roles */
                 if (check_role_to_skip(role, m))
@@ -1352,8 +1349,8 @@ static pa_bool_t is_good_to_process(stream_type type, void *stream) {
     /* Later on it could be changed if it is possible to get notified via  */
     /* input/output state change cb.                                       */
     const char *name = pa_proplist_gets(type==STREAM_SINK_INPUT?((pa_sink_input*)stream)->proplist:((pa_source_output*)stream)->proplist, PA_PROP_MEDIA_NAME);
-    if (strncmp (name, STREAM_PROCESSED_USING_PUT_UNLINK_1, strlen(STREAM_PROCESSED_USING_PUT_UNLINK_1)) ||
-        strncmp (name, STREAM_PROCESSED_USING_PUT_UNLINK_2, strlen(STREAM_PROCESSED_USING_PUT_UNLINK_2)) ) {
+    if (!strncmp (name, STREAM_PROCESSED_USING_PUT_UNLINK_1, strlen(STREAM_PROCESSED_USING_PUT_UNLINK_1)) ||
+        !strncmp (name, STREAM_PROCESSED_USING_PUT_UNLINK_2, strlen(STREAM_PROCESSED_USING_PUT_UNLINK_2)) ) {
         return TRUE;
     }
     return FALSE;
@@ -1382,9 +1379,7 @@ static void update_buffer_attribute(pa_hal_manager *h, pa_sink_input_new_data *n
     if(pa_atoi(audio_latency, &latency))
         return;
 
-    pa_log_info(" - latency:%d, rate:%u, format:%d, channels:%u)", latency, new_data->sample_spec.rate, new_data->sample_spec.format, new_data->sample_spec.channels);
-    ret = pa_hal_get_buffer_attribute(h, latency, new_data->sample_spec.rate, new_data->sample_spec.format, new_data->sample_spec.channels, &maxlength, &tlength, &prebuf, &minreq, &fragsize);
-    if (ret == AUDIO_RET_OK) {
+    if (!pa_hal_manager_get_buffer_attribute(h, latency, new_data, &maxlength, &tlength, &prebuf, &minreq, &fragsize)) {
         pa_log_info(" - maxlength:%d, tlength:%d, prebuf:%d, minreq:%d, fragsize:%d", maxlength, tlength, prebuf, minreq, fragsize);
         pa_proplist_setf(new_data->proplist, "maxlength", "%d", maxlength);
         pa_proplist_setf(new_data->proplist, "tlength",   "%d", tlength);
@@ -1425,7 +1420,7 @@ static pa_hook_result_t sink_input_new_cb(pa_core *core, pa_sink_input_new_data 
 #endif
 
     /* Update buffer attributes from HAL */
-    update_buffer_attribute(m, new_data);
+    update_buffer_attribute(m->hal, new_data);
 
     return PA_HOOK_OK;
 }
@@ -1544,7 +1539,7 @@ static pa_hook_result_t source_output_new_cb(pa_core *core, pa_source_output_new
     process_result = process_stream(STREAM_SOURCE_OUTPUT, new_data, PROCESS_COMMAND_PREPARE, m);
 
     /* Update buffer attributes from HAL */
-    update_buffer_attribute(m, new_data);
+    update_buffer_attribute(m->hal, new_data);
 
     return PA_HOOK_OK;
 }
@@ -1776,10 +1771,6 @@ pa_stream_manager* pa_stream_manager_init(pa_core *c) {
     m->subscription = pa_subscription_new(m->core, PA_SUBSCRIPTION_MASK_CLIENT | PA_SUBSCRIPTION_MASK_SAMPLE_CACHE, subscribe_cb, m);
 
     m->comm = pa_communicator_get(c);
-
-#ifdef PRIMARY_VOLUME
-    vconf_set_int (VCONFKEY_SOUND_PRIMARY_VOLUME_TYPE, -1);
-#endif
 
     return m;
 

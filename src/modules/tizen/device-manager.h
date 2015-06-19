@@ -1,6 +1,5 @@
 
 #include <pulsecore/core.h>
-#include "communicator.h"
 
 typedef enum audio_device_type {
     AUDIO_DEVICE_NONE,
@@ -35,7 +34,8 @@ typedef enum audio_device_direction_type {
 
 typedef enum audio_device_changed_into_type {
     AUDIO_DEVICE_CHANGED_INFO_STATE,
-    AUDIO_DEVICE_CHANGED_INFO_IO_DIRECTION
+    AUDIO_DEVICE_CHANGED_INFO_IO_DIRECTION,
+    AUDIO_DEVICE_CHANGED_INFO_SUB_TYPE,
 } audio_device_changed_info_t;
 
 typedef enum audio_device_status_type {
@@ -46,18 +46,28 @@ typedef enum audio_device_status_type {
 typedef struct pa_device_manager pa_device_manager;
 typedef struct device_item device_item;
 
-pa_device_manager* device_manager_init(pa_core* core);
-void device_manager_done(pa_device_manager *dm);
+typedef struct _hook_call_data_for_conn_changed {
+    pa_bool_t is_connected;
+    device_item *device;
+} pa_device_manager_hook_data_for_conn_changed;
 
-device_item* device_manager_get_device_item(pa_device_manager *dm, audio_device_t device_type);
-device_item* device_manager_get_device_item_with_id(pa_device_manager *dm, uint32_t id);
+typedef struct _hook_call_data_for_info_changed {
+    audio_device_changed_info_t changed_info;
+    device_item *device;
+} pa_device_manager_hook_data_for_info_changed;
 
-audio_device_t device_item_get_type(device_item *device);
-audio_device_direction_t device_item_get_direction(device_item *device);
-pa_sink* device_item_get_sink(device_item *device, audio_device_role_t role);
-pa_source* device_item_get_source(device_item *device, audio_device_role_t role);
-void device_item_set_state(pa_device_manager *dm, device_item *device, audio_device_status_t state);
-audio_device_status_t device_item_get_state(pa_device_manager *dm, device_item *device);
+pa_device_manager* pa_device_manager_init(pa_core* core);
+void pa_device_manager_done(pa_device_manager *dm);
 
-int device_manager_load_sink(audio_device_t device_type, audio_device_role_t role, pa_device_manager *dm);
-int device_manager_load_source(audio_device_t device_type, audio_device_role_t role, pa_device_manager *dm);
+device_item* pa_device_manager_get_device(pa_device_manager *dm, audio_device_t device_type);
+device_item* pa_device_manager_get_device_by_id(pa_device_manager *dm, uint32_t id);
+
+pa_sink* pa_device_manager_get_sink(device_item *device, audio_device_role_t role);
+pa_source* pa_device_manager_get_source(device_item *device, audio_device_role_t role);
+void pa_device_manager_set_device_state(pa_device_manager *dm, device_item *device, audio_device_status_t state);
+audio_device_status_t pa_device_manager_get_device_state(pa_device_manager *dm, device_item *device);
+audio_device_t pa_device_manager_get_device_type(device_item *device);
+audio_device_direction_t pa_device_manager_get_device_direction(device_item *device);
+
+int pa_device_manager_load_sink(audio_device_t device_type, audio_device_role_t role, pa_device_manager *dm);
+int pa_device_manager_load_source(audio_device_t device_type, audio_device_role_t role, pa_device_manager *dm);

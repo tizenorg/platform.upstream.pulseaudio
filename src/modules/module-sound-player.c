@@ -177,6 +177,9 @@ static int _simple_play(struct userdata *u, const char *file_path, uint32_t volu
 
     p = pa_proplist_new();
 
+    /* Set role type of stream, temporarily fixed */
+    /* Later on, we need to get it from an argument */
+    pa_proplist_sets(p, PA_PROP_MEDIA_ROLE, "system");
     /* Set volume type of stream */
     pa_proplist_setf(p, PA_PROP_MEDIA_TIZEN_VOLUME_TYPE, "%d", volume_type);
     /* Set gain type of stream */

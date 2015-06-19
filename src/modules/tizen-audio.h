@@ -34,7 +34,6 @@
 
 typedef enum audio_return {
     AUDIO_RET_OK                        = 0,
-    AUDIO_RET_USE_HW_CONTROL            = (int32_t)0x40001000,
     AUDIO_ERR_UNDEFINED                 = (int32_t)0x80001000,
     AUDIO_ERR_RESOURCE                  = (int32_t)0x80001001,
     AUDIO_ERR_PARAMETER                 = (int32_t)0x80001002,
@@ -82,8 +81,8 @@ typedef enum audio_session_command {
 
 /* Direction */
 typedef enum audio_direction {
-    AUDIO_DIRECTION_OUT,                /**< Playback */
     AUDIO_DIRECTION_IN,                 /**< Capture */
+    AUDIO_DIRECTION_OUT,                /**< Playback */
 } audio_direction_t;
 
 
@@ -204,7 +203,7 @@ typedef struct device_info {
 
 typedef struct audio_route_info {
     char *role;
-    device_info_t **device_infos;
+    device_info_t *device_infos;
     uint32_t num_of_devices;
 } audio_route_info_t;
 

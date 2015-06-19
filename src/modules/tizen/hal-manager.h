@@ -2,6 +2,7 @@
 #define foohalmanagerfoo
 #include <dlfcn.h>
 #include <pulsecore/core.h>
+
 #include "tizen-audio.h"
 /* TODO : move below structure to hal-manager.c */
 struct _pa_hal_manager {
@@ -15,9 +16,40 @@ struct _pa_hal_manager {
 
 typedef struct _pa_hal_manager pa_hal_manager;
 
+typedef enum _io_direction {
+    DIRECTION_IN,
+    DIRECTION_OUT,
+} io_direction;
+
+typedef struct hal_device_info {
+    char *type;
+    uint32_t direction;
+    uint32_t id;
+} hal_device_info_t;
+
+typedef struct hal_route_info {
+    char *role;
+    hal_device_info_t *device_infos;
+    uint32_t num_of_devices;
+} hal_route_info_t;
+
+typedef struct hal_route_option {
+    char *role;
+    char **options;
+    uint32_t num_of_options;
+} hal_route_option_t;
+
 pa_hal_manager* pa_hal_manager_get(pa_core *core, void *user_data);
 pa_hal_manager* pa_hal_manager_ref(pa_hal_manager *h);
 void pa_hal_manager_unref(pa_hal_manager *h);
-audio_return_t pa_hal_get_buffer_attribute(pa_hal_manager *h, audio_latency_t latency, uint32_t samplerate, audio_sample_format_t format, uint32_t channels, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
+int32_t pa_hal_manager_get_buffer_attribute(pa_hal_manager *h, audio_latency_t latency, pa_sink_input_new_data *new_data, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
+int32_t pa_hal_manager_get_volume_level_max (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *level);
+int32_t pa_hal_manager_get_volume_level (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *level);
+int32_t pa_hal_manager_set_volume_level (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t level);
+int32_t pa_hal_manager_get_volume_value (pa_hal_manager *h, audio_info_t *info, const char *volume_type, io_direction direction, uint32_t level, double *value);
+int32_t pa_hal_manager_get_mute (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *mute);
+int32_t pa_hal_manager_set_mute (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t mute);
+int32_t pa_hal_manager_do_route (pa_hal_manager *h, hal_route_info_t *info);
+int32_t pa_hal_manager_update_route_option (pa_hal_manager *h, hal_route_option_t *option);
 
 #endif

@@ -22,6 +22,7 @@
 #include <pulsecore/protocol-dbus.h>
 #endif
 
+#include "communicator.h"
 #include "device-manager.h"
 
 #define DEVICE_MAP_FILE                    "/etc/pulse/device-map.json"
@@ -1409,6 +1410,7 @@ static int user_device_list_remove_device(pa_idxset *user_device_list, user_devi
 static int device_list_add_device(pa_idxset *device_list, device_item *device, pa_device_manager *dm) {
     user_device_item *device_u;
     uint32_t active_profile;
+    pa_device_manager_hook_data_for_conn_changed conn_changed_info;
 
     pa_assert(device_list);
     pa_assert(device);
@@ -1427,7 +1429,10 @@ static int device_list_add_device(pa_idxset *device_list, device_item *device, p
     user_device_list_add_device(dm->user_device_list, device_u, dm);
 
     pa_log_debug("Notify Device connected");
-    pa_hook_fire(pa_communicator_hook(dm->comm, PA_COMMUNICATOR_HOOK_DEVICE_CONNECTED), device);
+
+    conn_changed_info.is_connected = TRUE;
+    conn_changed_info.device = device;
+    pa_hook_fire(pa_communicator_hook(dm->comm, PA_COMMUNICATOR_HOOK_DEVICE_CONNECTION_CHANGED), &conn_changed_info);
 
     return 0;
 }
@@ -1435,6 +1440,7 @@ static int device_list_add_device(pa_idxset *device_list, device_item *device, p
 static int device_list_remove_device(pa_idxset *device_list, device_item *device, pa_device_manager *dm) {
     user_device_item *device_u;
     uint32_t active_profile = 0, prev_active_profile;
+    pa_device_manager_hook_data_for_conn_changed conn_changed_info;
 
     pa_assert(device_list);
     pa_assert(device);
@@ -1458,9 +1464,13 @@ static int device_list_remove_device(pa_idxset *device_list, device_item *device
         }
     }
 
-    destroy_device_item(device);
     pa_log_debug("Notify Device disconnected");
-    pa_hook_fire(pa_communicator_hook(dm->comm, PA_COMMUNICATOR_HOOK_DEVICE_DISCONNECTED), device);
+
+    conn_changed_info.is_connected = FALSE;
+    conn_changed_info.device = device;
+    pa_hook_fire(pa_communicator_hook(dm->comm, PA_COMMUNICATOR_HOOK_DEVICE_CONNECTION_CHANGED), &conn_changed_info);
+
+    destroy_device_item(device);
 
     return 0;
 }
@@ -3019,7 +3029,7 @@ static void handle_load_sink(DBusConnection *conn, DBusMessage *msg, void *userd
                                        DBUS_TYPE_INT32, &role,
                                        DBUS_TYPE_INVALID));
 
-    device_manager_load_sink(device_type, role, dm);
+    pa_device_manager_load_sink(device_type, role, dm);
 }
 
 
@@ -3165,7 +3175,7 @@ static void dbus_deinit(pa_device_manager *dm) {
 #endif
 
 
-device_item* device_manager_get_device_item(pa_device_manager *dm, audio_device_t device_type) {
+device_item* pa_device_manager_get_device(pa_device_manager *dm, audio_device_t device_type) {
     device_item *device;
     uint32_t idx;
 
@@ -3179,7 +3189,7 @@ device_item* device_manager_get_device_item(pa_device_manager *dm, audio_device_
     return NULL;
 }
 
-device_item* device_manager_get_device_item_with_id(pa_device_manager *dm, uint32_t id) {
+device_item* pa_device_manager_get_device_by_id(pa_device_manager *dm, uint32_t id) {
     device_item *device;
     user_device_item *device_u;
     uint32_t idx;
@@ -3199,31 +3209,19 @@ device_item* device_manager_get_device_item_with_id(pa_device_manager *dm, uint3
     return NULL;
 }
 
-audio_device_t device_item_get_type(device_item *device) {
-    pa_assert(device);
-
-    return device->type;
-}
-
-audio_device_direction_t device_item_get_direction(device_item *device) {
-    pa_assert(device);
-
-    return device->direction;
-}
-
-pa_sink* device_item_get_sink(device_item *device, audio_device_role_t role) {
+pa_sink* pa_device_manager_get_sink(device_item *device, audio_device_role_t role) {
     pa_assert(device);
 
     return pa_hashmap_get(device->playback_devices, PA_INT_TO_PTR(role));
 }
 
-pa_source* device_item_get_source(device_item *device, audio_device_role_t role) {
+pa_source* pa_device_manager_get_source(device_item *device, audio_device_role_t role) {
     pa_assert(device);
 
     return pa_hashmap_get(device->capture_devices, PA_INT_TO_PTR(role));
 }
 
-void device_item_set_state(pa_device_manager *dm, device_item *device, audio_device_status_t state) {
+void pa_device_manager_set_device_state(pa_device_manager *dm, device_item *device, audio_device_status_t state) {
     pa_assert(dm);
     pa_assert(device);
 
@@ -3231,14 +3229,26 @@ void device_item_set_state(pa_device_manager *dm, device_item *device, audio_dev
     send_device_info_changed_signal(device->device_u, AUDIO_DEVICE_CHANGED_INFO_STATE, dm);
 }
 
-audio_device_status_t device_item_get_state(pa_device_manager *dm, device_item *device) {
+audio_device_status_t pa_device_manager_get_device_state(pa_device_manager *dm, device_item *device) {
     pa_assert(dm);
     pa_assert(device);
 
     return device->state;
 }
 
-int device_manager_load_sink(audio_device_t device_type, audio_device_role_t role, pa_device_manager *dm) {
+audio_device_t pa_device_manager_get_device_type(device_item *device) {
+    pa_assert(device);
+
+    return device->type;
+}
+
+audio_device_direction_t pa_device_manager_get_device_direction(device_item *device) {
+    pa_assert(device);
+
+    return device->direction;
+}
+
+int pa_device_manager_load_sink(audio_device_t device_type, audio_device_role_t role, pa_device_manager *dm) {
     const char *device_string, *params;
     struct device_type_prop *type_item;
     struct device_file_prop *file_item;
@@ -3292,7 +3302,7 @@ failed:
     return -1;
 }
 
-int device_manager_load_source(audio_device_t device_type, audio_device_role_t role, pa_device_manager *dm) {
+int pa_device_manager_load_source(audio_device_t device_type, audio_device_role_t role, pa_device_manager *dm) {
     const char *device_string, *params;
     struct device_type_prop *type_item;
     struct device_file_prop *file_item;
@@ -3345,7 +3355,7 @@ failed:
     return -1;
 }
 
-pa_device_manager* device_manager_init(pa_core *c) {
+pa_device_manager* pa_device_manager_init(pa_core *c) {
     pa_device_manager *dm;
 
     dm = pa_xnew0(pa_device_manager, 1);
@@ -3392,7 +3402,7 @@ pa_device_manager* device_manager_init(pa_core *c) {
     return dm;
 }
 
-void device_manager_done(pa_device_manager *dm) {
+void pa_device_manager_done(pa_device_manager *dm) {
     if (!dm)
         return;
 

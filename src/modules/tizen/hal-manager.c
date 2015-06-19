@@ -126,20 +126,136 @@ void pa_hal_manager_unref(pa_hal_manager *h) {
     pa_xfree(h);
 }
 
-audio_return_t pa_hal_get_buffer_attribute(pa_hal_manager *h, audio_latency_t latency, uint32_t samplerate, audio_sample_format_t format, uint32_t channels, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize) {
-    audio_return_t ret = AUDIO_RET_OK;
+int32_t pa_hal_manager_get_buffer_attribute(pa_hal_manager *h, audio_latency_t latency, pa_sink_input_new_data *new_data, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
 
     pa_assert(h);
+    pa_assert(new_data);
 
-    pa_log_info("latency:%d, rate:%u, format:%d, channels:%u)", latency, samplerate, format, channels);
-    if (h->intf.get_buffer_attr) {
-        ret = h->intf.get_buffer_attr(h->data, latency, samplerate, format, channels, maxlength, tlength, prebuf, minreq, fragsize);
-        if (ret != AUDIO_RET_OK) {
-            pa_log_error("Failed get_buffer_attr() - ret:%d", ret);
-        } else {
-            pa_log_info("maxlength:%d, tlength:%d, prebuf:%d, minreq:%d, fragsize:%d", maxlength, tlength, prebuf, minreq, fragsize);
-        }
+    pa_log_info("latency:%d, rate:%u, format:%d, channels:%u", latency, new_data->sample_spec.rate, new_data->sample_spec.format, new_data->sample_spec.channels);
+
+    if (AUDIO_IS_ERROR(hal_ret = h->intf.get_buffer_attr(h->data, latency, new_data->sample_spec.rate, new_data->sample_spec.format, new_data->sample_spec.channels, maxlength, tlength, prebuf, minreq, fragsize))) {
+        pa_log_error("get_buffer_attr returns error:0x%x", hal_ret);
+        ret = -1;
+    } else
+        pa_log_info("maxlength:%d, tlength:%d, prebuf:%d, minreq:%d, fragsize:%d", *maxlength, *tlength, *prebuf, *minreq, *fragsize);
+
+    return ret;
+}
+
+int32_t pa_hal_manager_get_volume_level_max (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *level) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
+
+    pa_assert(h);
+    pa_assert(volume_type);
+    pa_assert(level);
+
+    if (AUDIO_IS_ERROR((hal_ret = h->intf.get_volume_level_max(h->data, volume_type, direction, level)))) {
+        pa_log_error("get_volume_level_max returns error:0x%x", hal_ret);
+        ret = -1;
     }
+    return ret;
+}
 
+int32_t pa_hal_manager_get_volume_level (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *level) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
+
+    pa_assert(h);
+    pa_assert(volume_type);
+    pa_assert(level);
+
+    if (AUDIO_IS_ERROR((hal_ret = h->intf.get_volume_level(h->data, volume_type, direction, level)))) {
+        pa_log_error("get_volume_level returns error:0x%x", hal_ret);
+        ret = -1;
+    }
+    return ret;
+}
+
+int32_t pa_hal_manager_set_volume_level (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t level) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
+
+    pa_assert(h);
+    pa_assert(volume_type);
+
+    if (AUDIO_IS_ERROR((hal_ret = h->intf.set_volume_level(h->data, volume_type, direction, level)))) {
+        pa_log_error("set_volume_level returns error:0x%x", hal_ret);
+        ret = -1;
+    }
+    return ret;
+}
+
+int32_t pa_hal_manager_get_volume_value (pa_hal_manager *h, audio_info_t *info, const char *volume_type, io_direction direction, uint32_t level, double *value) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
+
+    pa_assert(h);
+    pa_assert(volume_type);
+    pa_assert(value);
+
+    if (AUDIO_IS_ERROR((hal_ret = h->intf.get_volume_value(h->data, NULL, volume_type, direction, level, value)))) {
+        pa_log_error("get_volume_value returns error:0x%x", hal_ret);
+        ret = -1;
+    }
+    return ret;
+}
+
+int32_t pa_hal_manager_get_mute (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t *mute) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
+
+    pa_assert(h);
+    pa_assert(volume_type);
+    pa_assert(mute);
+
+    if (AUDIO_IS_ERROR(hal_ret = h->intf.get_mute(h->data, volume_type, direction, mute))) {
+        pa_log_error("get_mute returns error:0x%x", hal_ret);
+        ret = -1;
+    }
+    return ret;
+}
+
+int32_t pa_hal_manager_set_mute (pa_hal_manager *h, const char *volume_type, io_direction direction, uint32_t mute) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
+
+    pa_assert(h);
+    pa_assert(volume_type);
+
+    if (AUDIO_IS_ERROR(hal_ret = h->intf.set_mute(h->data, volume_type, direction, mute))) {
+        pa_log_error("set_mute returns error:0x%x", hal_ret);
+        ret = -1;
+    }
+    return ret;
+}
+
+int32_t pa_hal_manager_do_route (pa_hal_manager *h, hal_route_info_t *info) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
+
+    pa_assert(h);
+    pa_assert(info);
+
+    if (AUDIO_IS_ERROR(hal_ret = h->intf.do_route(&h->data, (audio_route_info_t*)info))) {
+        pa_log_error("do_route returns error:0x%x", hal_ret);
+        ret = -1;
+    }
+    return ret;
+}
+
+int32_t pa_hal_manager_update_route_option (pa_hal_manager *h, hal_route_option_t *option) {
+    int32_t ret = 0;
+    audio_return_t hal_ret = AUDIO_RET_OK;
+
+    pa_assert(h);
+    pa_assert(option);
+
+    if (AUDIO_IS_ERROR(hal_ret = h->intf.update_route_option(&h->data, (audio_route_option_t*)option))) {
+        pa_log_error("update_route_option returns error:0x%x", hal_ret);
+        ret = -1;
+    }
     return ret;
 }

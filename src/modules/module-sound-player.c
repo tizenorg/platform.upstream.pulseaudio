@@ -59,8 +59,8 @@ PA_MODULE_LOAD_ONCE(TRUE);
 
 #ifdef HAVE_DBUS
 #define ARR_ARG_MAX  32
-#define SOUND_PLAYER_OBJECT_PATH "/org/pulseaudio/Ext/SoundPlayer"
-#define SOUND_PLAYER_INTERFACE   "org.pulseaudio.Ext.SoundPlayer"
+#define SOUND_PLAYER_OBJECT_PATH "/org/pulseaudio/SoundPlayer"
+#define SOUND_PLAYER_INTERFACE   "org.pulseaudio.SoundPlayer"
 #define SOUND_PLAYER_METHOD_NAME_SIMPLE_PLAY      "SimplePlay"
 #define SOUND_PLAYER_METHOD_NAME_SAMPLE_PLAY      "SamplePlay"
 

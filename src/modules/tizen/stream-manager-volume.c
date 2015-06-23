@@ -30,7 +30,7 @@
 
 #define VOLUME_INI_DEFAULT_PATH     "/usr/etc/mmfw_audio_volume.ini"
 #define VOLUME_INI_TUNED_PATH       "/opt/system/mmfw_audio_volume.ini"
-#define DEFAULT_TABLE               "speaker"
+#define DEFAULT_TABLE               "volumes"
 
 /* TODO : after preparing gain map, we can remove it */
 static const char *__get_gain_type_string_by_idx (uint32_t gain_type_idx) {
@@ -652,6 +652,8 @@ int32_t init_volume_map (pa_stream_manager *m) {
     }
     /* For now, we only care about volumes for the output stream */
     ret = load_out_volume_and_gain_table_from_ini(m);
+    if (ret)
+        pa_log_error("failed to load_out_volume_and_gain_table_from_ini(), ret[%d]", ret);
 
     dump_volume_map(m);
 

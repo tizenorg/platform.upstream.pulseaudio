@@ -11,7 +11,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          19
+Release:          20
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -311,7 +311,6 @@ fi
 if [ $1 -eq 0 ] ; then
 # Package removal, not upgrade
 systemctl --no-reload --user --global disable pulseaudio.socket > /dev/null 2>&1 || :
-/usr/bin/vconftool set -t int memory/private/sound/pcm_dump 0 -g 29 -f -i -s system::vconf_multimedia
 
 fi
 

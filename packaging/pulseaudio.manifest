@@ -1,8 +1,8 @@
 <manifest>
- <request>
-    <domain name="_"/>
- </request>
- <assign>
-    <filesystem path="/usr/bin/pulseaudio" exec_label="User" />
- </assign>
+	<assign>
+		<filesystem path="/usr/bin/pulseaudio" label="pulseaudio" exec_label="User"/>
+	</assign>
+	<request>
+		<domain name="_"/>
+	</request>
 </manifest>

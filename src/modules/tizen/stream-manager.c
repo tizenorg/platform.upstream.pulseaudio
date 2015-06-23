@@ -47,8 +47,8 @@
 
 #ifdef HAVE_DBUS
 #define ARR_ARG_MAX  32
-#define STREAM_MANAGER_OBJECT_PATH "/org/pulseaudio/Ext/StreamManager"
-#define STREAM_MANAGER_INTERFACE   "org.pulseaudio.Ext.StreamManager"
+#define STREAM_MANAGER_OBJECT_PATH "/org/pulseaudio/StreamManager"
+#define STREAM_MANAGER_INTERFACE   "org.pulseaudio.StreamManager"
 #define STREAM_MANAGER_METHOD_NAME_GET_STREAM_INFO            "GetStreamInfo"
 #define STREAM_MANAGER_METHOD_NAME_GET_STREAM_LIST            "GetStreamList"
 #define STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_DEVICES   "SetStreamRouteDevices"
@@ -1309,8 +1309,12 @@ static pa_bool_t update_priority_of_stream(pa_stream_manager *m, process_command
     else
         return FALSE;
 
-    if (s)
-        pa_proplist_setf(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, "%d", s->priority);
+    if (s) {
+        if (command == PROCESS_COMMAND_PREPARE)
+            pa_proplist_setf(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, "%d", s->priority);
+        else
+            pa_proplist_setf(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, "%d", s->priority);
+    }
 
     return TRUE;
 }

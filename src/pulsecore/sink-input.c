@@ -385,6 +385,8 @@ int pa_sink_input_new(
         }
 
         pa_sink_input_new_data_set_sink(data, sink, false);
+    } else {
+        pa_sink_input_new_data_set_sink(data, data->sink, false);
     }
 
     /* If something didn't pick a format for us, pick the top-most format since

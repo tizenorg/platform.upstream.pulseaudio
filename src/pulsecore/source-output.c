@@ -327,6 +327,8 @@ int pa_source_output_new(
         }
 
         pa_source_output_new_data_set_source(data, source, false);
+    } else {
+        pa_source_output_new_data_set_source(data, data->source, false);
     }
 
     /* If something didn't pick a format for us, pick the top-most format since

@@ -1256,6 +1256,7 @@ static int init_stream_map (pa_stream_manager *m) {
 
     return 0;
 failed:
+    pa_log_error("Failed to initialize stream map");
     if (m->stream_map) {
         PA_HASHMAP_FOREACH(s, m->stream_map, state) {
             if (s->idx_avail_in_devices)
@@ -2281,6 +2282,7 @@ static int init_ipc (pa_stream_manager *m) {
 
     return 0;
 fail:
+    pa_log_error("Failed to initialize stream manager ipc");
     return -1;
 }
 

@@ -679,6 +679,7 @@ int32_t init_volume_map (pa_stream_manager *m) {
     }
 #endif
 FAILURE:
+    pa_log_error("Failed to initialize volume map");
     return ret;
 }
 

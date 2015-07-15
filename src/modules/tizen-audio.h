@@ -215,8 +215,8 @@ typedef struct audio_route_info {
 
 typedef struct audio_route_option {
     const char *role;
-    char **options;
-    uint32_t num_of_options;
+    const char *name;
+    int32_t value;
 } audio_route_option_t;
 
 typedef struct audio_stream_info {

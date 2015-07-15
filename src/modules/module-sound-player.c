@@ -63,6 +63,7 @@ PA_MODULE_LOAD_ONCE(TRUE);
 #define SOUND_PLAYER_INTERFACE   "org.pulseaudio.SoundPlayer"
 #define SOUND_PLAYER_METHOD_NAME_SIMPLE_PLAY      "SimplePlay"
 #define SOUND_PLAYER_METHOD_NAME_SAMPLE_PLAY      "SamplePlay"
+#define SOUND_PLAYER_SIGNAL_EOS                   "EOS"
 
 static DBusHandlerResult method_handler_for_vt(DBusConnection *c, DBusMessage *m, void *userdata);
 static DBusHandlerResult handle_introspect(DBusConnection *conn, DBusMessage *msg, void *userdata);
@@ -144,12 +145,14 @@ struct userdata {
     int fd;
     pa_io_event *io;
     pa_module *module;
+    pa_hook_slot *sink_input_unlink_slot;
 #ifdef HAVE_DBUS
 #ifdef USE_DBUS_PROTOCOL
     pa_dbus_protocol *dbus_protocol;
 #else
     pa_dbus_connection *dbus_conn;
 #endif
+    pa_idxset *stream_idxs;
 #endif
 };
 
@@ -177,7 +180,7 @@ static int _simple_play(struct userdata *u, const char *file_path, const char *r
     char name[MAX_NAME_LEN] = {0};
 
     uint32_t stream_idx = 0;
-    uint32_t play_idx = 0;
+    uint32_t scache_idx = 0;
 
     p = pa_proplist_new();
 
@@ -189,24 +192,20 @@ static int _simple_play(struct userdata *u, const char *file_path, const char *r
     if (vol_gain_type)
         pa_proplist_sets(p, PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE, vol_gain_type);
 
-    /* Set policy type of stream */
-    pa_proplist_sets(p, PA_PROP_MEDIA_POLICY, "auto");
-    /* Set policy for selecting sink */
-    pa_proplist_sets(p, PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK, "yes");
     sink = pa_namereg_get_default_sink(u->module->core);
 
     pa_log_debug("role[%s], volume_gain_type[%s]", role, vol_gain_type);
     snprintf(name, sizeof(name)-1, "%s_%s", name_prefix, file_path);
-    play_idx = pa_scache_get_id_by_name(u->module->core, name);
-    if (play_idx != PA_IDXSET_INVALID) {
-        pa_log_debug("found cached index [%u] for name [%s]", play_idx, file_path);
+    scache_idx = pa_scache_get_id_by_name(u->module->core, name);
+    if (scache_idx != PA_IDXSET_INVALID) {
+        pa_log_debug("found cached index [%u] for name [%s]", scache_idx, file_path);
     } else {
         /* for more precision, need to update volume value here */
-        if ((ret = pa_scache_add_file_lazy(u->module->core, name, file_path, &play_idx)) != 0) {
+        if ((ret = pa_scache_add_file_lazy(u->module->core, name, file_path, &scache_idx)) != 0) {
             pa_log_error("failed to add file [%s]", file_path);
             goto exit;
         } else {
-            pa_log_debug("success to add file [%s], index [%u]", file_path, play_idx);
+            pa_log_debug("success to add file [%s], index [%u]", file_path, scache_idx);
         }
     }
 
@@ -215,8 +214,10 @@ static int _simple_play(struct userdata *u, const char *file_path, const char *r
         pa_log_error("pa_scache_play_item fail");
         goto exit;
     }
-    pa_log_debug("pa_scache_play_item() end");
+    pa_log_debug("pa_scache_play_item() end, stream_idx(%u)", stream_idx);
 
+    if (!ret)
+        ret = (int32_t)stream_idx;
 exit:
     pa_proplist_free(p);
     return ret;
@@ -228,7 +229,7 @@ static int _sample_play(struct userdata *u, const char *sample_name, const char 
     pa_proplist *p;
 
     uint32_t stream_idx = 0;
-    uint32_t play_idx = 0;
+    uint32_t scache_idx = 0;
 
     p = pa_proplist_new();
 
@@ -240,26 +241,24 @@ static int _sample_play(struct userdata *u, const char *sample_name, const char 
     if (vol_gain_type)
         pa_proplist_sets(p, PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE, vol_gain_type);
 
-    /* Set policy type of stream */
-    pa_proplist_sets(p, PA_PROP_MEDIA_POLICY, "auto");
-    /* Set policy for selecting sink */
-    pa_proplist_sets(p, PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK, "yes");
     sink = pa_namereg_get_default_sink(u->module->core);
 
     pa_log_debug("role[%s], volume_gain_type[%s]", role, vol_gain_type);
 
-    play_idx = pa_scache_get_id_by_name(u->module->core, sample_name);
-    if (play_idx != PA_IDXSET_INVALID) {
-        pa_log_debug("pa_scache_play_item() start, index [%u] for name [%s]", play_idx, sample_name);
+    scache_idx = pa_scache_get_id_by_name(u->module->core, sample_name);
+    if (scache_idx != PA_IDXSET_INVALID) {
+        pa_log_debug("pa_scache_play_item() start, scache idx[%u] for name[%s]", scache_idx, sample_name);
         /* for more precision, need to update volume value here */
         if ((ret = pa_scache_play_item(u->module->core, sample_name, sink, PA_VOLUME_NORM, p, &stream_idx) < 0)) {
             pa_log_error("pa_scache_play_item fail");
             goto exit;
         }
-        pa_log_debug("pa_scache_play_item() end");
+        pa_log_debug("pa_scache_play_item() end, stream_idx(%u)", stream_idx);
     } else
         pa_log_error("could not find the scache item for [%s]", sample_name);
 
+    if (!ret)
+        ret = (int32_t)stream_idx;
 exit:
     pa_proplist_free(p);
     return ret;
@@ -302,9 +301,17 @@ static void handle_simple_play(DBusConnection *conn, DBusMessage *msg, void *use
                                        DBUS_TYPE_INVALID));
     pa_log_info("uri[%s], role[%s], volume_gain[%s]", uri, role, volume_gain);
     if (uri)
-        _simple_play(u, uri, role, volume_gain);
+        result = _simple_play(u, uri, role, volume_gain);
     else
         result = -1;
+
+    if (result != -1) {
+        uint32_t idx = 0;
+        int32_t *stream_idx = NULL;
+        stream_idx = pa_xmalloc0(sizeof(int32_t));
+        *stream_idx = result;
+        pa_idxset_put(u->stream_idxs, stream_idx, &idx);
+    }
 
     pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_INT32, &result);
 }
@@ -326,9 +333,17 @@ static void handle_sample_play(DBusConnection *conn, DBusMessage *msg, void *use
                                        DBUS_TYPE_INVALID));
     pa_log_info("sample_name[%s], role[%s], volume_gain[%s]", sample_name, role, volume_gain);
     if (sample_name)
-        _sample_play(u, sample_name, role, volume_gain);
+        result = _sample_play(u, sample_name, role, volume_gain);
     else
         result = -1;
+
+    if (result != -1) {
+        uint32_t idx = 0;
+        int32_t *stream_idx = NULL;
+        stream_idx = pa_xmalloc0(sizeof(int32_t));
+        *stream_idx = result;
+        pa_idxset_put(u->stream_idxs, stream_idx, &idx);
+    }
 
     pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_INT32, &result);
 }
@@ -380,6 +395,19 @@ static DBusHandlerResult method_handler_for_vt(DBusConnection *c, DBusMessage *m
     }
 
     return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+static void send_signal_for_eos(struct userdata *u, int32_t stream_idx) {
+    DBusMessage *signal_msg = NULL;
+
+    pa_assert(u);
+
+    pa_log_debug("Send EOS signal for stream_idx(%d)", stream_idx);
+
+    pa_assert_se(signal_msg = dbus_message_new_signal(SOUND_PLAYER_OBJECT_PATH, SOUND_PLAYER_INTERFACE, SOUND_PLAYER_SIGNAL_EOS));
+    pa_assert_se(dbus_message_append_args(signal_msg, DBUS_TYPE_INT32, &stream_idx, DBUS_TYPE_INVALID));
+    pa_assert_se(dbus_connection_send(pa_dbus_connection_get(u->dbus_conn), signal_msg, NULL));
+    dbus_message_unref(signal_msg);
 }
 #endif
 
@@ -514,6 +542,30 @@ fail:
     pa_module_unload_request(u->module, TRUE);
 }
 
+static pa_hook_result_t sink_input_unlink_cb(pa_core *core, pa_sink_input *i, struct userdata *u) {
+    int32_t *stream_idx = NULL;
+    uint32_t *idx = NULL;
+    pa_core_assert_ref(core);
+    pa_sink_input_assert_ref(i);
+
+    pa_log_info("start sink_input_unlink_cb, i(%p, index:%u)", i, i->index);
+
+#ifdef HAVE_DBUS
+    PA_IDXSET_FOREACH(stream_idx, u->stream_idxs, idx) {
+        if (*stream_idx == (int32_t)(i->index)) {
+#ifndef USE_DBUS_PROTOCOL
+            /* Send EOS signal for this stream */
+            send_signal_for_eos(u, *stream_idx);
+#endif
+            pa_idxset_remove_by_data(u->stream_idxs, stream_idx, NULL);
+            pa_xfree(stream_idx);
+        }
+    }
+#endif
+
+    return PA_HOOK_OK;
+}
+
 int pa__init(pa_module *m) {
     struct userdata *u;
 
@@ -529,9 +581,12 @@ int pa__init(pa_module *m) {
 #else
     u->dbus_conn = NULL;
 #endif
+    u->stream_idxs = pa_idxset_new(pa_idxset_trivial_hash_func, pa_idxset_trivial_compare_func);
 #endif
     if (init_ipc(u))
         goto fail;
+
+    u->sink_input_unlink_slot = pa_hook_connect(&m->core->hooks[PA_CORE_HOOK_SINK_INPUT_UNLINK], PA_HOOK_EARLY, (pa_hook_cb_t) sink_input_unlink_cb, u);
 
     return 0;
 
@@ -546,6 +601,14 @@ void pa__done(pa_module *m) {
 
     if (!(u = m->userdata))
         return;
+
+    if (u->sink_input_unlink_slot)
+        pa_hook_slot_free(u->sink_input_unlink_slot);
+
+#ifdef HAVE_DBUS
+    if (u->stream_idxs)
+        pa_idxset_free(u->stream_idxs, NULL);
+#endif
 
     deinit_ipc(u);
 

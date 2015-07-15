@@ -52,7 +52,7 @@
 #define STREAM_MANAGER_METHOD_NAME_GET_STREAM_INFO            "GetStreamInfo"
 #define STREAM_MANAGER_METHOD_NAME_GET_STREAM_LIST            "GetStreamList"
 #define STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_DEVICES   "SetStreamRouteDevices"
-#define STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTIONS   "SetStreamRouteOptions"
+#define STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTION    "SetStreamRouteOption"
 #define STREAM_MANAGER_METHOD_NAME_SET_VOLUME_LEVEL           "SetVolumeLevel"
 #define STREAM_MANAGER_METHOD_NAME_GET_VOLUME_LEVEL           "GetVolumeLevel"
 #define STREAM_MANAGER_METHOD_NAME_GET_VOLUME_MAX_LEVEL       "GetVolumeMaxLevel"
@@ -79,7 +79,7 @@ static DBusHandlerResult handle_methods(DBusConnection *conn, DBusMessage *msg, 
 static void handle_get_stream_info(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_get_stream_list(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_set_stream_route_devices(DBusConnection *conn, DBusMessage *msg, void *userdata);
-static void handle_set_stream_route_options(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_set_stream_route_option(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_set_volume_level(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_get_volume_level(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_get_volume_max_level(DBusConnection *conn, DBusMessage *msg, void *userdata);
@@ -91,7 +91,7 @@ enum method_handler_index {
     METHOD_HANDLER_GET_STREAM_INFO,
     METHOD_HANDLER_GET_STREAM_LIST,
     METHOD_HANDLER_SET_STREAM_ROUTE_DEVICES,
-    METHOD_HANDLER_SET_STREAM_ROUTE_OPTIONS,
+    METHOD_HANDLER_SET_STREAM_ROUTE_OPTION,
     METHOD_HANDLER_SET_VOLUME_LEVEL,
     METHOD_HANDLER_GET_VOLUME_LEVEL,
     METHOD_HANDLER_GET_VOLUME_MAX_LEVEL,
@@ -113,8 +113,9 @@ static pa_dbus_arg_info set_stream_route_devices_args[]  = { { "parent_id", "u",
                                                      { "route_in_devices", "au", "in" },
                                                     { "route_out_devices", "au", "in" },
                                                             { "ret_msg", "s", "out" } };
-static pa_dbus_arg_info set_stream_route_options_args[]  = { { "parent_id", "u", "in" },
-                                                              { "options", "as", "in" },
+static pa_dbus_arg_info set_stream_route_option_args[]  = { { "parent_id", "u", "in" },
+                                                              { "name", "s", "in" },
+                                                              { "value", "i", "in" },
                                                             { "ret_msg", "s", "out" } };
 static pa_dbus_arg_info set_volume_level_args[]  = { { "io_direction", "s", "in" },
                                                              { "type", "s", "in" },
@@ -139,7 +140,7 @@ static pa_dbus_arg_info get_volume_mute_args[]  = { { "io_direction", "s", "in" 
 static pa_dbus_arg_info get_current_volume_type_args[]  = { { "io_direction", "s", "in" },
                                                             { "type", "s", "out" },
                                                       { "ret_msg", "s", "out" } };
-static char* signature_args_for_in[] = { "s", "", "uauau", "uas", "ssu", "ss", "ss", "ssu", "ss", "s"};
+static char* signature_args_for_in[] = { "s", "", "uauau", "usi", "ssu", "ss", "ss", "ssu", "ss", "s"};
 
 static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
     [METHOD_HANDLER_GET_STREAM_INFO] = {
@@ -157,11 +158,11 @@ static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
         .arguments = set_stream_route_devices_args,
         .n_arguments = sizeof(set_stream_route_devices_args) / sizeof(pa_dbus_arg_info),
         .receive_cb = handle_set_stream_route_devices },
-    [METHOD_HANDLER_SET_STREAM_ROUTE_OPTIONS] = {
-        .method_name = STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTIONS,
-        .arguments = set_stream_route_options_args,
-        .n_arguments = sizeof(set_stream_route_options_args) / sizeof(pa_dbus_arg_info),
-        .receive_cb = handle_set_stream_route_options },
+    [METHOD_HANDLER_SET_STREAM_ROUTE_OPTION] = {
+        .method_name = STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTION,
+        .arguments = set_stream_route_option_args,
+        .n_arguments = sizeof(set_stream_route_option_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_set_stream_route_option },
     [METHOD_HANDLER_SET_VOLUME_LEVEL] = {
         .method_name = STREAM_MANAGER_METHOD_NAME_SET_VOLUME_LEVEL,
         .arguments = set_volume_level_args,
@@ -239,9 +240,10 @@ static pa_dbus_interface_info stream_manager_interface_info = {
     "   <arg name=\"route_out_devices\" direction=\"in\" type=\"au\"/>"      \
     "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
     "  </method>"                                                            \
-    "  <method name=\"STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTIONS\">"\
+    "  <method name=\"STREAM_MANAGER_METHOD_NAME_SET_STREAM_ROUTE_OPTION\">" \
     "   <arg name=\"parent_id\" direction=\"in\" type=\"u\"/>"               \
-    "   <arg name=\"options\" direction=\"in\" type=\"as\"/>"                \
+    "   <arg name=\"name\" direction=\"in\" type=\"s\"/>"                    \
+    "   <arg name=\"value\" direction=\"in\" type=\"i\"/>"                   \
     "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
     "  </method>"                                                            \
     "  <method name=\"STREAM_MANAGER_METHOD_NAME_SET_VOLUME_LEVEL\">"        \
@@ -313,7 +315,7 @@ typedef enum _notify_command_type {
     NOTIFY_COMMAND_CHANGE_ROUTE_START_WITH_NEW_DATA,
     NOTIFY_COMMAND_CHANGE_ROUTE_START,
     NOTIFY_COMMAND_CHANGE_ROUTE_END,
-    NOTIFY_COMMAND_UPDATE_ROUTE_OPTIONS,
+    NOTIFY_COMMAND_UPDATE_ROUTE_OPTION,
     NOTIFY_COMMAND_INFORM_STREAM_CONNECTED,
     NOTIFY_COMMAND_INFORM_STREAM_DISCONNECTED,
 } notify_command_type_t;
@@ -333,7 +335,7 @@ const char* notify_command_type_str[] = {
     "CHANGE_ROUTE_START_WITH_NEW_DATA",
     "CHANGE_ROUTE_START",
     "CHANGE_ROUTE_END",
-    "UPDATE_ROUTE_OPTIONS",
+    "UPDATE_ROUTE_OPTION",
     "INFORM_STREAM_CONNECTED",
     "INFORM_STREAM_DISCONNECTED",
 };
@@ -359,7 +361,6 @@ typedef struct _stream_parent {
     pa_idxset *idx_source_outputs;
     pa_idxset *idx_route_in_devices;
     pa_idxset *idx_route_out_devices;
-    pa_idxset *idx_route_options;
 } stream_parent;
 
 #define AVAIL_DEVICES_MAX 16
@@ -380,6 +381,10 @@ typedef struct _stream_list {
     char* types[AVAIL_STREAMS_MAX];
     int32_t priorities[AVAIL_STREAMS_MAX];
 } stream_list;
+typedef struct _stream_route_option {
+    const char *name;
+    int32_t value;
+} stream_route_option;
 
 static void do_notify(pa_stream_manager *m, notify_command_type_t command, stream_type_t type, void *user_data);
 static pa_process_stream_result_t process_stream(stream_type_t type, void *stream, process_command_type_t command, pa_stream_manager *m);
@@ -635,12 +640,15 @@ FAILURE:
     return;
 }
 
-static void handle_set_stream_route_options(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+static void handle_set_stream_route_option(DBusConnection *conn, DBusMessage *msg, void *userdata) {
     uint32_t id = 0;
     int i = 0;
-    const char **option_list = NULL;
+    const char *name = NULL;
+    int32_t value = 0;
     int list_len = 0;
+    pa_bool_t updated = FALSE;
     stream_parent *sp = NULL;
+    stream_route_option route_option;
     DBusMessage *reply = NULL;
     pa_stream_manager *m = (pa_stream_manager*)userdata;
 
@@ -650,37 +658,41 @@ static void handle_set_stream_route_options(DBusConnection *conn, DBusMessage *m
 
     pa_assert_se(dbus_message_get_args(msg, NULL,
                                        DBUS_TYPE_UINT32, &id,
-                                       DBUS_TYPE_ARRAY, DBUS_TYPE_STRING, &option_list, &list_len,
+                                       DBUS_TYPE_STRING, &name,
+                                       DBUS_TYPE_INT32, &value,
                                        DBUS_TYPE_INVALID));
-    pa_log_info("handle_set_stream_route_options(), option_list[%p], list_len[%d]", option_list, list_len);
+    pa_log_info("handle_set_stream_route_option(), name[%s], value[%d]", name, value);
 
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
 
     sp = pa_hashmap_get(m->stream_parents, id);
     if (sp) {
-        if (option_list && list_len) {
-            pa_idxset_remove_all(sp->idx_route_options, NULL);
-            for (i = 0; i < list_len; i++) {
-                pa_idxset_put(sp->idx_route_options, option_list[i], NULL);
-                pa_log_debug(" -- [option][%s]", option_list[i]);
-            }
+        if (name) {
+            route_option.name = name;
+            route_option.value = value;
 
             /* if any stream that belongs to this id has been activated, do notify right away */
             if (m->cur_highest_priority.sink_input) {
                 if (pa_idxset_get_by_data(sp->idx_sink_inputs, m->cur_highest_priority.sink_input, NULL)) {
                     pa_log_debug(" -- cur_highest_priority.sink_input->index[%u] belongs to this parent id[%u], do notify for the options",
                         (m->cur_highest_priority.sink_input)->index, id);
-                    do_notify(m, NOTIFY_COMMAND_UPDATE_ROUTE_OPTIONS, STREAM_SINK_INPUT, sp->idx_route_options);
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_ROUTE_OPTION, STREAM_SINK_INPUT, &route_option);
+                    updated = TRUE;
                 }
             }
             if (m->cur_highest_priority.source_output) {
                 if (pa_idxset_get_by_data(sp->idx_source_outputs, m->cur_highest_priority.source_output, NULL)) {
                     pa_log_debug(" -- cur_highest_priority.source_output->index[%u] belongs to this parent id[%u], do notify for the options",
                         (m->cur_highest_priority.source_output)->index, id);
-                    do_notify(m, NOTIFY_COMMAND_UPDATE_ROUTE_OPTIONS, STREAM_SOURCE_OUTPUT, sp->idx_route_options);
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_ROUTE_OPTION, STREAM_SOURCE_OUTPUT, &route_option);
+                    updated = TRUE;
                 }
             }
-            pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
+            if (!updated) {
+                pa_log_error("invalid state");
+                pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR_NO_STREAM], DBUS_TYPE_INVALID));
+            } else
+                pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
         } else {
             pa_log_error("invalid arguments");
             pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
@@ -1588,10 +1600,7 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
             p_idx = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
         if (p_idx && !pa_atou(p_idx, &parent_idx)) {
             sp = pa_hashmap_get(m->stream_parents, parent_idx);
-            if (sp) {
-                /* set route options */
-                route_data->idx_route_options = sp->idx_route_options;
-            } else
+            if (!sp)
                 pa_log_warn("Failed to get the stream parent of idx(%u)", parent_idx);
         } else
            pa_log_warn("Could not get the parent id of this stream, but keep going...");
@@ -1622,7 +1631,7 @@ static void do_notify(pa_stream_manager *m, notify_command_type_t command, strea
     char *role = NULL;
     pa_stream_manager_hook_data_for_select hook_call_select_data;
     pa_stream_manager_hook_data_for_route hook_call_route_data;
-    pa_stream_manager_hook_data_for_options hook_call_options_data;
+    pa_stream_manager_hook_data_for_option hook_call_option_data;
     hal_stream_connection_info stream_conn_info;
     void *s;
 
@@ -1678,7 +1687,7 @@ static void do_notify(pa_stream_manager *m, notify_command_type_t command, strea
             hook_call_route_data.stream_role = role;
             fill_device_info_to_hook_data(&hook_call_route_data, command, type, s, m);
             if (hook_call_route_data.route_type == STREAM_ROUTE_TYPE_MANUAL) {
-                if (!pa_idxset_size(hook_call_route_data.idx_manual_devices)) {
+                if (hook_call_route_data.idx_manual_devices && !pa_idxset_size(hook_call_route_data.idx_manual_devices)) {
                     pa_log_info("no manual device for this type(%d), need to unset route", type);
                     hook_call_route_data.stream_role = "reset";
                 }
@@ -1706,15 +1715,16 @@ static void do_notify(pa_stream_manager *m, notify_command_type_t command, strea
         pa_hook_fire(pa_communicator_hook(m->comm.comm, PA_COMMUNICATOR_HOOK_CHANGE_ROUTE), &hook_call_route_data);
         break;
     }
-    case NOTIFY_COMMAND_UPDATE_ROUTE_OPTIONS: {
+    case NOTIFY_COMMAND_UPDATE_ROUTE_OPTION: {
         pa_assert(user_data);
-        memset(&hook_call_options_data, 0, sizeof(pa_stream_manager_hook_data_for_options));
+        memset(&hook_call_option_data, 0, sizeof(pa_stream_manager_hook_data_for_option));
         s = (type==STREAM_SINK_INPUT)?m->cur_highest_priority.sink_input:m->cur_highest_priority.source_output;
         if (s) {
             role = pa_proplist_gets(GET_STREAM_PROPLIST(s, type), PA_PROP_MEDIA_ROLE);
-            hook_call_options_data.stream_role = role;
-            hook_call_options_data.route_options = (pa_idxset*)user_data;
-            pa_hook_fire(pa_communicator_hook(m->comm.comm, PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTIONS), &hook_call_options_data);
+            hook_call_option_data.stream_role = role;
+            hook_call_option_data.name = ((stream_route_option*)user_data)->name;
+            hook_call_option_data.value = ((stream_route_option*)user_data)->value;
+            pa_hook_fire(pa_communicator_hook(m->comm.comm, PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTION), &hook_call_option_data);
         }
         break;
     }
@@ -2207,7 +2217,6 @@ static void subscribe_cb(pa_core *core, pa_subscription_event_type_t t, uint32_t
         sp->idx_source_outputs = pa_idxset_new(pa_idxset_trivial_hash_func, pa_idxset_trivial_compare_func);
         sp->idx_route_in_devices = pa_idxset_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
         sp->idx_route_out_devices = pa_idxset_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
-        sp->idx_route_options = pa_idxset_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
         pa_hashmap_put(m->stream_parents, idx, sp);
         pa_log_debug(" - add sp(%p), idx(%u)", sp, idx);
      } else if (t == (PA_SUBSCRIPTION_EVENT_CLIENT|PA_SUBSCRIPTION_EVENT_REMOVE)) {
@@ -2226,7 +2235,6 @@ static void subscribe_cb(pa_core *core, pa_subscription_event_type_t t, uint32_t
             pa_idxset_free(sp->idx_source_outputs, NULL);
             pa_idxset_free(sp->idx_route_in_devices, NULL);
             pa_idxset_free(sp->idx_route_out_devices, NULL);
-            pa_idxset_free(sp->idx_route_options, NULL);
             pa_xfree(sp);
         } else {
             pa_log_error(" - could not find any stream_parent that has idx(%u)", idx);

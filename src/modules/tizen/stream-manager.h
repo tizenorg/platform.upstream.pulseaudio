@@ -33,17 +33,17 @@ typedef struct _hook_call_data_for_route {
     pa_sink **proper_sink;
     pa_source **proper_source;
     pa_sample_spec sample_spec;
-    pa_idxset *idx_route_options;
     pa_idxset *idx_avail_devices;
     pa_idxset *idx_manual_devices;
     pa_idxset *idx_streams;
     pa_bool_t origins_from_new_data;
 } pa_stream_manager_hook_data_for_route;
 
-typedef struct _hook_call_data_for_options {
+typedef struct _hook_call_data_for_option {
     const char *stream_role;
-    pa_idxset *route_options;
-} pa_stream_manager_hook_data_for_options;
+    const char *name;
+    int32_t value;
+} pa_stream_manager_hook_data_for_option;
 
 pa_stream_manager* pa_stream_manager_init(pa_core *c);
 void pa_stream_manager_done(pa_stream_manager* m);

@@ -278,7 +278,7 @@ struct userdata {
         pa_communicator *comm;
         pa_hook_slot *comm_hook_select_proper_sink_or_source_slot;
         pa_hook_slot *comm_hook_change_route_slot;
-        pa_hook_slot *comm_hook_update_route_options_slot;
+        pa_hook_slot *comm_hook_update_route_option_slot;
         pa_hook_slot *comm_hook_device_connection_changed_slot;
     } communicator;
 
@@ -870,29 +870,21 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
     return PA_HOOK_OK;
 }
 
-/* Forward routing options to HAL */
-static pa_hook_result_t route_options_update_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_options *data, struct userdata *u) {
+/* Forward routing option to HAL */
+static pa_hook_result_t route_option_update_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_option *data, struct userdata *u) {
     void *state = NULL;
-    const char *option_name = NULL;
     int i = 0;
     hal_route_option route_option;
 
-    pa_log_info("route_options_update_hook_cb is called. (%p), stream_role(%s), route_options(%p), num_of_options(%d)",
-            data, data->stream_role, data->route_options, pa_idxset_size(data->route_options));
+    pa_log_info("route_option_update_hook_cb is called. (%p), stream_role(%s), option[name(%s)/value(%d)]",
+            data, data->stream_role, data->name, data->value);
     route_option.role = data->stream_role;
-    route_option.num_of_options = pa_idxset_size(data->route_options);
-    if (route_option.num_of_options)
-        route_option.options = pa_xmalloc0(sizeof(char*)*route_option.num_of_options);
-
-    while (data->route_options && (option_name = pa_idxset_iterate(data->route_options, &state, NULL))) {
-        pa_log_debug("-- option : %s", option_name);
-        route_option.options[i++] = option_name;
-    }
+    route_option.name = data->name;
+    route_option.value = data->value;
 
     /* Send information to HAL to update routing option */
     if(pa_hal_manager_update_route_option (u->hal_manager, &route_option))
         pa_log_error("Failed to pa_hal_manager_update_route_option()");
-    pa_xfree(route_option.options);
 
     return PA_HOOK_OK;
 }
@@ -1485,9 +1477,9 @@ int pa__init(pa_module *m)
         u->communicator.comm_hook_change_route_slot = pa_hook_connect(
                 pa_communicator_hook(u->communicator.comm, PA_COMMUNICATOR_HOOK_CHANGE_ROUTE),
                 PA_HOOK_EARLY, (pa_hook_cb_t)route_change_hook_cb, u);
-        u->communicator.comm_hook_update_route_options_slot = pa_hook_connect(
-                pa_communicator_hook(u->communicator.comm, PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTIONS),
-                PA_HOOK_EARLY, (pa_hook_cb_t)route_options_update_hook_cb, u);
+        u->communicator.comm_hook_update_route_option_slot = pa_hook_connect(
+                pa_communicator_hook(u->communicator.comm, PA_COMMUNICATOR_HOOK_UPDATE_ROUTE_OPTION),
+                PA_HOOK_EARLY, (pa_hook_cb_t)route_option_update_hook_cb, u);
         u->communicator.comm_hook_device_connection_changed_slot = pa_hook_connect(
                 pa_communicator_hook(u->communicator.comm, PA_COMMUNICATOR_HOOK_DEVICE_CONNECTION_CHANGED),
                 PA_HOOK_EARLY, (pa_hook_cb_t)device_connection_changed_hook_cb, u);
@@ -1561,7 +1553,7 @@ void pa__done(pa_module *m)
         if (u->communicator.comm_hook_change_route_slot)
             pa_hook_slot_free(u->communicator.comm_hook_change_route_slot);
         if (u->communicator.comm_hook_change_route_slot)
-            pa_hook_slot_free(u->communicator.comm_hook_update_route_options_slot);
+            pa_hook_slot_free(u->communicator.comm_hook_update_route_option_slot);
         if (u->communicator.comm_hook_device_connection_changed_slot)
             pa_hook_slot_free(u->communicator.comm_hook_device_connection_changed_slot);
         pa_communicator_unref(u->communicator.comm);

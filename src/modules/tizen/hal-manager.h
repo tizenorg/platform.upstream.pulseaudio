@@ -35,8 +35,8 @@ typedef struct _hal_route_info {
 
 typedef struct _hal_route_option {
     const char *role;
-    char **options;
-    uint32_t num_of_options;
+    const char *name;
+    int32_t value;
 } hal_route_option;
 
 typedef struct _hal_stream_connection_info {

@@ -1757,6 +1757,10 @@ static pa_process_stream_result_t process_stream(stream_type_t type, void *strea
     const char *si_volume_type_str = NULL;
     const char *prior_priority = NULL;
     int32_t prior_p = 0;
+    pa_format_info *req_format = NULL;
+    const char *format_str = NULL;
+    const char *rate_str = NULL;
+    const char *ch_str = NULL;
 
     pa_log_info("START process_stream(%s): stream_type(%d), stream(%p), m(%p)", process_command_type_str[command], type, stream, m);
     pa_assert(stream);
@@ -1766,11 +1770,11 @@ static pa_process_stream_result_t process_stream(stream_type_t type, void *strea
         if (type == STREAM_SINK_INPUT) {
             /* Parse request formats for samplerate, channel, format infomation */
             if (((pa_sink_input_new_data*)stream)->req_formats) {
-                const char *format_str = NULL;
-                pa_format_info* req_format = pa_idxset_first(((pa_sink_input_new_data*)stream)->req_formats, NULL);
+                req_format = pa_idxset_first(((pa_sink_input_new_data*)stream)->req_formats, NULL);
                 if (req_format && req_format->plist) {
-                    const char *rate_str = pa_proplist_gets(req_format->plist, PA_PROP_FORMAT_RATE);
-                    const char *ch_str = pa_proplist_gets(req_format->plist, PA_PROP_FORMAT_CHANNELS);
+                    /* set sample_spec */
+                    rate_str = pa_proplist_gets(req_format->plist, PA_PROP_FORMAT_RATE);
+                    ch_str = pa_proplist_gets(req_format->plist, PA_PROP_FORMAT_CHANNELS);
                     if (pa_format_info_get_prop_string(req_format, PA_PROP_FORMAT_SAMPLE_FORMAT, &format_str)==0)
                         ((pa_sink_input_new_data*)stream)->sample_spec.format = pa_parse_sample_format(format_str);
                     pa_log_info("req rate(%s), req ch(%s), req format(%s)", rate_str, ch_str, format_str);
@@ -1778,6 +1782,12 @@ static pa_process_stream_result_t process_stream(stream_type_t type, void *strea
                         ((pa_sink_input_new_data*)stream)->sample_spec.channels = atoi (ch_str);
                     if (rate_str)
                         ((pa_sink_input_new_data*)stream)->sample_spec.rate = atoi (rate_str);
+                    /* set channel map if it is not set by client */
+                    if (!((pa_sink_input_new_data*)stream)->channel_map_is_set) {
+                        pa_channel_map_init_auto(&(((pa_sink_input_new_data*)stream)->channel_map), ((pa_sink_input_new_data*)stream)->sample_spec.channels, PA_CHANNEL_MAP_ALSA);
+                        pa_log_info("set default channel_map: channels(%u)",((pa_sink_input_new_data*)stream)->channel_map.channels);
+                        ((pa_sink_input_new_data*)stream)->channel_map_is_set = TRUE;
+                    }
                 }
             } else {
                 pa_log_debug("no request formats available");

@@ -74,8 +74,6 @@
 
 #define DBUS_INTERFACE_DEVICED_SYSNOTI      "org.tizen.system.deviced.SysNoti"
 #define DBUS_OBJECT_DEVICED_SYSNOTI         "/Org/Tizen/System/DeviceD/SysNoti"
-#define DBUS_INTERFACE_DEVICED_EXTCON       "org.tizen.system.deviced.ExtCon"
-#define DBUS_OBJECT_DEVICED_EXTCON          "/Org/Tizen/System/DeviceD/ExtCon"
 
 #define DBUS_INTERFACE_SOUND_SERVER         "org.tizen.SoundServer1"
 #define DBUS_OBJECT_SOUND_SERVER            "/org/tizen/SoundServer1"
@@ -150,10 +148,6 @@
 #define FILTER_DEVICED_SYSNOTI                             \
     "type='signal',"                                       \
     " interface='" DBUS_INTERFACE_DEVICED_SYSNOTI "'"
-
-#define FILTER_DEVICED_EXTON                               \
-    "type='signal',"                                       \
-    " interface='" DBUS_INTERFACE_DEVICED_EXTCON "'"
 
 #define FILTER_SOUND_SERVER                                \
     "type='signal',"                                       \
@@ -3212,7 +3206,7 @@ static DBusHandlerResult dbus_filter_device_detect_handler(DBusConnection *c, DB
 
     dbus_error_init(&error);
 
-    if (dbus_message_is_signal(s, DBUS_INTERFACE_DEVICED_EXTCON, "Earjack")) {
+    if (dbus_message_is_signal(s, DBUS_INTERFACE_DEVICED_SYSNOTI, "ChangedEarjack")) {
         if (!dbus_message_get_args(s, NULL, DBUS_TYPE_INT32, &status, DBUS_TYPE_INVALID)) {
             goto fail;
         } else {
@@ -3311,7 +3305,7 @@ static int watch_signals(pa_device_manager *dm) {
         goto fail;
     }
 
-    if (pa_dbus_add_matches(pa_dbus_connection_get(dm->dbus_conn), &error, FILTER_DEVICED_EXTON, FILTER_DEVICED_SYSNOTI, FILTER_SOUND_SERVER, FILTER_BLUEZ, FILTER_MIRRORING, NULL) < 0) {
+    if (pa_dbus_add_matches(pa_dbus_connection_get(dm->dbus_conn), &error, FILTER_DEVICED_SYSNOTI, FILTER_SOUND_SERVER, FILTER_BLUEZ, FILTER_MIRRORING, NULL) < 0) {
         pa_log_error("Unable to subscribe to signals: %s: %s", error.name, error.message);
         goto fail;
     }
@@ -3328,7 +3322,7 @@ static void unwatch_signals(pa_device_manager *dm) {
     pa_assert(dm);
     pa_assert(dm->dbus_conn);
 
-    pa_dbus_remove_matches(pa_dbus_connection_get(dm->dbus_conn), FILTER_DEVICED_EXTON, FILTER_DEVICED_SYSNOTI, FILTER_SOUND_SERVER, FILTER_BLUEZ, FILTER_MIRRORING, NULL);
+    pa_dbus_remove_matches(pa_dbus_connection_get(dm->dbus_conn), FILTER_DEVICED_SYSNOTI, FILTER_SOUND_SERVER, FILTER_BLUEZ, FILTER_MIRRORING, NULL);
     dbus_connection_remove_filter(pa_dbus_connection_get(dm->dbus_conn), dbus_filter_device_detect_handler, dm);
 }
 

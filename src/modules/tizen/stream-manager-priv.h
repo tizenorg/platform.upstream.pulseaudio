@@ -22,7 +22,7 @@ enum stream_direction {
 
 typedef struct _stream_info {
     int32_t priority;
-    char *volume_type[STREAM_DIRECTION_MAX];
+    const char *volume_type[STREAM_DIRECTION_MAX];
     pa_bool_t is_hal_volume[STREAM_DIRECTION_MAX];
     stream_route_type_t route_type;
     pa_idxset *idx_avail_in_devices;

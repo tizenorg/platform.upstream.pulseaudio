@@ -200,26 +200,6 @@ enum signal_index {
     SIGNAL_MAX
 };
 
-static pa_dbus_arg_info signal_test1_args[] = { { "arg1", "i", NULL } };
-static pa_dbus_arg_info signal_test2_args[] = { { "arg1", "s", NULL } };
-
-static pa_dbus_signal_info signals[SIGNAL_MAX] = {
-    [SIGNAL_PROP_CHANGED] = { .name = "PropertyTest1Changed", .arguments = signal_test1_args, .n_arguments = 1 },
-    [SIGNAL_TEST2] = { .name = "SignalTest2", .arguments = signal_test2_args, .n_arguments = 1 },
-};
-
-/*** For handle module-policy dbus interface ***/
-static pa_dbus_interface_info policy_interface_info = {
-    .name = INTERFACE_POLICY,
-    .method_handlers = method_handlers,
-    .n_method_handlers = METHOD_HANDLER_MAX,
-    .property_handlers = property_handlers,
-    .n_property_handlers = PROPERTY_MAX,
-    .get_all_properties_cb = handle_get_all,
-    .signals = signals,
-    .n_signals = SIGNAL_MAX
-};
-
 /*** Defines for get signal ***/
 #define SOUND_SERVER_INTERFACE_NAME "org.tizen.soundserver.service"
 #define AUDIO_CLIENT_INTERFACE_NAME "org.tizen.audioclient.service"
@@ -433,7 +413,7 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
             uint32_t stream_idx = PA_INVALID_INDEX;
             uint32_t volume_type = 0;
             uint32_t direction = 0;
-            uint32_t mute = 0;
+            pa_bool_t mute = FALSE;
             const char *volume_str = NULL;
 
             pa_tagstruct_getu32(t, &stream_idx);
@@ -443,7 +423,7 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
             __convert_volume_type_to_string(volume_type, &volume_str);
             pa_stream_manager_volume_get_mute(u->stream_manager, STREAM_SINK_INPUT, volume_str, &mute);
 
-            pa_tagstruct_putu32(reply, mute);
+            pa_tagstruct_putu32(reply, (uint32_t)mute);
             break;
         }
         /* it will be removed soon */
@@ -460,10 +440,10 @@ static int extension_cb(pa_native_protocol *p, pa_module *m, pa_native_connectio
             pa_tagstruct_getu32(t, &mute);
 
             __convert_volume_type_to_string(volume_type, &volume_str);
-            if (stream_idx == -1)
-                pa_stream_manager_volume_set_mute(u->stream_manager, STREAM_SINK_INPUT, volume_str, mute);
+            if ((int32_t)stream_idx == -1)
+                pa_stream_manager_volume_set_mute(u->stream_manager, STREAM_SINK_INPUT, volume_str, (pa_bool_t)mute);
             else
-                pa_stream_manager_volume_set_mute_by_idx(u->stream_manager, STREAM_SINK_INPUT, stream_idx, mute);
+                pa_stream_manager_volume_set_mute_by_idx(u->stream_manager, STREAM_SINK_INPUT, stream_idx, (pa_bool_t)mute);
             break;
         }
 
@@ -503,8 +483,6 @@ static pa_hook_result_t select_proper_sink_or_source_hook_cb(pa_core *c, pa_stre
     dm_device *device = NULL;
     dm_device_direction_t device_direction = DM_DEVICE_DIRECTION_NONE;
     pa_idxset *conn_devices = NULL;
-    pa_sink *combine_sink_arg1 = NULL;
-    pa_sink *combine_sink_arg2 = NULL;
 
     pa_log_info("select_proper_sink_or_source_hook_cb is called. (%p), stream_type(%d), stream_role(%s), route_type(%d)",
                 data, data->stream_type, data->stream_role, data->route_type);
@@ -518,11 +496,11 @@ static pa_hook_result_t select_proper_sink_or_source_hook_cb(pa_core *c, pa_stre
                 dm_device_type = pa_device_manager_get_device_type(device);
                 dm_device_subtype = pa_device_manager_get_device_subtype(device);
                 device_direction = pa_device_manager_get_device_direction(device);
-                pa_log_debug("[AUTO(_ALL)] conn_devices, type[%s], subtype[%s], direction[%p]", dm_device_type, dm_device_subtype, device_direction);
+                pa_log_debug("[AUTO(_ALL)] conn_devices, type[%s], subtype[%s], direction[0x%x]", dm_device_type, dm_device_subtype, device_direction);
                 if (pa_streq(device_type, dm_device_type) &&
                     (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
                     ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
-                    pa_log_debug("[AUTO(_ALL)] found a matched device: type[%s], direction[%p]", device_type, device_direction);
+                    pa_log_debug("[AUTO(_ALL)] found a matched device: type[%s], direction[0x%x]", device_type, device_direction);
 
                     if (data->stream_type == STREAM_SINK_INPUT && u->module_combine_sink) {
                         *(data->proper_sink) = pa_namereg_get(u->module->core, SINK_COMBINED, PA_NAMEREG_SINK);
@@ -546,7 +524,7 @@ static pa_hook_result_t select_proper_sink_or_source_hook_cb(pa_core *c, pa_stre
                     dm_device_type = pa_device_manager_get_device_type(device);
                     dm_device_subtype = pa_device_manager_get_device_subtype(device);
                     device_direction = pa_device_manager_get_device_direction(device);
-                    pa_log_debug("[MANUAL] manual_devices, type[%s], subtype[%s], direction[%p], device id[%u]",
+                    pa_log_debug("[MANUAL] manual_devices, type[%s], subtype[%s], direction[0x%x], device id[%u]",
                             dm_device_type, dm_device_subtype, device_direction, *device_id);
                     if (pa_streq(device_type, dm_device_type) &&
                         (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
@@ -601,7 +579,7 @@ SUCCESS:
 /*     3. Call HAL API to apply the routing setting                           */
 static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_route *data, struct userdata *u) {
 #ifdef DEVICE_MANAGER
-    int32_t i = 0;
+    uint32_t i = 0;
     uint32_t idx = 0;
     uint32_t d_idx = 0;
     uint32_t s_idx = 0;
@@ -648,7 +626,7 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
             if (device_state == DM_DEVICE_STATE_ACTIVATED &&
                 (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
                 ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
-                pa_log_debug("[RESET] found a matched device and set state to DE-ACTIVATED: type[%s], direction[%p]", dm_device_type, device_direction);
+                pa_log_debug("[RESET] found a matched device and set state to DE-ACTIVATED: type[%s], direction[0x%x]", dm_device_type, device_direction);
                 /* set device state to deactivated */
                 pa_device_manager_set_device_state(device, DM_DEVICE_STATE_DEACTIVATED);
               }
@@ -675,7 +653,7 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
                 dm_device_subtype = pa_device_manager_get_device_subtype(device);
                 device_direction = pa_device_manager_get_device_direction(device);
                 device_idx = pa_device_manager_get_device_id(device);
-                pa_log_debug("[AUTO(_ALL)] conn_devices, type[%s], subtype[%s], direction[%p], id[%u]",
+                pa_log_debug("[AUTO(_ALL)] conn_devices, type[%s], subtype[%s], direction[0x%x], id[%u]",
                         dm_device_type, dm_device_subtype, device_direction, device_idx);
                 if (pa_streq(device_type, dm_device_type) &&
                     (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
@@ -687,7 +665,7 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
                     route_info.device_infos[route_info.num_of_devices-1].type = dm_device_type;
                     route_info.device_infos[route_info.num_of_devices-1].direction = (data->stream_type==STREAM_SINK_INPUT)?DIRECTION_OUT:DIRECTION_IN;
                     route_info.device_infos[route_info.num_of_devices-1].id = device_idx;
-                    pa_log_debug("[AUTO(_ALL)] found a matched device and set state to ACTIVATED: type[%s], direction[%p], id[%u]",
+                    pa_log_debug("[AUTO(_ALL)] found a matched device and set state to ACTIVATED: type[%s], direction[0x%x], id[%u]",
                         route_info.device_infos[route_info.num_of_devices-1].type, device_direction, device_idx);
                     /* Set device state to activated */
                     pa_device_manager_set_device_state(device, DM_DEVICE_STATE_ACTIVATED);
@@ -822,16 +800,16 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
                     dm_device_type = pa_device_manager_get_device_type(device);
                     dm_device_subtype = pa_device_manager_get_device_subtype(device);
                     device_direction = pa_device_manager_get_device_direction(device);
-                    pa_log_debug("[MANUAL] manual_device, type[%s], subtype[%s], direction[%p]", dm_device_type, dm_device_subtype, device_direction);
+                    pa_log_debug("[MANUAL] manual_device, type[%s], subtype[%s], direction[0x%x]", dm_device_type, dm_device_subtype, device_direction);
                     if (pa_streq(device_type, dm_device_type) &&
                         (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
                         ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
-                        pa_log_debug("[MANUAL] found a matched device: type[%s], direction[%p]", device_type, device_direction);
+                        pa_log_debug("[MANUAL] found a matched device: type[%s], direction[0x%x]", device_type, device_direction);
                         route_info.num_of_devices++;
                         route_info.device_infos = pa_xrealloc(route_info.device_infos, sizeof(hal_device_info)*route_info.num_of_devices);
                         route_info.device_infos[route_info.num_of_devices-1].type = dm_device_type;
                         route_info.device_infos[route_info.num_of_devices-1].direction = (data->stream_type==STREAM_SINK_INPUT)?DIRECTION_OUT:DIRECTION_IN;
-                        pa_log_debug("[MANUAL] found a matched device and set state to ACTIVATED: type[%s], direction[%p]",
+                        pa_log_debug("[MANUAL] found a matched device and set state to ACTIVATED: type[%s], direction[0x%x]",
                             route_info.device_infos[route_info.num_of_devices-1].type, device_direction);
                         /* Set device state to activated */
                         pa_device_manager_set_device_state(device, DM_DEVICE_STATE_ACTIVATED);
@@ -872,8 +850,6 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
 
 /* Forward routing option to HAL */
 static pa_hook_result_t route_option_update_hook_cb(pa_core *c, pa_stream_manager_hook_data_for_option *data, struct userdata *u) {
-    void *state = NULL;
-    int i = 0;
     hal_route_option route_option;
 
     pa_log_info("route_option_update_hook_cb is called. (%p), stream_role(%s), option[name(%s)/value(%d)]",
@@ -900,7 +876,7 @@ static pa_hook_result_t device_connection_changed_hook_cb(pa_core *c, pa_device_
     device_direction = pa_device_manager_get_device_direction(conn->device);
     device_type = pa_device_manager_get_device_type(conn->device);
     device_subtype = pa_device_manager_get_device_subtype(conn->device);
-    pa_log_info("device_connection_changed_hook_cb is called. conn(%p), is_connected(%d), device(%p,%s,%s), direction(%p)",
+    pa_log_info("device_connection_changed_hook_cb is called. conn(%p), is_connected(%d), device(%p,%s,%s), direction(0x%x)",
             conn, conn->is_connected, conn->device, device_type, device_subtype, device_direction);
 
     if (!conn->is_connected && pa_streq(DEVICE_TYPE_BT, device_type) &&

@@ -24,16 +24,7 @@
 #endif
 
 #include "hal-manager.h"
-#if 0
-struct _pa_hal_manager {
-    PA_REFCNT_DECLARE;
-
-    pa_core *core;
-    void *dl_handle;
-    void *data;
-    audio_interface_t intf;
-};
-#endif
+#include <pulsecore/shared.h>
 
 /* Audio HAL library */
 #define LIB_TIZEN_AUDIO "libtizen-audio.so"

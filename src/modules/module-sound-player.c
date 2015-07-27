@@ -48,7 +48,6 @@
 #endif
 
 #include "module-sound-player-symdef.h"
-#include "tizen-audio.h"
 
 #include <pulsecore/core-scache.h>
 
@@ -84,7 +83,7 @@ static pa_dbus_arg_info sample_play_args[]    = { { "sample_name", "s", "in" },
                                                          { "role", "s", "in" },
                                                  { "volume_gain", "s", "in" }};
 
-static char* signature_args_for_in[] = { "sss", "sss" };
+static const char* signature_args_for_in[] = { "sss", "sss" };
 
 static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
     [METHOD_HANDLER_SIMPLE_PLAY] = {
@@ -544,7 +543,7 @@ fail:
 
 static pa_hook_result_t sink_input_unlink_cb(pa_core *core, pa_sink_input *i, struct userdata *u) {
     int32_t *stream_idx = NULL;
-    uint32_t *idx = NULL;
+    uint32_t idx = 0;
     pa_core_assert_ref(core);
     pa_sink_input_assert_ref(i);
 

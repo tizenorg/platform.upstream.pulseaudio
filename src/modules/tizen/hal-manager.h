@@ -49,7 +49,7 @@ typedef struct _hal_stream_connection_info {
 pa_hal_manager* pa_hal_manager_get(pa_core *core, void *user_data);
 pa_hal_manager* pa_hal_manager_ref(pa_hal_manager *h);
 void pa_hal_manager_unref(pa_hal_manager *h);
-int32_t pa_hal_manager_get_buffer_attribute(pa_hal_manager *h, audio_latency_t latency, pa_sink_input_new_data *new_data, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
+int32_t pa_hal_manager_get_buffer_attribute(pa_hal_manager *h, io_direction_t direction, uint32_t latency, void *new_data, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
 int32_t pa_hal_manager_reset_volume (pa_hal_manager *h);
 int32_t pa_hal_manager_get_volume_level_max (pa_hal_manager *h, const char *volume_type, io_direction_t direction, uint32_t *level);
 int32_t pa_hal_manager_get_volume_level (pa_hal_manager *h, const char *volume_type, io_direction_t direction, uint32_t *level);

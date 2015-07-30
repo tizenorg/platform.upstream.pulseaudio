@@ -1957,7 +1957,6 @@ FAILURE:
 }
 
 static void update_buffer_attribute(stream_type_t stream_type, void *new_data, pa_stream_manager *m) {
-    int32_t latency = 0;
     int32_t maxlength = -1;
     int32_t tlength = -1;
     int32_t prebuf = -1;
@@ -1976,10 +1975,7 @@ static void update_buffer_attribute(stream_type_t stream_type, void *new_data, p
     if (audio_latency == NULL)
         return;
 
-    if(pa_atoi(audio_latency, &latency))
-        return;
-
-    if (!pa_hal_manager_get_buffer_attribute(m->hal, (io_direction_t)!stream_type, (uint32_t)latency, new_data, (uint32_t*)&maxlength, (uint32_t*)&tlength, (uint32_t*)&prebuf, (uint32_t*)&minreq, (uint32_t*)&fragsize)) {
+    if (!pa_hal_manager_get_buffer_attribute(m->hal, (io_direction_t)!stream_type, audio_latency, new_data, (uint32_t*)&maxlength, (uint32_t*)&tlength, (uint32_t*)&prebuf, (uint32_t*)&minreq, (uint32_t*)&fragsize)) {
         pa_log_info(" - maxlength:%d, tlength:%d, prebuf:%d, minreq:%d, fragsize:%d", maxlength, tlength, prebuf, minreq, fragsize);
         pa_proplist_setf(GET_STREAM_NEW_PROPLIST(new_data, stream_type), "maxlength", "%d", maxlength);
         pa_proplist_setf(GET_STREAM_NEW_PROPLIST(new_data, stream_type), "tlength",   "%d", tlength);

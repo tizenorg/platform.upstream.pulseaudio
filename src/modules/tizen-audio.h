@@ -316,7 +316,7 @@ typedef struct audio_interface {
     audio_return_t (*pcm_close)(void *userdata, void *pcm_handle);
     audio_return_t (*pcm_avail)(void *pcm_handle);
     audio_return_t (*pcm_write)(void *pcm_handle, const void *buffer, uint32_t frames);
-    audio_return_t (*get_buffer_attr)(void *userdata, audio_latency_t latency, uint32_t samplerate, audio_sample_format_t format, uint32_t channels, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
+    audio_return_t (*get_buffer_attr)(void *userdata, const char *latency, uint32_t samplerate, audio_sample_format_t format, uint32_t channels, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize);
     audio_return_t (*set_session)(void *userdata, uint32_t session, uint32_t subsession, uint32_t cmd);
     audio_return_t (*set_route)(void *userdata, uint32_t session, uint32_t subsession, uint32_t device_in, uint32_t device_out, uint32_t route_flag);
     audio_return_t (*set_callback)(void *userdata, audio_cb_interface_t *cb_interface);

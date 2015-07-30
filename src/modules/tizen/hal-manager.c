@@ -116,7 +116,7 @@ void pa_hal_manager_unref(pa_hal_manager *h) {
     pa_xfree(h);
 }
 
-int32_t pa_hal_manager_get_buffer_attribute(pa_hal_manager *h, io_direction_t direction, uint32_t latency, void *new_data, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize) {
+int32_t pa_hal_manager_get_buffer_attribute(pa_hal_manager *h, io_direction_t direction, const char *latency, void *new_data, uint32_t *maxlength, uint32_t *tlength, uint32_t *prebuf, uint32_t* minreq, uint32_t *fragsize) {
     int32_t ret = 0;
     audio_return_t hal_ret = AUDIO_RET_OK;
     pa_sample_spec *sample_spec = NULL;
@@ -125,7 +125,7 @@ int32_t pa_hal_manager_get_buffer_attribute(pa_hal_manager *h, io_direction_t di
     pa_assert(new_data);
 
     sample_spec = (direction==DIRECTION_OUT)?(&((pa_sink_input_new_data*)new_data)->sample_spec):(&((pa_source_output_new_data*)new_data)->sample_spec);
-    pa_log_info("latency:%d, rate:%u, format:%d, channels:%u", latency, sample_spec->rate, sample_spec->format, sample_spec->channels);
+    pa_log_info("latency:%s, rate:%u, format:%d, channels:%u", latency, sample_spec->rate, sample_spec->format, sample_spec->channels);
 
     if (AUDIO_IS_ERROR(hal_ret = h->intf.get_buffer_attr(h->data, latency, sample_spec->rate, sample_spec->format, sample_spec->channels, maxlength, tlength, prebuf, minreq, fragsize))) {
         pa_log_error("get_buffer_attr returns error:0x%x", hal_ret);

@@ -14,6 +14,21 @@
 #include <pulsecore/dbus-util.h>
 #endif
 
+#define GET_STREAM_NEW_PROPLIST(stream, type) \
+      (type == STREAM_SINK_INPUT? ((pa_sink_input_new_data*)stream)->proplist : ((pa_source_output_new_data*)stream)->proplist)
+
+#define GET_STREAM_PROPLIST(stream, type) \
+      (type == STREAM_SINK_INPUT? ((pa_sink_input*)stream)->proplist : ((pa_source_output*)stream)->proplist)
+
+#define GET_STREAM_NEW_SAMPLE_SPEC(stream, type) \
+      (type == STREAM_SINK_INPUT? ((pa_sink_input_new_data*)stream)->sample_spec : ((pa_source_output_new_data*)stream)->sample_spec)
+
+#define GET_STREAM_SAMPLE_SPEC(stream, type) \
+      (type == STREAM_SINK_INPUT? ((pa_sink_input*)stream)->sample_spec : ((pa_source_output*)stream)->sample_spec)
+
+#define IS_FOCUS_ACQUIRED(focus, type) \
+      (type == STREAM_SINK_INPUT? (focus & STREAM_FOCUS_ACQUIRED_PLAYBACK) : (focus & STREAM_FOCUS_ACQUIRED_CAPTURE))
+
 enum stream_direction {
     STREAM_DIRECTION_IN,
     STREAM_DIRECTION_OUT,
@@ -23,7 +38,6 @@ enum stream_direction {
 typedef struct _stream_info {
     int32_t priority;
     const char *volume_type[STREAM_DIRECTION_MAX];
-    pa_bool_t is_hal_volume[STREAM_DIRECTION_MAX];
     stream_route_type_t route_type;
     pa_idxset *idx_avail_in_devices;
     pa_idxset *idx_avail_out_devices;
@@ -32,17 +46,12 @@ typedef struct _stream_info {
 
 typedef struct _volume_info {
     pa_bool_t is_hal_volume_type;
-    pa_bool_t is_muted;
-    pa_idxset *idx_volume_values;
-    uint32_t current_level;
+    struct _values {
+        pa_bool_t is_muted;
+        uint32_t current_level;
+        pa_idxset *idx_volume_values;
+    } values[STREAM_DIRECTION_MAX];
 } volume_info;
-
-typedef struct _volume_map {
-    pa_hashmap *in_volumes;
-    pa_hashmap *out_volumes;
-    pa_hashmap *in_modifier_gains;
-    pa_hashmap *out_modifier_gains;
-} volume_map;
 
 typedef struct _prior_max_priority_stream {
     pa_sink_input *sink_input;
@@ -54,8 +63,9 @@ typedef struct _prior_max_priority_stream {
 struct _stream_manager {
     pa_core *core;
     pa_hal_manager *hal;
-    pa_hashmap *stream_map;
-    volume_map volume_map;
+    pa_hashmap *volume_infos;
+    pa_hashmap *volume_modifiers;
+    pa_hashmap *stream_infos;
     pa_hashmap *stream_parents;
     cur_max_priority_stream cur_highest_priority;
     pa_hook_slot

@@ -363,6 +363,9 @@ const char* notify_command_type_str[] = {
 };
 
 #define STREAM_MAP_FILE "/etc/pulse/stream-map.json"
+#define STREAM_MAP_VOLUMES "volumes"
+#define STREAM_MAP_VOLUME_TYPE "type"
+#define STREAM_MAP_VOLUME_IS_FOR_HAL "is-hal-volume"
 #define STREAM_MAP_STREAMS "streams"
 #define STREAM_MAP_STREAM_ROLE "role"
 #define STREAM_MAP_STREAM_PRIORITY "priority"
@@ -371,7 +374,6 @@ const char* notify_command_type_str[] = {
 #define STREAM_MAP_STREAM_VOLUME_TYPES "volume-types"
 #define STREAM_MAP_STREAM_VOLUME_TYPE_IN "in"
 #define STREAM_MAP_STREAM_VOLUME_TYPE_OUT "out"
-#define STREAM_MAP_STREAM_VOLUME_IS_FOR_HAL "is-hal-volume"
 #define STREAM_MAP_STREAM_CAPTURE_VOLUME_TYPE "capture-volume-type"
 #define STREAM_MAP_STREAM_PLAYBACK_VOLUME_TYPE "playback-volume-type"
 #define STREAM_MAP_STREAM_AVAIL_IN_DEVICES "avail-in-devices"
@@ -409,33 +411,18 @@ typedef struct _stream_route_option {
     int32_t value;
 } stream_route_option;
 
-#define GET_STREAM_NEW_PROPLIST(stream, type) \
-      (type == STREAM_SINK_INPUT? ((pa_sink_input_new_data*)stream)->proplist : ((pa_source_output_new_data*)stream)->proplist)
-
-#define GET_STREAM_PROPLIST(stream, type) \
-      (type == STREAM_SINK_INPUT? ((pa_sink_input*)stream)->proplist : ((pa_source_output*)stream)->proplist)
-
-#define GET_STREAM_NEW_SAMPLE_SPEC(stream, type) \
-      (type == STREAM_SINK_INPUT? ((pa_sink_input_new_data*)stream)->sample_spec : ((pa_source_output_new_data*)stream)->sample_spec)
-
-#define GET_STREAM_SAMPLE_SPEC(stream, type) \
-      (type == STREAM_SINK_INPUT? ((pa_sink_input*)stream)->sample_spec : ((pa_source_output*)stream)->sample_spec)
-
-#define IS_FOCUS_ACQUIRED(focus, type) \
-      (type == STREAM_SINK_INPUT? (focus & STREAM_FOCUS_ACQUIRED_PLAYBACK) : (focus & STREAM_FOCUS_ACQUIRED_CAPTURE))
-
 static void do_notify(pa_stream_manager *m, notify_command_type_t command, stream_type_t type, void *user_data);
 static process_stream_result_t process_stream(stream_type_t type, void *stream, process_command_type_t command, pa_stream_manager *m);
 
-static int get_available_streams_from_map(pa_stream_manager *m, stream_list *list) {
+static int get_available_streams(pa_stream_manager *m, stream_list *list) {
     void *state = NULL;
     stream_info *s = NULL;
     char *role = NULL;
     int i = 0;
 
-    pa_log_info("get_available_streams_from_map");
-    if (m->stream_map) {
-        while ((s = pa_hashmap_iterate(m->stream_map, &state, (const void**)&role))) {
+    pa_log_info("get_available_streams");
+    if (m->stream_infos) {
+        while ((s = pa_hashmap_iterate(m->stream_infos, &state, (const void**)&role))) {
             if (i < AVAIL_STREAMS_MAX) {
                 list->priorities[i] = s->priority;
                 list->types[i++] = role;
@@ -454,16 +441,16 @@ static int get_available_streams_from_map(pa_stream_manager *m, stream_list *lis
     return 0;
 }
 
-static int get_stream_info_from_map(pa_stream_manager *m, const char *stream_role, stream_info_per_type *info) {
+static int get_stream_info(pa_stream_manager *m, const char *stream_role, stream_info_per_type *info) {
     uint32_t idx = 0;
     char *name;
     stream_info *s = NULL;
     int i = 0;
     int j = 0;
     int k = 0;
-    pa_log_info("get_stream_info_from_map : role[%s]", stream_role);
-    if (m->stream_map) {
-        s = pa_hashmap_get(m->stream_map, stream_role);
+    pa_log_info("get_stream_info : role[%s]", stream_role);
+    if (m->stream_infos) {
+        s = pa_hashmap_get(m->stream_infos, stream_role);
         if (s) {
             info->priority = s->priority;
             info->route_type = s->route_type;
@@ -536,7 +523,7 @@ static void handle_get_stream_list(DBusConnection *conn, DBusMessage *msg, void 
     memset(&list, 0, sizeof(stream_list));
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
     dbus_message_iter_init_append(reply, &msg_iter);
-    if(!get_available_streams_from_map(m, &list)) {
+    if(!get_available_streams(m, &list)) {
         pa_dbus_append_basic_array_variant(&msg_iter, DBUS_TYPE_STRING, &list.types, list.num_of_streams);
         pa_dbus_append_basic_array_variant(&msg_iter, DBUS_TYPE_INT32, &list.priorities, list.num_of_streams);
     } else {
@@ -566,7 +553,7 @@ static void handle_get_stream_info(DBusConnection *conn, DBusMessage *msg, void 
     memset(&info, 0, sizeof(stream_info_per_type));
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
     dbus_message_iter_init_append(reply, &msg_iter);
-    if(!get_stream_info_from_map(m, type, &info)) {
+    if(!get_stream_info(m, type, &info)) {
         pa_dbus_append_basic_variant(&msg_iter, DBUS_TYPE_INT32, &info.priority);
         pa_dbus_append_basic_variant(&msg_iter, DBUS_TYPE_INT32, &info.route_type);
         pa_dbus_append_basic_array_variant(&msg_iter, DBUS_TYPE_STRING, &info.avail_in_devices, info.num_of_in_devices);
@@ -1167,7 +1154,7 @@ static void dump_stream_map (pa_stream_manager *m) {
     uint32_t idx = 0;
     pa_assert(m);
     pa_log_debug("==========[START stream-map dump]==========");
-    while (m->stream_map && (s = pa_hashmap_iterate(m->stream_map, &state, (const void **)&role))) {
+    while (m->stream_infos && (s = pa_hashmap_iterate(m->stream_infos, &state, (const void **)&role))) {
         pa_log_debug("[role : %s]", role);
         pa_log_debug("  - priority   : %d", s->priority);
         pa_log_debug("  - route-type : %d (0:auto,1:auto-all,2:manual,3:manual-all)", s->route_type);
@@ -1187,18 +1174,23 @@ static void dump_stream_map (pa_stream_manager *m) {
 }
 
 static int init_stream_map (pa_stream_manager *m) {
+    volume_info *v;
     stream_info *s;
     json_object *o;
+    json_object *volume_array_o;
     json_object *stream_array_o;
+    json_object *volume_type_o;
+    json_object *is_hal_volume_o;
     json_object *role_o;
     json_object *priority_o;
     json_object *route_type_o;
     json_object *volume_types_o;
-    json_object *is_hal_volume_o;
     json_object *avail_in_devices_o;
     json_object *avail_out_devices_o;
     json_object *avail_frameworks_o;
+    int num_of_volume_types = 0;
     int num_of_stream_types = 0;
+    const char *volume_type = NULL;
     const char *role = NULL;
     int i = 0, j = 0;
     int num_of_avail_in_devices;
@@ -1207,9 +1199,8 @@ static int init_stream_map (pa_stream_manager *m) {
     json_object *out_device_o;
     json_object *in_device_o;
     json_object *framework_o;
+    json_object *volume_o;
     json_object *stream_o;
-    json_object *is_hal_volume_in_o;
-    json_object *is_hal_volume_out_o;
     const char *volume_type_in_str = NULL;
     const char *volume_type_out_str = NULL;
     json_object *volume_type_in_o;
@@ -1223,9 +1214,37 @@ static int init_stream_map (pa_stream_manager *m) {
         pa_log_error("Read stream-map file(%s) failed", STREAM_MAP_FILE);
         return -1;
     }
-    m->stream_map = pa_hashmap_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
 
-    if((stream_array_o = json_object_object_get(o, STREAM_MAP_STREAMS)) && json_object_is_type(stream_array_o, json_type_array)){
+    /* Volumes */
+    m->volume_infos = pa_hashmap_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
+    if((volume_array_o = json_object_object_get(o, STREAM_MAP_VOLUMES)) && json_object_is_type(volume_array_o, json_type_array)) {
+        num_of_volume_types = json_object_array_length(volume_array_o);
+        for (i = 0; i < num_of_volume_types; i++) {
+            if((volume_o = json_object_array_get_idx(volume_array_o, i)) && json_object_is_type(volume_o, json_type_object)) {
+                v = pa_xmalloc0(sizeof(volume_info));
+                pa_log_debug("volume found [%d]", i);
+                if((volume_type_o = json_object_object_get(volume_o, STREAM_MAP_VOLUME_TYPE)) && json_object_is_type(volume_type_o, json_type_string)) {
+                    volume_type = json_object_get_string(volume_type_o);
+                    pa_log_debug(" - type : %s", volume_type);
+                } else {
+                    pa_log_error("Get volume type failed");
+                    goto failed;
+                }
+                if((is_hal_volume_o = json_object_object_get(volume_o, STREAM_MAP_VOLUME_IS_FOR_HAL)) && json_object_is_type(is_hal_volume_o, json_type_int)) {
+                    v->is_hal_volume_type = (pa_bool_t)json_object_get_int(is_hal_volume_o);
+                    pa_log_debug(" - is-hal-volume : %d", v->is_hal_volume_type);
+                } else {
+                    pa_log_error("Get is-hal-volume failed");
+                    goto failed;
+                }
+            }
+            pa_hashmap_put(m->volume_infos,(void*)volume_type, v);
+        }
+    }
+
+    /* Streams */
+    m->stream_infos = pa_hashmap_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
+    if((stream_array_o = json_object_object_get(o, STREAM_MAP_STREAMS)) && json_object_is_type(stream_array_o, json_type_array)) {
         num_of_stream_types = json_object_array_length(stream_array_o);
         for (i = 0; i < num_of_stream_types; i++) {
 
@@ -1278,24 +1297,6 @@ static int init_stream_map (pa_stream_manager *m) {
                     pa_log_error("Get stream volume-types failed");
                     goto failed;
                 }
-                if((is_hal_volume_o = json_object_object_get(stream_o, STREAM_MAP_STREAM_VOLUME_IS_FOR_HAL)) && json_object_is_type(is_hal_volume_o, json_type_object)) {
-                    if((is_hal_volume_in_o = json_object_object_get(is_hal_volume_o, STREAM_MAP_STREAM_VOLUME_TYPE_IN)) && json_object_is_type(is_hal_volume_in_o, json_type_int))
-                        s->is_hal_volume[STREAM_DIRECTION_IN] = (pa_bool_t)json_object_get_int(is_hal_volume_in_o);
-                    else {
-                        pa_log_error("Get stream is-hal-volume-in failed");
-                        goto failed;
-                    }
-                    if((is_hal_volume_out_o = json_object_object_get(is_hal_volume_o, STREAM_MAP_STREAM_VOLUME_TYPE_OUT)) && json_object_is_type(is_hal_volume_out_o, json_type_int))
-                        s->is_hal_volume[STREAM_DIRECTION_OUT] = (pa_bool_t)json_object_get_int(is_hal_volume_out_o);
-                    else {
-                        pa_log_error("Get stream is-hal-volume-out failed");
-                        goto failed;
-                    }
-                    pa_log_debug(" - is-hal-volume : in[%d], out[%d]", s->is_hal_volume[STREAM_DIRECTION_IN], s->is_hal_volume[STREAM_DIRECTION_OUT]);
-                } else {
-                    pa_log_error("Get stream volume-types failed");
-                    goto failed;
-                }
                 if((avail_in_devices_o = json_object_object_get(stream_o, STREAM_MAP_STREAM_AVAIL_IN_DEVICES)) && json_object_is_type(avail_in_devices_o, json_type_array)) {
                     j = 0;
                     s->idx_avail_in_devices = pa_idxset_new(pa_idxset_string_hash_func, pa_idxset_string_compare_func);
@@ -1341,7 +1342,7 @@ static int init_stream_map (pa_stream_manager *m) {
                     pa_log_error("Get stream avail-frameworks failed");
                     goto failed;
                 }
-                pa_hashmap_put(m->stream_map,(void*)role, s);
+                pa_hashmap_put(m->stream_infos,(void*)role, s);
             }
         }
     } else {
@@ -1353,9 +1354,9 @@ static int init_stream_map (pa_stream_manager *m) {
 
     return 0;
 failed:
-    pa_log_error("Failed to initialize stream map");
-    if (m->stream_map) {
-        PA_HASHMAP_FOREACH(s, m->stream_map, state) {
+    pa_log_error("Failed to initialize stream-map");
+    if (m->stream_infos) {
+        PA_HASHMAP_FOREACH(s, m->stream_infos, state) {
             if (s->idx_avail_in_devices)
                 pa_idxset_free(s->idx_avail_in_devices, NULL);
             if (s->idx_avail_out_devices)
@@ -1364,18 +1365,25 @@ failed:
                 pa_idxset_free(s->idx_avail_frameworks, NULL);
             pa_xfree(s);
         }
-        pa_hashmap_free(m->stream_map);
+        pa_hashmap_free(m->stream_infos);
+    }
+    if (m->volume_infos) {
+        PA_HASHMAP_FOREACH(v, m->volume_infos, state) {
+            pa_xfree(v);
+        }
+        pa_hashmap_free(m->volume_infos);
     }
     return -1;
 }
 
 static void deinit_stream_map (pa_stream_manager *m) {
     stream_info *s = NULL;
+    volume_info *v = NULL;
     void *state = NULL;
-
     pa_assert(m);
-    if (m->stream_map) {
-        PA_HASHMAP_FOREACH(s, m->stream_map, state) {
+
+    if (m->stream_infos) {
+        PA_HASHMAP_FOREACH(s, m->stream_infos, state) {
             if (s->idx_avail_in_devices)
                 pa_idxset_free(s->idx_avail_in_devices, NULL);
             if (s->idx_avail_out_devices)
@@ -1384,7 +1392,13 @@ static void deinit_stream_map (pa_stream_manager *m) {
                 pa_idxset_free(s->idx_avail_frameworks, NULL);
             pa_xfree(s);
         }
-        pa_hashmap_free(m->stream_map);
+        pa_hashmap_free(m->stream_infos);
+    }
+    if (m->volume_infos) {
+        PA_HASHMAP_FOREACH(v, m->volume_infos, state) {
+            pa_xfree(v);
+        }
+        pa_hashmap_free(m->volume_infos);
     }
 
     return;
@@ -1431,8 +1445,8 @@ static pa_bool_t check_role_to_skip(pa_stream_manager *m, const char *role) {
     pa_assert(m);
     pa_assert(role);
 
-    if (m->stream_map) {
-        s = pa_hashmap_get(m->stream_map, role);
+    if (m->stream_infos) {
+        s = pa_hashmap_get(m->stream_infos, role);
         if (s)
             ret = FALSE;
     }
@@ -1448,8 +1462,8 @@ static pa_bool_t update_priority_of_stream(pa_stream_manager *m, process_command
     pa_assert(m);
     pa_assert(role);
 
-    if (m->stream_map)
-        s = pa_hashmap_get(m->stream_map, role);
+    if (m->stream_infos)
+        s = pa_hashmap_get(m->stream_infos, role);
     else
         return FALSE;
 
@@ -1470,8 +1484,8 @@ static pa_bool_t update_routing_type_of_stream(pa_stream_manager *m, void *strea
     pa_assert(m);
     pa_assert(role);
 
-    if (m->stream_map) {
-        s = pa_hashmap_get(m->stream_map, role);
+    if (m->stream_infos) {
+        s = pa_hashmap_get(m->stream_infos, role);
         if (s)
             route_type = s->route_type;
     } else
@@ -1489,8 +1503,8 @@ static pa_bool_t update_volume_type_of_stream(pa_stream_manager *m, stream_type_
     pa_assert(m);
     pa_assert(role);
 
-    if (m->stream_map) {
-        s = pa_hashmap_get(m->stream_map, role);
+    if (m->stream_infos) {
+        s = pa_hashmap_get(m->stream_infos, role);
         if (s)
             volume_type = s->volume_type[!type];
     } else
@@ -1743,7 +1757,7 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
     switch (command) {
     case NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT: {
         select_data = (pa_stream_manager_hook_data_for_select*)hook_data;
-        si = pa_hashmap_get(m->stream_map, select_data->stream_role);
+        si = pa_hashmap_get(m->stream_infos, select_data->stream_role);
         avail_devices = (type==STREAM_SINK_INPUT)?si->idx_avail_out_devices:si->idx_avail_in_devices;
         list_len = pa_idxset_size(avail_devices);
         select_data->route_type = si->route_type;
@@ -1770,7 +1784,7 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
     case NOTIFY_COMMAND_CHANGE_ROUTE_START:
     case NOTIFY_COMMAND_CHANGE_ROUTE_END: {
         route_data = (pa_stream_manager_hook_data_for_route*)hook_data;
-        si = pa_hashmap_get(m->stream_map, route_data->stream_role);
+        si = pa_hashmap_get(m->stream_infos, route_data->stream_role);
         avail_devices = (type==STREAM_SINK_INPUT)?si->idx_avail_out_devices:si->idx_avail_in_devices;
         list_len = pa_idxset_size(avail_devices);
         route_data->route_type = si->route_type;
@@ -2131,18 +2145,18 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
 
     } else if (command == PROCESS_COMMAND_UPDATE_VOLUME) {
         if ((si_volume_type_str = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_TIZEN_VOLUME_TYPE))) {
-            v = pa_hashmap_get(m->volume_map.out_volumes, si_volume_type_str);
-            if (v && v->idx_volume_values) {
+            v = pa_hashmap_get(m->volume_infos, si_volume_type_str);
+            if (v && v->values[(type==STREAM_SINK_INPUT)?STREAM_DIRECTION_OUT:STREAM_DIRECTION_IN].idx_volume_values) {
                 /* Update volume-level */
-                volume_ret = set_volume_level_with_new_data(m, type, stream, v->current_level);
+                volume_ret = set_volume_level_with_new_data(m, type, stream, v->values[(type==STREAM_SINK_INPUT)?STREAM_DIRECTION_OUT:STREAM_DIRECTION_IN].current_level);
                 if (volume_ret)
                     pa_log_error("failed to set_volume_level_by_idx(), stream_type(%d), level(%u), ret(0x%x)",
-                            STREAM_SINK_INPUT, v->current_level, volume_ret);
+                            STREAM_SINK_INPUT, v->values[(type==STREAM_SINK_INPUT)?STREAM_DIRECTION_OUT:STREAM_DIRECTION_IN].current_level, volume_ret);
                 /* Update volume-mute */
-                volume_ret = set_volume_mute_with_new_data(m, type, stream, v->is_muted);
+                volume_ret = set_volume_mute_with_new_data(m, type, stream, v->values[(type==STREAM_SINK_INPUT)?STREAM_DIRECTION_OUT:STREAM_DIRECTION_IN].is_muted);
                 if (volume_ret)
                     pa_log_error("failed to set_volume_mute_by_idx(), stream_type(%d), mute(%d), ret(0x%x)",
-                            STREAM_SINK_INPUT, v->is_muted, volume_ret);
+                            STREAM_SINK_INPUT, v->values[(type==STREAM_SINK_INPUT)?STREAM_DIRECTION_OUT:STREAM_DIRECTION_IN].is_muted, volume_ret);
             }
         }
 
@@ -2531,7 +2545,7 @@ pa_stream_manager* pa_stream_manager_init(pa_core *c) {
     if (init_stream_map(m))
         goto fail;
 
-    if (init_volume_map(m))
+    if (init_volumes(m))
         goto fail;
 
     m->stream_parents = pa_hashmap_new(pa_idxset_trivial_hash_func, pa_idxset_trivial_compare_func);
@@ -2560,7 +2574,7 @@ pa_stream_manager* pa_stream_manager_init(pa_core *c) {
 
 fail:
     pa_log_error("Failed to initialize stream-manager");
-    deinit_volume_map(m);
+    deinit_volumes(m);
     deinit_stream_map(m);
     deinit_ipc(m);
     if (m->hal)
@@ -2607,7 +2621,7 @@ void pa_stream_manager_done(pa_stream_manager *m) {
     if (m->stream_parents)
         pa_hashmap_free(m->stream_parents);
 
-    deinit_volume_map(m);
+    deinit_volumes(m);
     deinit_stream_map(m);
     deinit_ipc(m);
 

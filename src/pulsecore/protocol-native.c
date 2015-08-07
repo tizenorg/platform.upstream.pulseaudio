@@ -75,7 +75,6 @@
 
 #ifdef __TIZEN__
 #define DEVICE_BUS_BUILTIN "builtin"
-#define MEDIA_POLICY_VOIP "voip"
 #endif
 
 struct pa_native_protocol;
@@ -1582,18 +1581,8 @@ static int sink_input_process_msg(pa_msgobject *o, int code, void *userdata, int
             if (pa_atomic_dec(&s->seek_or_post_in_queue) > 1)
                 s->seek_windex = windex;
             else {
-#ifdef __TIZEN__
-                const char *name = NULL;
-#endif
                 s->seek_windex = -1;
-
-#ifdef __TIZEN__
-                name = pa_proplist_gets(i->proplist, PA_PROP_MEDIA_POLICY);
-                if (!name || (name && !pa_streq(name, MEDIA_POLICY_VOIP)))
-                    handle_seek(s, windex);
-#else
-                    handle_seek(s, windex);
-#endif
+                handle_seek(s, windex);
             }
             return 0;
         }

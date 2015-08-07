@@ -59,19 +59,7 @@
 #define STREAM_MANAGER_METHOD_NAME_SET_VOLUME_MUTE            "SetVolumeMute"
 #define STREAM_MANAGER_METHOD_NAME_GET_VOLUME_MUTE            "GetVolumeMute"
 #define STREAM_MANAGER_METHOD_NAME_GET_CURRENT_VOLUME_TYPE    "GetCurrentVolumeType" /* the type that belongs to the stream of the current max priority */
-
-#define GET_STREAM_NEW_PROPLIST(stream, type) \
-      (type == STREAM_SINK_INPUT? ((pa_sink_input_new_data*)stream)->proplist : ((pa_source_output_new_data*)stream)->proplist)
-
-#define GET_STREAM_PROPLIST(stream, type) \
-      (type == STREAM_SINK_INPUT? ((pa_sink_input*)stream)->proplist : ((pa_source_output*)stream)->proplist)
-
-#define GET_STREAM_NEW_SAMPLE_SPEC(stream, type) \
-      (type == STREAM_SINK_INPUT? ((pa_sink_input_new_data*)stream)->sample_spec : ((pa_source_output_new_data*)stream)->sample_spec)
-
-#define GET_STREAM_SAMPLE_SPEC(stream, type) \
-      (type == STREAM_SINK_INPUT? ((pa_sink_input*)stream)->sample_spec : ((pa_source_output*)stream)->sample_spec)
-
+#define STREAM_MANAGER_METHOD_NAME_UPDATE_FOCUS_STATUS        "UpdateFocusStatus"
 
 static DBusHandlerResult method_handler_for_vt(DBusConnection *c, DBusMessage *m, void *userdata);
 static DBusHandlerResult handle_introspect(DBusConnection *conn, DBusMessage *msg, void *userdata);
@@ -86,6 +74,7 @@ static void handle_get_volume_max_level(DBusConnection *conn, DBusMessage *msg, 
 static void handle_set_volume_mute(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_get_volume_mute(DBusConnection *conn, DBusMessage *msg, void *userdata);
 static void handle_get_current_volume_type(DBusConnection *conn, DBusMessage *msg, void *userdata);
+static void handle_update_focus_status(DBusConnection *conn, DBusMessage *msg, void *userdata);
 
 enum method_handler_index {
     METHOD_HANDLER_GET_STREAM_INFO,
@@ -98,6 +87,7 @@ enum method_handler_index {
     METHOD_HANDLER_SET_VOLUME_MUTE,
     METHOD_HANDLER_GET_VOLUME_MUTE,
     METHOD_HANDLER_GET_CURRENT_VOLUME_TYPE,
+    METHOD_HANDLER_UPDATE_FOCUS_STATUS,
     METHOD_HANDLER_MAX
 };
 
@@ -114,9 +104,9 @@ static pa_dbus_arg_info set_stream_route_devices_args[]  = { { "parent_id", "u",
                                                     { "route_out_devices", "au", "in" },
                                                             { "ret_msg", "s", "out" } };
 static pa_dbus_arg_info set_stream_route_option_args[]  = { { "parent_id", "u", "in" },
-                                                              { "name", "s", "in" },
-                                                              { "value", "i", "in" },
-                                                            { "ret_msg", "s", "out" } };
+                                                                 { "name", "s", "in" },
+                                                                { "value", "i", "in" },
+                                                           { "ret_msg", "s", "out" } };
 static pa_dbus_arg_info set_volume_level_args[]  = { { "io_direction", "s", "in" },
                                                              { "type", "s", "in" },
                                                             { "level", "u", "in" },
@@ -130,17 +120,20 @@ static pa_dbus_arg_info get_volume_max_level_args[]  = { { "io_direction", "s", 
                                                                { "level", "u", "out" },
                                                            { "ret_msg", "s", "out" } };
 static pa_dbus_arg_info set_volume_mute_args[]  = { { "io_direction", "s", "in" },
-                                                             { "type", "s", "in" },
-                                                           { "on/off", "u", "in" },
-                                                       { "ret_msg", "s", "out" } };
+                                                            { "type", "s", "in" },
+                                                          { "on/off", "u", "in" },
+                                                      { "ret_msg", "s", "out" } };
 static pa_dbus_arg_info get_volume_mute_args[]  = { { "io_direction", "s", "in" },
                                                             { "type", "s", "in" },
                                                          { "on/off", "u", "out" },
                                                       { "ret_msg", "s", "out" } };
 static pa_dbus_arg_info get_current_volume_type_args[]  = { { "io_direction", "s", "in" },
-                                                            { "type", "s", "out" },
-                                                      { "ret_msg", "s", "out" } };
-static const char* signature_args_for_in[] = { "s", "", "uauau", "usi", "ssu", "ss", "ss", "ssu", "ss", "s"};
+                                                                   { "type", "s", "out" },
+                                                              { "ret_msg", "s", "out" } };
+static pa_dbus_arg_info update_focus_status_args[]  = { { "parent_id", "u", "in" },
+                                                     { "focus_status", "u", "in" },
+                                                       { "ret_msg", "s", "out" } };
+static const char* signature_args_for_in[] = { "s", "", "uauau", "usi", "ssu", "ss", "ss", "ssu", "ss", "s", "uu"};
 
 static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
     [METHOD_HANDLER_GET_STREAM_INFO] = {
@@ -193,6 +186,11 @@ static pa_dbus_method_handler method_handlers[METHOD_HANDLER_MAX] = {
         .arguments = get_current_volume_type_args,
         .n_arguments = sizeof(get_current_volume_type_args) / sizeof(pa_dbus_arg_info),
         .receive_cb = handle_get_current_volume_type },
+    [METHOD_HANDLER_UPDATE_FOCUS_STATUS] = {
+        .method_name = STREAM_MANAGER_METHOD_NAME_UPDATE_FOCUS_STATUS,
+        .arguments = update_focus_status_args,
+        .n_arguments = sizeof(update_focus_status_args) / sizeof(pa_dbus_arg_info),
+        .receive_cb = handle_update_focus_status },
 };
 
 const char *dbus_str_none = "none";
@@ -278,7 +276,12 @@ static pa_dbus_interface_info stream_manager_interface_info = {
     "  </method>"                                                            \
     "  <method name=\"STREAM_MANAGER_METHOD_NAME_GET_CURRENT_VOLUME_TYPE\">" \
     "   <arg name=\"io_direction\" direction=\"in\" type=\"s\"/>"            \
-    "   <arg name=\"type\" direction=\"out\" type=\"s\"/>"                    \
+    "   <arg name=\"type\" direction=\"out\" type=\"s\"/>"                   \
+    "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
+    "  </method>"                                                            \
+    "  <method name=\"STREAM_MANAGER_METHOD_NAME_UPDATE_FOCUS_STATUS\">"     \
+    "   <arg name=\"parent_id\" direction=\"in\" type=\"u\"/>"               \
+    "   <arg name=\"focus_status\" direction=\"in\" type=\"u\"/>"            \
     "   <arg name=\"ret_msg\" direction=\"out\" type=\"s\"/>"                \
     "  </method>"                                                            \
     " </interface>"                                                          \
@@ -294,17 +297,28 @@ static pa_dbus_interface_info stream_manager_interface_info = {
 
 #define STREAM_MANAGER_CLIENT_NAME "SOUND_MANAGER_STREAM_INFO"
 
-typedef enum pa_process_stream_result {
-    PA_PROCESS_STREAM_OK,
-    PA_PROCESS_STREAM_STOP,
-    PA_PROCESS_STREAM_SKIP,
-} pa_process_stream_result_t;
+#define STREAM_FOCUS_NONE     "0"
+#define STREAM_FOCUS_PLAYBACK "1"
+#define STREAM_FOCUS_CAPTURE  "2"
+
+typedef enum _focus_acquired_status {
+    STREAM_FOCUS_ACQUIRED_NONE     = 0x00,
+    STREAM_FOCUS_ACQUIRED_PLAYBACK = 0x01,
+    STREAM_FOCUS_ACQUIRED_CAPTURE  = 0x02,
+} focus_acquired_status_t;
+
+typedef enum _process_stream_result {
+    PROCESS_STREAM_RESULT_OK,
+    PROCESS_STREAM_RESULT_STOP,
+    PROCESS_STREAM_RESULT_SKIP,
+} process_stream_result_t;
 
 typedef enum _process_command_type {
     PROCESS_COMMAND_PREPARE,
     PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA,
     PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED,
     PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_ENDED,
+    PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_FOCUS_CHANGED,
     PROCESS_COMMAND_UPDATE_VOLUME,
     PROCESS_COMMAND_ADD_PARENT_ID,
     PROCESS_COMMAND_REMOVE_PARENT_ID,
@@ -325,6 +339,7 @@ const char* process_command_type_str[] = {
     "CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA",
     "CHANGE_ROUTE_BY_STREAM_STARTED",
     "CHANGE_ROUTE_BY_STREAM_ENDED",
+    "CHANGE_ROUTE_BY_STREAM_FOCUS_CHANGED",
     "UPDATE_VOLUME",
     "ADD_PARENT_ID",
     "REMOVE_PARENT_ID",
@@ -361,6 +376,7 @@ typedef struct _stream_parent {
     pa_idxset *idx_source_outputs;
     pa_idxset *idx_route_in_devices;
     pa_idxset *idx_route_out_devices;
+    focus_acquired_status_t focus_status;
 } stream_parent;
 
 #define AVAIL_DEVICES_MAX 16
@@ -386,8 +402,23 @@ typedef struct _stream_route_option {
     int32_t value;
 } stream_route_option;
 
+#define GET_STREAM_NEW_PROPLIST(stream, type) \
+      (type == STREAM_SINK_INPUT? ((pa_sink_input_new_data*)stream)->proplist : ((pa_source_output_new_data*)stream)->proplist)
+
+#define GET_STREAM_PROPLIST(stream, type) \
+      (type == STREAM_SINK_INPUT? ((pa_sink_input*)stream)->proplist : ((pa_source_output*)stream)->proplist)
+
+#define GET_STREAM_NEW_SAMPLE_SPEC(stream, type) \
+      (type == STREAM_SINK_INPUT? ((pa_sink_input_new_data*)stream)->sample_spec : ((pa_source_output_new_data*)stream)->sample_spec)
+
+#define GET_STREAM_SAMPLE_SPEC(stream, type) \
+      (type == STREAM_SINK_INPUT? ((pa_sink_input*)stream)->sample_spec : ((pa_source_output*)stream)->sample_spec)
+
+#define IS_FOCUS_ACQUIRED(focus, type) \
+      (type == STREAM_SINK_INPUT? (focus & STREAM_FOCUS_ACQUIRED_PLAYBACK) : (focus & STREAM_FOCUS_ACQUIRED_CAPTURE))
+
 static void do_notify(pa_stream_manager *m, notify_command_type_t command, stream_type_t type, void *user_data);
-static pa_process_stream_result_t process_stream(stream_type_t type, void *stream, process_command_type_t command, pa_stream_manager *m);
+static process_stream_result_t process_stream(stream_type_t type, void *stream, process_command_type_t command, pa_stream_manager *m);
 
 static int get_available_streams_from_map(pa_stream_manager *m, stream_list *list) {
     void *state = NULL;
@@ -486,6 +517,7 @@ static void handle_get_stream_list(DBusConnection *conn, DBusMessage *msg, void 
     DBusMessage *reply = NULL;
     DBusMessageIter msg_iter;
     pa_stream_manager *m = (pa_stream_manager*)userdata;
+
     pa_assert(conn);
     pa_assert(msg);
     pa_assert(m);
@@ -523,6 +555,7 @@ static void handle_get_stream_info(DBusConnection *conn, DBusMessage *msg, void 
                                        DBUS_TYPE_STRING, &type,
                                        DBUS_TYPE_INVALID));
     pa_log_info("handle_get_stream_info(), type[%s]", type);
+
     memset(&info, 0, sizeof(stream_info_per_type));
     pa_assert_se((reply = dbus_message_new_method_return(msg)));
     dbus_message_iter_init_append(reply, &msg_iter);
@@ -779,6 +812,7 @@ static void handle_get_volume_level(DBusConnection *conn, DBusMessage *msg, void
     stream_type_t stream_type = STREAM_SINK_INPUT;
     DBusMessage *reply = NULL;
     pa_stream_manager *m = (pa_stream_manager*)userdata;
+
     pa_assert(conn);
     pa_assert(msg);
     pa_assert(m);
@@ -904,9 +938,9 @@ static void handle_get_volume_mute(DBusConnection *conn, DBusMessage *msg, void 
     const char *type = NULL;
     uint32_t is_muted = 0;
     stream_type_t stream_type = STREAM_SINK_INPUT;
-
     DBusMessage *reply = NULL;
     pa_stream_manager *m = (pa_stream_manager*)userdata;
+
     pa_assert(conn);
     pa_assert(msg);
     pa_assert(m);
@@ -948,9 +982,9 @@ static void handle_get_current_volume_type(DBusConnection *conn, DBusMessage *ms
     const char *type = NULL;
     void *s = NULL;
     stream_type_t stream_type = STREAM_SINK_INPUT;
-
     DBusMessage *reply = NULL;
     pa_stream_manager *m = (pa_stream_manager*)userdata;
+
     pa_assert(conn);
     pa_assert(msg);
     pa_assert(m);
@@ -982,6 +1016,64 @@ static void handle_get_current_volume_type(DBusConnection *conn, DBusMessage *ms
         pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR_NO_STREAM], DBUS_TYPE_INVALID));
     }
 
+FAILURE:
+    pa_assert_se(dbus_connection_send(conn, reply, NULL));
+    dbus_message_unref(reply);
+    return;
+}
+
+static void handle_update_focus_status(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    uint32_t id = 0;
+    uint32_t idx = 0;
+    uint32_t count = 0;
+    uint32_t acquired_focus_status = 0;
+    stream_parent *sp = NULL;
+    void *stream = NULL;
+    DBusMessage *reply = NULL;
+    pa_stream_manager *m = (pa_stream_manager*)userdata;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(m);
+
+    pa_assert_se(dbus_message_get_args(msg, NULL,
+                                       DBUS_TYPE_UINT32, &id,
+                                       DBUS_TYPE_UINT32, &acquired_focus_status,
+                                       DBUS_TYPE_INVALID));
+    pa_log_info("handle_update_focus_status(), id[%u], acquired_focus_status[0x%x]", id, acquired_focus_status);
+
+    pa_assert_se((reply = dbus_message_new_method_return(msg)));
+
+    sp = pa_hashmap_get(m->stream_parents, (const void*)id);
+    if (sp) {
+        if (sp->focus_status != (acquired_focus_status & (STREAM_FOCUS_ACQUIRED_PLAYBACK|STREAM_FOCUS_ACQUIRED_CAPTURE))) {
+            /* need to update */
+            sp->focus_status = acquired_focus_status & (STREAM_FOCUS_ACQUIRED_PLAYBACK|STREAM_FOCUS_ACQUIRED_CAPTURE);
+            if (sp->idx_sink_inputs)
+                count = pa_idxset_size(sp->idx_sink_inputs);
+               PA_IDXSET_FOREACH(stream, sp->idx_sink_inputs, idx) {
+                   pa_proplist_sets(GET_STREAM_PROPLIST(stream, STREAM_SINK_INPUT), PA_PROP_MEDIA_FOCUS_STATUS,
+                        IS_FOCUS_ACQUIRED(sp->focus_status, STREAM_SINK_INPUT)?STREAM_FOCUS_PLAYBACK:STREAM_FOCUS_NONE);
+                    if (--count == 0)
+                        process_stream(STREAM_SINK_INPUT, stream, PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_FOCUS_CHANGED, m);
+                }
+            if (sp->idx_source_outputs)
+                count = pa_idxset_size(sp->idx_source_outputs);
+                PA_IDXSET_FOREACH(stream, sp->idx_source_outputs, idx) {
+                    pa_proplist_sets(GET_STREAM_PROPLIST(stream, STREAM_SOURCE_OUTPUT), PA_PROP_MEDIA_FOCUS_STATUS,
+                        IS_FOCUS_ACQUIRED(sp->focus_status, STREAM_SOURCE_OUTPUT)?STREAM_FOCUS_CAPTURE:STREAM_FOCUS_NONE);
+                    if (--count == 0)
+                        process_stream(STREAM_SOURCE_OUTPUT, stream, PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_FOCUS_CHANGED, m);
+                }
+        } else
+            pa_log_debug("same as before, skip updating focus status[0x%x]", acquired_focus_status);
+
+    } else {
+        pa_log_error("could not find matching client for this parent_id[%u]", id);
+        pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_ERROR], DBUS_TYPE_INVALID));
+        goto FAILURE;
+    }
+    pa_assert_se(dbus_message_append_args(reply, DBUS_TYPE_STRING, &stream_manager_dbus_ret_str[RET_MSG_INDEX_OK], DBUS_TYPE_INVALID));
 FAILURE:
     pa_assert_se(dbus_connection_send(conn, reply, NULL));
     dbus_message_unref(reply);
@@ -1322,9 +1414,9 @@ static pa_bool_t update_priority_of_stream(pa_stream_manager *m, process_command
 
     if (s) {
         if (command == PROCESS_COMMAND_PREPARE)
-            pa_proplist_setf(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, "%d", s->priority);
+            pa_proplist_set(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, (const void*)&(s->priority), sizeof(s->priority));
         else
-            pa_proplist_setf(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, "%d", s->priority);
+            pa_proplist_set(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, (const void*)&(s->priority), sizeof(s->priority));
     }
 
     return TRUE;
@@ -1371,6 +1463,38 @@ static pa_bool_t update_volume_type_of_stream(pa_stream_manager *m, stream_type_
     return TRUE;
 }
 
+static pa_bool_t update_focus_status_of_stream(pa_stream_manager *m, process_command_type_t command, void *stream, stream_type_t type) {
+    const char *p_idx;
+    uint32_t parent_idx;
+    stream_parent *sp = NULL;
+
+    pa_assert(m);
+    pa_assert(stream);
+
+    if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA)
+        p_idx = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
+    else
+        p_idx = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
+    if (p_idx && !pa_atou(p_idx, &parent_idx)) {
+        pa_log_debug("p_idx(%s), idx(%u)", p_idx, parent_idx);
+        sp = pa_hashmap_get(m->stream_parents, (const void*)parent_idx);
+        if (sp) {
+            if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA)
+                pa_proplist_setf(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_FOCUS_STATUS, "%u", sp->focus_status);
+            else
+                pa_proplist_setf(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_FOCUS_STATUS, "%u", sp->focus_status);
+        } else {
+            pa_log_error("could not find matching client for this parent_id(%u)", parent_idx);
+            return FALSE;
+        }
+    } else {
+        pa_log_warn("p_idx(%s) or idx(%u) is not valid", p_idx, parent_idx);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 static pa_bool_t update_stream_parent_info(pa_stream_manager *m, process_command_type_t command, stream_type_t type, void *stream) {
     const char *p_idx;
     uint32_t parent_idx;
@@ -1413,12 +1537,18 @@ static pa_bool_t update_stream_parent_info(pa_stream_manager *m, process_command
 static pa_bool_t update_the_highest_priority_stream(pa_stream_manager *m, process_command_type_t command, void *mine,
                                                     stream_type_t type, const char *role, pa_bool_t *need_to_update) {
     uint32_t idx = 0;
-    int32_t p_max = 0;
-    int32_t p_mine = 0;
-    const char *priority = NULL;
+    size_t size = 0;
+    const int32_t *priority = NULL;
+    const char *focus_status = NULL;
     void *cur_max_stream = NULL;
-    const char *cur_max_priority = NULL;
+    void *cur_max_stream_tmp = NULL;
+    const int32_t *cur_max_priority = NULL;
     const char *cur_max_role = NULL;
+    int32_t cur_max_focus_status_int = 0;
+    int32_t focus_status_int = 0;
+    void *i = NULL;
+    const char *_role = NULL;
+    pa_idxset *streams = NULL;
 
     pa_assert(m);
     pa_assert(mine);
@@ -1436,51 +1566,58 @@ static pa_bool_t update_the_highest_priority_stream(pa_stream_manager *m, proces
     }
 
     pa_log_info("update_the_highest_priority_stream(), stream_type(%d), role(%s), command(%d)", type, role, command);
-    if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA || command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED) {
+    if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA ||
+        command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED) {
+        /* get focus status */
+        if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA)
+            focus_status = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(mine, type), PA_PROP_MEDIA_FOCUS_STATUS);
+        else
+            focus_status = pa_proplist_gets(GET_STREAM_PROPLIST(mine, type), PA_PROP_MEDIA_FOCUS_STATUS);
+        if (focus_status && !pa_atoi(focus_status, &focus_status_int)) {
+            pa_log_debug("focus status(0x%x)", focus_status_int);
+        }
         if (cur_max_stream == NULL) {
             *need_to_update = TRUE;
             pa_log_debug("set cur_highest to mine");
         } else {
             /* TODO : need to check if this stream should be played to external devices */
-            if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA)
-                priority = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(mine, type), PA_PROP_MEDIA_ROLE_PRIORITY);
-            else {
+            if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA) {
+                if (pa_proplist_get(GET_STREAM_NEW_PROPLIST(mine, type), PA_PROP_MEDIA_ROLE_PRIORITY, (const void**)&priority, &size))
+                    pa_log_error("Failed to pa_proplist_get() for priority");
+            } else {
                 if (cur_max_stream == mine) {
-                    pa_log_debug("it has already been processed for PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED, skip it..");
+                    pa_log_debug("it has already been processed, skip it..");
                     return FALSE;
                 }
-                priority = pa_proplist_gets(GET_STREAM_PROPLIST(mine, type), PA_PROP_MEDIA_ROLE_PRIORITY);
+                if (pa_proplist_get(GET_STREAM_PROPLIST(mine, type), PA_PROP_MEDIA_ROLE_PRIORITY, (const void**)&priority, &size))
+                    pa_log_error("Failed to pa_proplist_get() for priority");
             }
-            cur_max_priority = pa_proplist_gets(GET_STREAM_PROPLIST(cur_max_stream, type), PA_PROP_MEDIA_ROLE_PRIORITY);
+            if (pa_proplist_get(GET_STREAM_PROPLIST(cur_max_stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, (const void**)&cur_max_priority, &size))
+                pa_log_error("Failed to pa_proplist_get() for priority");
+            focus_status = pa_proplist_gets(GET_STREAM_PROPLIST(cur_max_stream, type), PA_PROP_MEDIA_FOCUS_STATUS);
+            if (focus_status && !pa_atoi(focus_status, &cur_max_focus_status_int)) {
+                pa_log_debug("cur_max_focus status(0x%x)", cur_max_focus_status_int);
+            }
             cur_max_role = pa_proplist_gets(GET_STREAM_PROPLIST(cur_max_stream, type), PA_PROP_MEDIA_ROLE);
             if (!cur_max_priority || !cur_max_role) {
-                pa_log_error("Failed to pa_proplist_gets() for getting current max priority(%s) and it's role(%s)", cur_max_priority, cur_max_role);
+                pa_log_error("Failed to pa_proplist_gets() for getting current max priority(%p) and it's role(%s)", cur_max_priority, cur_max_role);
                 return FALSE;
             } else {
-                if (pa_atoi(priority, &p_mine)) {
-                    pa_log_error("Failed to pa_atoi(), priority(%s)", priority);
-                    return FALSE;
-                }
-                if (pa_atoi(cur_max_priority, &p_max)) {
-                    pa_log_error("Failed to pa_atoi(), cur_max_priority(%s)", cur_max_priority);
-                    return FALSE;
-                }
-                if (p_mine < p_max) {
-                    /* no need to trigger */
-                    return TRUE;
-                } else {
-                    *need_to_update = TRUE;
-                    pa_log_debug("update cur_highest to mine(%s)", role);
+                if (priority && cur_max_priority) {
+                    if (IS_FOCUS_ACQUIRED(focus_status_int, type) ||
+                        (!IS_FOCUS_ACQUIRED(cur_max_focus_status_int, type) && *priority >= *cur_max_priority)) {
+                        *need_to_update = TRUE;
+                        pa_log_debug("update cur_highest to mine(%s)", role);
+                    } else {
+                        /* no need to trigger */
+                        return TRUE;
+                    }
                 }
             }
         }
-    } else if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_ENDED) {
-        void *cur_max_stream_tmp = NULL;
-        void *i = NULL;
-        const char *_role = NULL;
-        int32_t p;
-        pa_idxset *streams = NULL;
-        if (cur_max_stream == mine) {
+    } else if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_ENDED ||
+            command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_FOCUS_CHANGED) {
+        if (cur_max_stream == mine || command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_FOCUS_CHANGED) {
             if (type == STREAM_SINK_INPUT) {
                 streams = ((pa_sink_input*)mine)->sink->inputs;
             } else if (type == STREAM_SOURCE_OUTPUT) {
@@ -1489,35 +1626,40 @@ static pa_bool_t update_the_highest_priority_stream(pa_stream_manager *m, proces
             /* find the next highest priority input */
             //PA_IDXSET_FOREACH(i, m->core->sinks, idx) { /* need to check a sink which this stream belongs to */
             PA_IDXSET_FOREACH(i, streams, idx) {
-                if (!(_role = pa_proplist_gets(GET_STREAM_PROPLIST(i, type), PA_PROP_MEDIA_ROLE))){
+                if (!(_role = pa_proplist_gets(GET_STREAM_PROPLIST(i, type), PA_PROP_MEDIA_ROLE))) {
                     pa_log_error("Failed to pa_proplist_gets() for role");
                     continue;
                 }
-                if (!(priority = pa_proplist_gets(GET_STREAM_PROPLIST(i, type), PA_PROP_MEDIA_ROLE_PRIORITY))){
-                    pa_log_error("Failed to pa_proplist_gets() for priority");
+                if (pa_proplist_get(GET_STREAM_PROPLIST(i, type), PA_PROP_MEDIA_ROLE_PRIORITY, (const void**)&priority, &size)) {
+                    pa_log_warn("Failed to pa_proplist_get() for priority, skip it");
                     continue;
                 }
-                pa_log_debug("role(%s)/priority(%s)/stream(%p)", _role, priority, i);
+                if (!(focus_status = pa_proplist_gets(GET_STREAM_PROPLIST(i, type), PA_PROP_MEDIA_FOCUS_STATUS))) {
+                    pa_log_warn("Failed to pa_proplist_gets() for focus status");
+                } else {
+                    if (!pa_atoi(focus_status, &focus_status_int)) {
+                        pa_log_debug("focus status(0x%x)", focus_status_int);
+                        }
+                }
+                pa_log_debug("role(%s)/priority(%p)/focus_state(0x%x)/stream(%p)", _role, priority, focus_status_int, i);
                 if (cur_max_priority == NULL) {
                     cur_max_priority = priority;
+                    cur_max_focus_status_int = focus_status_int;
                     cur_max_stream_tmp = i;
                 }
-                if (pa_atoi(cur_max_priority, &p_max)) {
-                    pa_log_error("Failed to pa_atoi(), cur_max_priority(%s)", cur_max_priority);
-                    continue;
-                }
-                if (pa_atoi(priority, &p)) {
-                    pa_log_error("Failed to pa_atoi(), priority(%s)", priority);
-                    continue;
-                }
-                if (p_max <= p) {
-                    cur_max_priority = priority;
-                    cur_max_stream_tmp = i;
-                    p_max = p;
+                if (cur_max_priority && priority) {
+                    if (IS_FOCUS_ACQUIRED(cur_max_focus_status_int, type) ||
+                        (!IS_FOCUS_ACQUIRED(focus_status_int, type) && (*cur_max_priority > *priority))) {
+                        /* skip */
+                    } else  {
+                        cur_max_priority = priority;
+                        cur_max_focus_status_int = focus_status_int;
+                        cur_max_stream_tmp = i;
+                    }
                 }
             }
-            pa_log_debug("updated max priority(%s)/stream(%p)", cur_max_priority, cur_max_stream_tmp);
-            if ((p_max > -1) && cur_max_stream_tmp) {
+            pa_log_debug("updated max priority(%p)/stream(%p)", cur_max_priority, cur_max_stream_tmp);
+            if (cur_max_stream_tmp) {
                 if (type == STREAM_SINK_INPUT) {
                     m->cur_highest_priority.sink_input = cur_max_stream_tmp;
                 } else if (type == STREAM_SOURCE_OUTPUT) {
@@ -1741,16 +1883,16 @@ static void do_notify(pa_stream_manager *m, notify_command_type_t command, strea
     return;
 }
 
-static pa_process_stream_result_t process_stream(stream_type_t type, void *stream, process_command_type_t command, pa_stream_manager *m) {
-    pa_process_stream_result_t result = PA_PROCESS_STREAM_OK;
+static process_stream_result_t process_stream(stream_type_t type, void *stream, process_command_type_t command, pa_stream_manager *m) {
+    process_stream_result_t result = PROCESS_STREAM_RESULT_OK;
     const char *role = NULL;
     pa_bool_t ret = TRUE;
     pa_bool_t need_update = FALSE;
     int32_t volume_ret = 0;
     volume_info *v = NULL;
     const char *si_volume_type_str = NULL;
-    const char *prior_priority = NULL;
-    int32_t prior_p = 0;
+    const int32_t *prior_priority = NULL;
+    size_t size = 0;
     pa_format_info *req_format = NULL;
     char *format_str = NULL;
     const char *rate_str = NULL;
@@ -1797,7 +1939,7 @@ static pa_process_stream_result_t process_stream(stream_type_t type, void *strea
         } else {
             /* skip roles */
             if (check_role_to_skip(m, role)) {
-                result = PA_PROCESS_STREAM_SKIP;
+                result = PROCESS_STREAM_RESULT_SKIP;
                 goto FAILURE;
             }
         }
@@ -1805,28 +1947,29 @@ static pa_process_stream_result_t process_stream(stream_type_t type, void *strea
         ret = update_priority_of_stream(m, command, type, stream, role);
         if (ret == FALSE) {
             pa_log_error("could not update the priority of '%s' role.", role);
-            result = PA_PROCESS_STREAM_STOP;
+            result = PROCESS_STREAM_RESULT_STOP;
             goto FAILURE;
         }
         /* update the volume type of this stream */
         ret = update_volume_type_of_stream(m, type, stream, role);
         if (ret == FALSE) {
             pa_log_error("could not update the volume type of '%s' role.", role);
-            result = PA_PROCESS_STREAM_STOP;
+            result = PROCESS_STREAM_RESULT_STOP;
             goto FAILURE;
         }
         /* update the routing type of this stream */
         ret = update_routing_type_of_stream(m, stream, type, role);
         if (ret == FALSE) {
             pa_log_error("could not update the route type of '%s' role.", role);
-            result = PA_PROCESS_STREAM_STOP;
+            result = PROCESS_STREAM_RESULT_STOP;
             goto FAILURE;
         }
 
         /* notify to select sink or source */
         do_notify(m, NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT, type, stream);
 
-    } else if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA || command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED) {
+    } else if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA ||
+            command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED) {
         if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA)
             role = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
         else
@@ -1834,25 +1977,30 @@ static pa_process_stream_result_t process_stream(stream_type_t type, void *strea
 
         /* skip roles */
         if (check_role_to_skip(m, role)) {
-            result = PA_PROCESS_STREAM_SKIP;
+            result = PROCESS_STREAM_RESULT_SKIP;
             goto FAILURE;
         }
 
-        if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED) {
+        if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED ) {
             /* update the priority of this stream */
             ret = update_priority_of_stream(m, command, type, stream, role);
             if (ret == FALSE) {
                 pa_log_error("could not update the priority of '%s' role.", role);
-                result = PA_PROCESS_STREAM_STOP;
+                result = PROCESS_STREAM_RESULT_STOP;
                 goto FAILURE;
             }
         }
+
+        /* update the focus status */
+        ret = update_focus_status_of_stream(m, command, stream, type);
+        if (ret == FALSE)
+            pa_log_warn("could not update focus status");
 
         /* update the highest priority */
         ret = update_the_highest_priority_stream(m, command, stream, type,  role, &need_update);
         if (ret == FALSE) {
             pa_log_error("could not update the highest priority stream");
-            result = PA_PROCESS_STREAM_SKIP;
+            result = PROCESS_STREAM_RESULT_SKIP;
             goto FAILURE;
         }
 
@@ -1881,28 +2029,51 @@ static pa_process_stream_result_t process_stream(stream_type_t type, void *strea
         if (role) {
             /* skip roles */
             if (check_role_to_skip(m, role)) {
-                result = PA_PROCESS_STREAM_SKIP;
+                result = PROCESS_STREAM_RESULT_SKIP;
                 goto FAILURE;
             }
 
             /* check if it has already been processed (unlink or state_changed_cb) */
-            prior_priority = pa_proplist_gets(type==STREAM_SINK_INPUT?((pa_sink_input*)stream)->proplist:((pa_source_output*)stream)->proplist, PA_PROP_MEDIA_ROLE_PRIORITY);
-            if (prior_priority && !pa_atoi(prior_priority, &prior_p) && (prior_p == -1)) {
+            if (pa_proplist_get(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, (const void**)&prior_priority, &size)) {
                 pa_log_debug("it has already been processed for PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_ENDED, skip it..");
-                result = PA_PROCESS_STREAM_SKIP;
+                result = PROCESS_STREAM_RESULT_SKIP;
                 goto FAILURE;
             }
 
-            /* mark the priority of this stream to -1 */
-            pa_proplist_setf(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY, "%d", -1);
+            pa_proplist_unset(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE_PRIORITY);
             ret = update_the_highest_priority_stream(m, command, stream, type, role, &need_update);
             if (ret == FALSE) {
                 pa_log_error("could not update the highest priority stream");
-                result = PA_PROCESS_STREAM_STOP;
+                result = PROCESS_STREAM_RESULT_STOP;
                 goto FAILURE;
             }
 
             do_notify(m, NOTIFY_COMMAND_INFORM_STREAM_DISCONNECTED, type, stream);
+
+            /* need to skip if this stream does not belong to internal device */
+            /* if needed, notify to update */
+            if (need_update)
+                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_END, type, NULL);
+
+        } else {
+            pa_log_error("role is null, skip it");
+        }
+
+    } else if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_FOCUS_CHANGED) {
+        role = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
+        if (role) {
+            /* skip roles */
+            if (check_role_to_skip(m, role)) {
+                result = PROCESS_STREAM_RESULT_SKIP;
+                goto FAILURE;
+            }
+
+            ret = update_the_highest_priority_stream(m, command, stream, type, role, &need_update);
+            if (ret == FALSE) {
+                pa_log_error("could not update the highest priority stream");
+                result = PROCESS_STREAM_RESULT_STOP;
+                goto FAILURE;
+            }
 
             /* need to skip if this stream does not belong to internal device */
             /* if needed, notify to update */
@@ -1947,7 +2118,7 @@ static pa_process_stream_result_t process_stream(stream_type_t type, void *strea
         ret = update_stream_parent_info(m, command, type, stream);
         if (ret == FALSE) {
             pa_log_warn("could not update the parent information of this stream");
-            //return PA_PROCESS_STREAM_STOP;
+            //return PROCESS_STREAM_RESULT_STOP;
         }
     }
 

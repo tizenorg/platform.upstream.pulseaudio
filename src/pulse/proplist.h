@@ -75,12 +75,6 @@ PA_C_DECL_BEGIN
 #define PA_PROP_FILTER_SUPPRESS                "filter.suppress"
 
 #ifdef __TIZEN__
-/** For streams: logic role of this media. One of the strings "auto", "phone" */
-#define PA_PROP_MEDIA_POLICY                "media.policy"
-
-/** For streams: the policy to ignore the preset sink rather use a sink picked by module-policy. One of the strings "yes", "no" */
-#define PA_PROP_MEDIA_POLICY_IGNORE_PRESET_SINK  "media.policy.ignore_preset_sink"
-
 #define PA_PROP_MEDIA_ROLE_PRIORITY            "media.role.priority"
 #define PA_PROP_MEDIA_ROLE_ROUTE_TYPE          "media.role.route_type"
 #define PA_PROP_MEDIA_PARENT_ID                "media.parent_id"
@@ -88,6 +82,7 @@ PA_C_DECL_BEGIN
 #define PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE   "media.tizen_volume_gain_type"
 #define PA_PROP_MEDIA_TIZEN_GAIN_TYPE          "media.tizen_gain_type" // It will be deprecated.
 #define PA_PROP_MEDIA_TIZEN_AUDIO_LATENCY      "media.tizen_audio_latency"
+#define PA_PROP_MEDIA_FOCUS_STATUS             "media.focus_status"
 #endif
 
 /** For event sound streams: XDG event sound name. e.g.\ "message-new-email" (Event sound streams are those with media.role set to "event") */

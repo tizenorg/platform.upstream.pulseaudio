@@ -1861,6 +1861,7 @@ char *pa_get_runtime_dir(void) {
         return pa_xstrdup(d);
     }
 
+#ifndef __TIZEN__
     /* Use the XDG standard for the runtime directory. */
     d = getenv("XDG_RUNTIME_DIR");
     if (d) {
@@ -1873,6 +1874,7 @@ char *pa_get_runtime_dir(void) {
 
         return k;
     }
+#endif
 
     /* XDG_RUNTIME_DIR wasn't set, use the old legacy fallback */
     d = get_pulse_home();

@@ -677,7 +677,7 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
                 PA_IDXSET_FOREACH(_device, conn_devices, conn_idx) {
                     if (device == _device)
                         continue;
-                    pa_device_manager_set_device_state(device, DM_DEVICE_STATE_DEACTIVATED);
+                    pa_device_manager_set_device_state(_device, DM_DEVICE_STATE_DEACTIVATED);
                 }
 
                 /* Move sink-inputs/source-outputs if needed */

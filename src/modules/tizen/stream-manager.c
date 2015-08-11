@@ -296,6 +296,13 @@ static pa_dbus_interface_info stream_manager_interface_info = {
 #endif
 
 #define STREAM_MANAGER_CLIENT_NAME "SOUND_MANAGER_STREAM_INFO"
+#define DEFAULT_ROLE "media"
+#define SKIP_ROLE "skip"
+
+/* There are some streams to be skipped.
+ * In other words, we do not care about streams that have a name of listed as below */
+#define NAME_FOR_SKIP_MAX 1
+const char* stream_manager_media_names_for_skip[NAME_FOR_SKIP_MAX] = {"pulsesink probe"};
 
 #define STREAM_FOCUS_NONE     "0"
 #define STREAM_FOCUS_PLAYBACK "1"
@@ -1383,6 +1390,39 @@ static void deinit_stream_map (pa_stream_manager *m) {
     return;
 }
 
+static pa_bool_t check_name_to_skip(pa_stream_manager *m, process_command_type_t command, stream_type_t type, void *stream) {
+    pa_bool_t ret = FALSE;
+    const char *name = NULL;
+    const char *role = NULL;
+    int i = 0;
+
+    pa_assert(m);
+    pa_assert(stream);
+
+    if (command == PROCESS_COMMAND_PREPARE) {
+        name = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_NAME);
+        if (name) {
+            for (i = 0; i < NAME_FOR_SKIP_MAX; i++)
+                if (pa_streq(name, stream_manager_media_names_for_skip[i])) {
+                    ret = TRUE;
+                    pa_proplist_sets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE, SKIP_ROLE);
+                }
+            pa_log_info("name is [%s], skip(%d)", name, ret);
+        }
+    } else {
+        if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA ||
+            command == PROCESS_COMMAND_UPDATE_VOLUME)
+            role = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
+        else
+            role = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
+
+        if (role && pa_streq(role, "skip"))
+            ret = TRUE;
+    }
+
+    return ret;
+}
+
 static pa_bool_t check_role_to_skip(pa_stream_manager *m, const char *role) {
     pa_bool_t ret = TRUE;
     stream_info *s = NULL;
@@ -1902,6 +1942,11 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
     pa_assert(stream);
     pa_assert(m);
 
+    if (check_name_to_skip(m, command, type, stream)) {
+        result = PROCESS_STREAM_RESULT_SKIP;
+        goto FAILURE;
+    }
+
     if (command == PROCESS_COMMAND_PREPARE) {
         if (type == STREAM_SINK_INPUT) {
             /* Parse request formats for samplerate, channel, format infomation */
@@ -1932,9 +1977,8 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
         role = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
         if (!role) {
             /* set default value for role and priority */
-            #define DEFAULT_ROLE "media"
             role = DEFAULT_ROLE;
-            pa_proplist_sets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE, DEFAULT_ROLE);
+            pa_proplist_sets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE, role);
             pa_log_warn("role is null, set default to [%s]", role);
         } else {
             /* skip roles */

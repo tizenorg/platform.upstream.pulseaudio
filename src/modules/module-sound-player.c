@@ -209,8 +209,9 @@ static int _simple_play(struct userdata *u, const char *file_path, const char *r
     }
 
     pa_log_debug("pa_scache_play_item() start");
-    if ((ret = pa_scache_play_item(u->module->core, name, sink, PA_VOLUME_NORM, p, &stream_idx) < 0)) {
-        pa_log_error("pa_scache_play_item fail");
+    ret = pa_scache_play_item(u->module->core, name, sink, PA_VOLUME_NORM, p, &stream_idx);
+    if (ret < 0) {
+        pa_log_error("pa_scache_play_item fail, ret[%d]", ret);
         goto exit;
     }
     pa_log_debug("pa_scache_play_item() end, stream_idx(%u)", stream_idx);
@@ -311,7 +312,6 @@ static void handle_simple_play(DBusConnection *conn, DBusMessage *msg, void *use
         *stream_idx = result;
         pa_idxset_put(u->stream_idxs, stream_idx, &idx);
     }
-
     pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_INT32, &result);
 }
 
@@ -437,6 +437,9 @@ static int init_ipc (struct userdata *u) {
         goto fail;
     }
 
+    /* for non-blocking read */
+    fcntl(u->fd, F_SETFL, O_NONBLOCK);
+
     /* change access mode so group can use keytone pipe */
     if (fchmod (u->fd, 0666) == -1)
         pa_log_warn("Changing keytone access mode is failed. errno=[%d][%s]", errno, strerror(errno));
@@ -523,12 +526,11 @@ static void io_event_callback(pa_mainloop_api *io, pa_io_event *e, int fd, pa_io
         size = sizeof(data);
         memset(&data, 0, size);
         ret = read(fd, (void *)&data, size);
-        if(ret != -1) {
+        if(ret == size) {
             pa_log_info("name(%s), role(%s), volume_gain_type(%s)", data.filename, data.role, data.volume_gain_type);
             _simple_play(u, data.filename, data.role, data.volume_gain_type);
-
         } else {
-            pa_log_warn("Fail to read file");
+            pa_log_warn("Fail to read, read size(%d), err(%s)", ret, pa_cstrerror(errno));
         }
     }
 

@@ -209,8 +209,9 @@ static int _simple_play(struct userdata *u, const char *file_path, const char *r
     }
 
     pa_log_debug("pa_scache_play_item() start");
-    if ((ret = pa_scache_play_item(u->module->core, name, sink, PA_VOLUME_NORM, p, &stream_idx) < 0)) {
-        pa_log_error("pa_scache_play_item fail");
+    ret = pa_scache_play_item(u->module->core, name, sink, PA_VOLUME_NORM, p, &stream_idx);
+    if (ret < 0) {
+        pa_log_error("pa_scache_play_item fail, ret[%d]", ret);
         goto exit;
     }
     pa_log_debug("pa_scache_play_item() end, stream_idx(%u)", stream_idx);
@@ -311,7 +312,6 @@ static void handle_simple_play(DBusConnection *conn, DBusMessage *msg, void *use
         *stream_idx = result;
         pa_idxset_put(u->stream_idxs, stream_idx, &idx);
     }
-
     pa_dbus_send_basic_value_reply(conn, msg, DBUS_TYPE_INT32, &result);
 }
 
@@ -437,6 +437,9 @@ static int init_ipc (struct userdata *u) {
         goto fail;
     }
 
+    /* for non-blocking read */
+    fcntl(u->fd, F_SETFL, O_NONBLOCK);
+
     /* change access mode so group can use keytone pipe */
     if (fchmod (u->fd, 0666) == -1)
         pa_log_warn("Changing keytone access mode is failed. errno=[%d][%s]", errno, strerror(errno));
@@ -510,6 +513,8 @@ static void io_event_callback(pa_mainloop_api *io, pa_io_event *e, int fd, pa_io
     struct ipc_data data;
     int ret = 0;
     int size = 0;
+    int total_size = 0;
+    int count = 0;
 
     pa_assert(io);
     pa_assert(u);
@@ -522,13 +527,18 @@ static void io_event_callback(pa_mainloop_api *io, pa_io_event *e, int fd, pa_io
     if (events & PA_IO_EVENT_INPUT) {
         size = sizeof(data);
         memset(&data, 0, size);
-        ret = read(fd, (void *)&data, size);
-        if(ret != -1) {
+        while (total_size != size && count < 100) {
+            ret = read(fd, ((void *)&data)+total_size, size-total_size);
+            if (ret < 0 && errno == EAGAIN)
+                count++;
+            else
+                total_size += ret;
+        }
+        if(total_size == size) {
             pa_log_info("name(%s), role(%s), volume_gain_type(%s)", data.filename, data.role, data.volume_gain_type);
             _simple_play(u, data.filename, data.role, data.volume_gain_type);
-
         } else {
-            pa_log_warn("Fail to read file");
+            pa_log_warn("Fail to read, count(%d), total read size(%d), err(%s)", count, total_size, pa_cstrerror(errno));
         }
     }
 

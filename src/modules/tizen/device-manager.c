@@ -605,6 +605,54 @@ static void device_item_free_func(dm_device *device_item) {
     pa_xfree(device_item);
 }
 
+static pa_proplist* pulse_device_get_proplist(void *pulse_device, pa_device_type_t pdt) {
+    pa_sink *sink = NULL;
+    pa_source *source = NULL;
+
+    if (pdt == PA_DEVICE_TYPE_SINK) {
+        sink = (pa_sink *) pulse_device;
+        return sink->proplist;
+    } else {
+        source = (pa_source *) pulse_device;
+        return source->proplist;
+    }
+}
+
+static pa_core* pulse_device_get_core(void *pulse_device, pa_device_type_t pdt) {
+    pa_sink *sink = NULL;
+    pa_source *source = NULL;
+
+    if (pdt == PA_DEVICE_TYPE_SINK) {
+        sink = (pa_sink *) pulse_device;
+        return sink->core;
+    } else {
+        source = (pa_source *) pulse_device;
+        return source->core;
+    }
+}
+
+static char* pulse_device_get_name(void *pulse_device, pa_device_type_t pdt) {
+    pa_sink *sink = NULL;
+    pa_source *source = NULL;
+
+    if (pdt == PA_DEVICE_TYPE_SINK) {
+        sink = (pa_sink *) pulse_device;
+        return sink->name;
+    } else {
+        source = (pa_source *) pulse_device;
+        return source->name;
+    }
+}
+
+static pa_idxset* pulse_core_get_device_list(pa_core *core, pa_device_type_t pdt) {
+
+    if (pdt == PA_DEVICE_TYPE_SINK) {
+        return core->sinks;
+    } else {
+        return core->sources;
+    }
+}
+
 static pa_bool_t pulse_device_is_alsa(pa_proplist *prop) {
     const char *api_name = NULL;
 
@@ -1004,7 +1052,6 @@ static pa_bool_t pulse_device_class_is_monitor(pa_proplist *prop) {
         return FALSE;
     }
 }
-
 static void* pulse_device_get_sibling_device(void *pulse_device, pa_device_type_t pdt) {
     const char *sysfs_path, *sysfs_path_tmp;
     uint32_t device_idx;
@@ -1013,16 +1060,17 @@ static void* pulse_device_get_sibling_device(void *pulse_device, pa_device_type_
 
     pa_assert(pulse_device);
 
-    if (!(sysfs_path = pa_proplist_gets(PA_DEVICE(pulse_device, pdt)->proplist, "sysfs.path"))) {
-        pa_log_warn("No sysfs.path for '%s'", PA_DEVICE(pulse_device, pdt)->name);
+    if (!(sysfs_path = pa_proplist_gets(pulse_device_get_proplist(pulse_device, pdt), "sysfs.path"))) {
+        pa_log_warn("No sysfs.path for '%s'", pulse_device_get_name(pulse_device, pdt));
         return NULL;
     }
 
-    core = PA_DEVICE(pulse_device, pdt)->core;
-    PA_IDXSET_FOREACH(pulse_device_tmp, PA_DEVICES(core, !pdt), device_idx) {
-        if (!pulse_device_class_is_sound(PA_DEVICE(pulse_device_tmp, pdt)->proplist))
+    core = pulse_device_get_core(pulse_device, pdt);
+
+    PA_IDXSET_FOREACH(pulse_device_tmp, pulse_core_get_device_list(core, !pdt), device_idx) {
+        if (!pulse_device_class_is_sound(pulse_device_get_proplist(pulse_device_tmp, !pdt)))
             continue;
-        sysfs_path_tmp = pa_proplist_gets(PA_DEVICE(pulse_device_tmp, pdt)->proplist, "sysfs.path");
+        sysfs_path_tmp = pa_proplist_gets(pulse_device_get_proplist(pulse_device_tmp, !pdt), "sysfs.path");
         if (sysfs_path_tmp && !strcmp(sysfs_path_tmp, sysfs_path)) {
             return pulse_device_tmp;
         }
@@ -1682,6 +1730,7 @@ static int pulse_device_get_device_type(void *pulse_device, pa_device_type_t pdt
     if (device_class == DM_DEVICE_CLASS_ALSA) {
         if (pulse_device_is_usb(prop)) {
             *device_type = DEVICE_TYPE_USB_AUDIO;
+            *device_profile = NULL;
             *device_name = pa_proplist_gets(prop, PA_PROP_DEVICE_SERIAL);
         } else {
             pa_log_warn("This is alsa device, but not usb. really unknown device");

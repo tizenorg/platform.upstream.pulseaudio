@@ -1148,6 +1148,7 @@ AS_IF([test "x$enable_udev_with_usb_only" != "xyes"],
 
 AM_CONDITIONAL([HAVE_UDEV_ONLY_USB], [test "x$HAVE_UDEV_ONLY_USB" = x1])
 AS_IF([test "x$HAVE_UDEV_ONLY_USB" = "x1"], AC_DEFINE([HAVE_UDEV_ONLY_USB], 1, [Have usb only with udev.]))
+AS_IF([test "x$HAVE_UDEV_ONLY_USB" = "x1"], AC_DEFINE([ENABLE_UDEV_ONLY_USB], 1, [Enable usb only with udev.]))
 
 #### HAL compat support (optional, dependent on UDEV) ####
 AC_ARG_ENABLE([hal-compat],

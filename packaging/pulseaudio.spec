@@ -1,7 +1,7 @@
 %bcond_with pulseaudio_pmapi
 %bcond_with pulseaudio_dlog
 %bcond_with pulseaudio_bt_profile_set
-%bcond_with pulseaudio_udev_with_usb_only
+%bcond_without pulseaudio_udev_with_usb_only
 %bcond_with pulseaudio_with_bluez5
 %bcond_with pulseaudio_samsung_policy
 %bcond_with x
@@ -11,7 +11,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          35
+Release:          36
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org

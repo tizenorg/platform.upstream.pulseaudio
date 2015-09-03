@@ -483,21 +483,21 @@ enum signal_index {
 static pa_bool_t device_type_is_valid(const char *device_type) {
     if (!device_type)
         return FALSE;
-    else if (!strcmp(device_type, DEVICE_TYPE_SPEAKER))
+    else if (pa_streq(device_type, DEVICE_TYPE_SPEAKER))
         return TRUE;
-    else if (!strcmp(device_type, DEVICE_TYPE_RECEIVER))
+    else if (pa_streq(device_type, DEVICE_TYPE_RECEIVER))
         return TRUE;
-    else if (!strcmp(device_type, DEVICE_TYPE_MIC))
+    else if (pa_streq(device_type, DEVICE_TYPE_MIC))
         return TRUE;
-    else if (!strcmp(device_type, DEVICE_TYPE_AUDIO_JACK))
+    else if (pa_streq(device_type, DEVICE_TYPE_AUDIO_JACK))
         return TRUE;
-    else if (!strcmp(device_type, DEVICE_TYPE_BT))
+    else if (pa_streq(device_type, DEVICE_TYPE_BT))
         return TRUE;
-    else if (!strcmp(device_type, DEVICE_TYPE_HDMI))
+    else if (pa_streq(device_type, DEVICE_TYPE_HDMI))
         return TRUE;
-    else if (!strcmp(device_type, DEVICE_TYPE_FORWARDING))
+    else if (pa_streq(device_type, DEVICE_TYPE_FORWARDING))
         return TRUE;
-    else if (!strcmp(device_type, DEVICE_TYPE_USB_AUDIO))
+    else if (pa_streq(device_type, DEVICE_TYPE_USB_AUDIO))
         return TRUE;
     else
         return FALSE;
@@ -523,15 +523,15 @@ static const char* device_direction_to_string(dm_device_direction_t direction) {
 static pa_bool_t device_role_is_valid(const char *device_role) {
     if (!device_role)
         return FALSE;
-    else if (!strcmp(device_role, DEVICE_ROLE_NORMAL))
+    else if (pa_streq(device_role, DEVICE_ROLE_NORMAL))
         return TRUE;
-    else if (!strcmp(device_role, DEVICE_ROLE_VOIP))
+    else if (pa_streq(device_role, DEVICE_ROLE_VOIP))
         return TRUE;
-    else if (!strcmp(device_role, DEVICE_ROLE_LOW_LATENCY))
+    else if (pa_streq(device_role, DEVICE_ROLE_LOW_LATENCY))
         return TRUE;
-    else if (!strcmp(device_role, DEVICE_ROLE_HIGH_LATENCY))
+    else if (pa_streq(device_role, DEVICE_ROLE_HIGH_LATENCY))
         return TRUE;
-    else if (!strcmp(device_role, DEVICE_ROLE_UHQA))
+    else if (pa_streq(device_role, DEVICE_ROLE_UHQA))
         return TRUE;
     else
         return FALSE;
@@ -542,13 +542,13 @@ static dm_device_direction_t device_direction_to_int(const char *device_directio
         return -1;
     }
 
-    if (!strcmp(device_direction, DEVICE_DIRECTION_STR_NONE)) {
+    if (pa_streq(device_direction, DEVICE_DIRECTION_STR_NONE)) {
         return DM_DEVICE_DIRECTION_NONE;
-    } else if (!strcmp(device_direction, DEVICE_DIRECTION_STR_OUT)) {
+    } else if (pa_streq(device_direction, DEVICE_DIRECTION_STR_OUT)) {
         return DM_DEVICE_DIRECTION_OUT;
-    } else if (!strcmp(device_direction, DEVICE_DIRECTION_STR_IN)) {
+    } else if (pa_streq(device_direction, DEVICE_DIRECTION_STR_IN)) {
         return DM_DEVICE_DIRECTION_IN;
-    } else if (!strcmp(device_direction, DEVICE_DIRECTION_STR_BOTH)) {
+    } else if (pa_streq(device_direction, DEVICE_DIRECTION_STR_BOTH)) {
         return DM_DEVICE_DIRECTION_BOTH;
     } else {
         return -1;
@@ -685,7 +685,7 @@ static pa_bool_t pulse_device_is_tizenaudio(void *pulse_device, pa_device_type_t
     }
 
     sink = (pa_sink *) pulse_device;
-    return !strcmp(sink->module->name, "module-tizenaudio-sink");
+    return pa_streq(sink->module->name, "module-tizenaudio-sink");
 }
 
 static pa_bool_t pulse_device_is_usb(pa_proplist *prop) {
@@ -712,11 +712,11 @@ static pa_bool_t pulse_device_is_null(void *pulse_device, pa_device_type_t pdt) 
 
     if (pdt == PA_DEVICE_TYPE_SINK) {
         sink = (pa_sink *) pulse_device;
-        return !strcmp(sink->module->name, "module-null-sink");
+        return pa_streq(sink->module->name, "module-null-sink");
     } else {
         source = (pa_source *) pulse_device;
 
-        return !strcmp(source->module->name, "module-null-source");
+        return pa_streq(source->module->name, "module-null-source");
     }
 }
 
@@ -821,7 +821,7 @@ static int compare_device_profile(const char *device_profile1, const char *devic
         return 0;
     } else if (!device_profile1 || !device_profile2) {
         return 1;
-    } else if (!strcmp(device_profile1, device_profile2)) {
+    } else if (pa_streq(device_profile1, device_profile2)) {
         return 0;
     } else {
         return 1;
@@ -832,7 +832,7 @@ static int compare_device_type(const char *device_type1, const char *device_prof
     if (!device_type1 || !device_type2) {
         return -1;
     }
-    if (!strcmp(device_type1, device_type2)) {
+    if (pa_streq(device_type1, device_type2)) {
         return compare_device_profile(device_profile1, device_profile2);
     }
     return 1;
@@ -861,7 +861,7 @@ static struct device_status_info* _device_manager_get_status_info(pa_idxset *sta
                 return status_info;
             } else if (!status_info->identifier || !identifier) {
                 continue;
-            } else if (!strcmp(status_info->identifier, identifier)) {
+            } else if (pa_streq(status_info->identifier, identifier)) {
                 return status_info;
             } else {
                 continue;
@@ -880,7 +880,7 @@ static struct device_file_info* _device_manager_get_file_info(pa_idxset *file_in
 
     PA_IDXSET_FOREACH(file_info, file_infos, file_idx) {
         if (file_info->device_string) {
-            if (!strcmp(file_info->device_string, device_string)) {
+            if (pa_streq(file_info->device_string, device_string)) {
                 return file_info;
             }
         }
@@ -897,7 +897,7 @@ static dm_device* _device_manager_get_device(pa_idxset *device_list, const char 
         return NULL;
 
     PA_IDXSET_FOREACH(device_item, device_list, device_idx) {
-        if (!strcmp(device_item->type, device_type)) {
+        if (pa_streq(device_item->type, device_type)) {
             return device_item;
         }
     }
@@ -1054,7 +1054,7 @@ static void* pulse_device_get_opposite_sibling_device(void *pulse_device, pa_dev
         if (!pulse_device_class_is_sound(pulse_device_get_proplist(pulse_device_tmp, !pdt)))
             continue;
         sysfs_path_tmp = pa_proplist_gets(pulse_device_get_proplist(pulse_device_tmp, !pdt), "sysfs.path");
-        if (sysfs_path_tmp && !strcmp(sysfs_path_tmp, sysfs_path)) {
+        if (sysfs_path_tmp && pa_streq(sysfs_path_tmp, sysfs_path)) {
             return pulse_device_tmp;
         }
     }
@@ -1191,7 +1191,7 @@ static int compare_device_params(const char *params1, const char *params2) {
     for (state = NULL, key = pa_modargs_iterate(modargs1, &state); key; key = pa_modargs_iterate(modargs1, &state)) {
         value1 = pa_modargs_get_value(modargs1, key, NULL);
         value2 = pa_modargs_get_value(modargs2, key, NULL);
-        if (!value1 || !value2 || strcmp(value1, value2)) {
+        if (!value1 || !value2 || !pa_streq(value1, value2)) {
             ret = 1;
             goto end;
         }
@@ -1200,7 +1200,7 @@ static int compare_device_params(const char *params1, const char *params2) {
     for (state = NULL, key = pa_modargs_iterate(modargs2, &state); key; key = pa_modargs_iterate(modargs2, &state)) {
         value1 = pa_modargs_get_value(modargs1, key, NULL);
         value2 = pa_modargs_get_value(modargs2, key, NULL);
-        if (!value1 || !value2 || strcmp(value1, value2)) {
+        if (!value1 || !value2 || !pa_streq(value1, value2)) {
             ret = 1;
             goto end;
         }
@@ -1287,7 +1287,7 @@ static pa_bool_t pulse_device_same_device_string(void *pulse_device, pa_device_t
         return FALSE;
     }
 
-    return !strcmp(pulse_device_string, device_string);
+    return pa_streq(pulse_device_string, device_string);
 }
 
 static dm_device* _device_item_set_active_profile(dm_device *device_item, const char *device_profile) {
@@ -1323,9 +1323,9 @@ static dm_device* _device_item_set_active_profile(dm_device *device_item, const 
 static int get_profile_priority(const char *device_profile) {
     if (!device_profile) {
         return 0;
-    } else if (!strcmp(device_profile,  DEVICE_PROFILE_BT_SCO)) {
+    } else if (pa_streq(device_profile,  DEVICE_PROFILE_BT_SCO)) {
         return 1;
-    } else if (!strcmp(device_profile,  DEVICE_PROFILE_BT_A2DP)) {
+    } else if (pa_streq(device_profile,  DEVICE_PROFILE_BT_A2DP)) {
         return 2;
     } else {
         return -1;
@@ -1674,7 +1674,7 @@ static int device_type_get_direction(pa_device_manager *dm, const char *device_t
         direction = type_info->direction[correct_d_idx];
     } else {
         /* Actually, only 'audio-jack' should come here */
-        if (!strcmp(device_type, DEVICE_TYPE_AUDIO_JACK)) {
+        if (pa_streq(device_type, DEVICE_TYPE_AUDIO_JACK)) {
             status_info = _device_manager_get_status_info(dm->device_status, type_info->type, type_info->profile, identifier);
             if (status_info->detected_type == DEVICE_DETECTED_AUDIO_JACK_BOTH_DIREC) {
                 direction = DM_DEVICE_DIRECTION_BOTH;
@@ -1870,7 +1870,7 @@ static dm_device* handle_not_predefined_device(pa_device_manager *dm, void *puls
        Find opposite direction sink/sources on same device.
        If Found, add sink or source to same device_item.
     */
-    if (!strcmp(device_type, DEVICE_TYPE_USB_AUDIO)) {
+    if (pa_streq(device_type, DEVICE_TYPE_USB_AUDIO)) {
         if (pdt == PA_DEVICE_TYPE_SINK) {
             sink = (pa_sink *) pulse_device;
             if ((sibling_source = pulse_device_get_opposite_sibling_device(sink, PA_DEVICE_TYPE_SINK))) {
@@ -1963,7 +1963,7 @@ static pa_bool_t pulse_device_loaded_with_param(pa_core *core, pa_device_type_t 
         PA_IDXSET_FOREACH(sink, core->sinks, device_idx) {
             if (pulse_device_class_is_monitor(sink->proplist))
                 continue;
-            if (!strcmp(device_string, pulse_device_get_device_string(sink, pdt))) {
+            if (pa_streq(device_string, pulse_device_get_device_string(sink, pdt))) {
                 if (!compare_device_params_with_module_args(sink, pdt, params)) {
                     return TRUE;
                 }
@@ -1973,7 +1973,7 @@ static pa_bool_t pulse_device_loaded_with_param(pa_core *core, pa_device_type_t 
         PA_IDXSET_FOREACH(source, core->sources, device_idx) {
             if (pulse_device_class_is_monitor(source->proplist))
                 continue;
-            if (!strcmp(device_string, pulse_device_get_device_string(source, pdt))) {
+            if (pa_streq(device_string, pulse_device_get_device_string(source, pdt))) {
                 if (!compare_device_params_with_module_args(source, pdt, params)) {
                     return TRUE;
                 }
@@ -2186,7 +2186,7 @@ static void handle_predefined_device_loaded(void *pulse_device, pa_device_type_t
     identifier = pulse_device_get_identifier(pulse_device, pdt, device_class);
     PA_IDXSET_FOREACH(type_info, dm->type_infos, type_idx) {
         /* foreach matching types (which has device_string-role) */
-        if ((device_string_tmp = device_type_info_get_device_string(type_info, role, pdt)) && !strcmp(device_string_tmp, device_string)) {
+        if ((device_string_tmp = device_type_info_get_device_string(type_info, role, pdt)) && pa_streq(device_string_tmp, device_string)) {
             /*
                Check device_item is already exists.
                If already exists, add loaded sink or source to that.
@@ -2556,7 +2556,7 @@ static int load_builtin_devices(pa_device_manager *dm) {
             }
 
             PA_HASHMAP_FOREACH_KEY(params, file_info->roles, role_state, role) {
-                if (!strcmp(role, DEVICE_ROLE_NORMAL))
+                if (pa_streq(role, DEVICE_ROLE_NORMAL))
                     continue;
                 pa_log_debug("load sink for role %s", role);
                 if (!pulse_device_loaded_with_param(dm->core, PA_DEVICE_TYPE_SINK, file_info->device_string, params)) {
@@ -2579,7 +2579,8 @@ static int load_builtin_devices(pa_device_manager *dm) {
             }
 
             PA_HASHMAP_FOREACH_KEY(params, file_info->roles, role_state, role) {
-                if (!strcmp(role, DEVICE_ROLE_NORMAL)) continue;
+                if (pa_streq(role, DEVICE_ROLE_NORMAL))
+                    continue;
                 pa_log_debug("load source for role %s", role);
                 if (!pulse_device_loaded_with_param(dm->core, PA_DEVICE_TYPE_SOURCE, file_info->device_string, params)) {
                     if (!load_device(dm->core, PA_DEVICE_TYPE_SOURCE, file_info->device_string, params)) {
@@ -2994,7 +2995,7 @@ static int handle_device_disconnected(pa_device_manager *dm, const char *device_
     status_info->detected = DEVICE_NOT_DETECTED;
 
     PA_IDXSET_FOREACH(device_item, dm->device_list, device_idx) {
-        if (!strcmp(device_item->type, device_type)) {
+        if (pa_streq(device_item->type, device_type)) {
             if((profile_item = _device_item_get_profile(device_item, device_profile))) {
                 destroy_device_profile(profile_item, dm);
             } else {
@@ -3017,7 +3018,7 @@ static int handle_device_status_changed(pa_device_manager *dm, const char *devic
     pa_assert(device_type_is_valid(device_type));
 
     pa_log_debug("Device Status Changed, type : '%s', profile : '%s', identifier : '%s', detected_status : %d", device_type, device_profile, identifier, detected_status);
-    if (!strcmp(device_type, DEVICE_TYPE_AUDIO_JACK)) {
+    if (pa_streq(device_type, DEVICE_TYPE_AUDIO_JACK)) {
         if (detected_status == EARJACK_DISCONNECTED) {
             handle_device_disconnected(dm, device_type, device_profile, identifier);
         } else if (detected_status == EARJACK_TYPE_SPK_ONLY) {
@@ -3028,7 +3029,7 @@ static int handle_device_status_changed(pa_device_manager *dm, const char *devic
             pa_log_warn("Got invalid audio-jack detected value");
             return -1;
         }
-    } else if (!strcmp(device_type, DEVICE_TYPE_BT) && device_profile && !strcmp(device_profile, DEVICE_PROFILE_BT_SCO)) {
+    } else if (pa_streq(device_type, DEVICE_TYPE_BT) && device_profile && pa_streq(device_profile, DEVICE_PROFILE_BT_SCO)) {
         if (detected_status == BT_SCO_DISCONNECTED) {
             handle_device_disconnected(dm, device_type, device_profile, identifier);
         } else if (detected_status == BT_SCO_CONNECTED) {
@@ -3037,7 +3038,7 @@ static int handle_device_status_changed(pa_device_manager *dm, const char *devic
             pa_log_warn("Got invalid bt-sco detected value");
             return -1;
         }
-    } else if (!strcmp(device_type, DEVICE_TYPE_HDMI)) {
+    } else if (pa_streq(device_type, DEVICE_TYPE_HDMI)) {
         if (detected_status == HDMI_AUDIO_DISCONNECTED) {
             handle_device_disconnected(dm, device_type, device_profile, identifier);
         } else if (detected_status >= HDMI_AUDIO_AVAILABLE) {
@@ -3049,7 +3050,7 @@ static int handle_device_status_changed(pa_device_manager *dm, const char *devic
             pa_log_warn("Got invalid hdmi detected value");
             return -1;
         }
-    } else if (!strcmp(device_type, DEVICE_TYPE_FORWARDING)) {
+    } else if (pa_streq(device_type, DEVICE_TYPE_FORWARDING)) {
         if (detected_status == FORWARDING_DISCONNECTED) {
             handle_device_disconnected(dm, device_type, device_profile, identifier);
         } else if (detected_status == FORWARDING_CONNECTED) {
@@ -3121,11 +3122,11 @@ static pa_idxset* device_type_status_init(pa_idxset *type_infos) {
             }
         } else {
             for (avail_cond_idx = 0, avail_cond_num = 0; avail_cond_idx < DEVICE_AVAIL_COND_NUM_MAX; avail_cond_idx++) {
-                if (!strcmp(type_info->avail_condition[avail_cond_idx], "")) {
+                if (pa_streq(type_info->avail_condition[avail_cond_idx], "")) {
                     avail_cond_num++;
                 }
             }
-            if (avail_cond_num == 1 && !strcmp(type_info->avail_condition[correct_avail_cond], DEVICE_AVAIL_CONDITION_STR_PULSE)) {
+            if (avail_cond_num == 1 && pa_streq(type_info->avail_condition[correct_avail_cond], DEVICE_AVAIL_CONDITION_STR_PULSE)) {
                 /* device types which don't need to be detected from other-side, let's just set 'detected'*/
                 status_info->detected = DEVICE_DETECTED;
             } else {
@@ -3215,7 +3216,7 @@ static DBusHandlerResult dbus_filter_device_detect_handler(DBusConnection *c, DB
             dbus_bool_t value;
             char *name;
             dbus_message_iter_get_basic(&variant_iter, &value);
-            if (!strcmp(property_name, "Playing")) {
+            if (pa_streq(property_name, "Playing")) {
                 dm_device *device_item;
                 pa_log_debug("SCO Playing : %d", value);
                 if ((device_item = _device_manager_get_device(dm->device_list, DEVICE_TYPE_BT))) {
@@ -3224,7 +3225,7 @@ static DBusHandlerResult dbus_filter_device_detect_handler(DBusConnection *c, DB
                     else
                         _device_item_set_active_profile_auto(device_item);
                 }
-            } else if (!strcmp(property_name, "Connected")) {
+            } else if (pa_streq(property_name, "Connected")) {
                 pa_log_debug("HFP Connection : %d", value);
                 if (value) {
                     method_call_bt_get_name(c, dbus_message_get_path(s), &name);
@@ -3492,7 +3493,7 @@ static int method_call_bt_sco_get_property(DBusConnection *conn, pa_bool_t *is_w
         dbus_message_iter_get_basic(&dict_entry, &property);
         pa_log_debug("String received = %s", property);
         if (property) {
-            if (!strcmp("codec", property) && is_wide_band) {
+            if (pa_streq("codec", property) && is_wide_band) {
                 dbus_message_iter_next(&dict_entry);
                 dbus_message_iter_recurse(&dict_entry, &dict_entry_val);
                 if (dbus_message_iter_get_arg_type(&dict_entry_val) != DBUS_TYPE_UINT32)
@@ -3500,7 +3501,7 @@ static int method_call_bt_sco_get_property(DBusConnection *conn, pa_bool_t *is_w
                 dbus_message_iter_get_basic(&dict_entry_val, &codec);
                 pa_log_debug("Codec = [%d]", codec);
                 *is_wide_band= codec == BT_MSBC_CODEC_ID ? TRUE : FALSE;
-            } else if (!strcmp("nrec", property) && nrec) {
+            } else if (pa_streq("nrec", property) && nrec) {
                 dbus_message_iter_next(&dict_entry);
                 dbus_message_iter_recurse(&dict_entry, &dict_entry_val);
                 if (dbus_message_iter_get_arg_type(&dict_entry_val) != DBUS_TYPE_BOOLEAN)
@@ -3662,7 +3663,7 @@ static void handle_load_sink(DBusConnection *conn, DBusMessage *msg, void *userd
                                        DBUS_TYPE_STRING, &role,
                                        DBUS_TYPE_INVALID));
 
-    if (!strcmp(device_profile, "none"))
+    if (pa_streq(device_profile, "none"))
         device_profile = NULL;
     pa_device_manager_load_sink(device_type, device_profile, role, dm);
     pa_assert_se(dbus_connection_send(conn, reply, NULL));
@@ -3690,7 +3691,7 @@ static void handle_test_device_status_change(DBusConnection *conn, DBusMessage *
     }
 
     pa_log_debug("handle_test_device_status_change, type:%s, profile:%s, status:%d", device_type, device_profile, status);
-    if (!strcmp(device_profile, "none"))
+    if (pa_streq(device_profile, "none"))
         device_profile = NULL;
 
     handle_device_status_changed(dm, device_type, device_profile, NULL,  NULL, status);
@@ -4016,7 +4017,7 @@ int pa_device_manager_load_sink(const char *device_type, const char *device_prof
 
     pa_log_debug("load sink for '%s,%s'", device_type, role);
     PA_IDXSET_FOREACH(device_item, dm->device_list, device_idx) {
-        if (!strcmp(device_type, device_item->type)) {
+        if (pa_streq(device_type, device_item->type)) {
             if ((profile_item = _device_item_get_profile(device_item, device_profile))) {
                 if (pa_hashmap_get(profile_item->playback_devices, role)) {
                     pa_log_warn("Proper sink for '%s:%s' already loaded", device_type, role);
@@ -4073,7 +4074,7 @@ int pa_device_manager_load_source(const char *device_type, const char *device_pr
     pa_log_debug("load source for '%s,%s'", device_type, role);
 
     PA_IDXSET_FOREACH(device_item, dm->device_list, device_idx) {
-        if (!strcmp(device_type, device_item->type)) {
+        if (pa_streq(device_type, device_item->type)) {
             if ((profile_item = _device_item_get_profile(device_item, device_profile))) {
                 if (pa_hashmap_get(profile_item->capture_devices, role)) {
                     pa_log_warn("Proper source for '%s:%s' already loaded", device_type, role);

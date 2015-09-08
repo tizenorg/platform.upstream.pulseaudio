@@ -1157,7 +1157,7 @@ static void dump_stream_map (pa_stream_manager *m) {
     while (m->stream_infos && (s = pa_hashmap_iterate(m->stream_infos, &state, (const void **)&role))) {
         pa_log_debug("[role : %s]", role);
         pa_log_debug("  - priority   : %d", s->priority);
-        pa_log_debug("  - route-type : %d (0:auto,1:auto-all,2:manual,3:manual-all)", s->route_type);
+        pa_log_debug("  - route-type : %d (0:auto,1:auto-all,2:manual)", s->route_type);
         pa_log_debug("  - volume-types : in[%s], out[%s]", s->volume_type[STREAM_DIRECTION_IN], s->volume_type[STREAM_DIRECTION_OUT]);
         pa_log_debug("  - avail-in-devices");
         PA_IDXSET_FOREACH(name, s->idx_avail_in_devices, idx)
@@ -1739,7 +1739,7 @@ static pa_bool_t update_the_highest_priority_stream(pa_stream_manager *m, proces
 }
 
 static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t command, stream_type_t type, void *stream, pa_stream_manager *m) {
-    char *device_name = NULL;
+    char *device_none = NULL;
     const char *p_idx = NULL;
     uint32_t parent_idx = 0;
     stream_parent *sp = NULL;
@@ -1748,7 +1748,7 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
     pa_stream_manager_hook_data_for_route *route_data = NULL;
     stream_info *si;
     pa_idxset *avail_devices;
-    int list_len;
+    uint32_t list_len = 0;
 
     pa_assert(hook_data);
     pa_assert(m);
@@ -1758,24 +1758,24 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
     case NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT: {
         select_data = (pa_stream_manager_hook_data_for_select*)hook_data;
         si = pa_hashmap_get(m->stream_infos, select_data->stream_role);
+        select_data->route_type = si->route_type;
         avail_devices = (type==STREAM_SINK_INPUT)?si->idx_avail_out_devices:si->idx_avail_in_devices;
         list_len = pa_idxset_size(avail_devices);
-        select_data->route_type = si->route_type;
-        device_name = pa_idxset_get_by_data(avail_devices, "none", NULL);
-        if (list_len == 1 && pa_streq(device_name, "none")) {
-            /* no available devices for this role */
-        } else {
-            select_data->idx_avail_devices = avail_devices;
-            if (si->route_type == STREAM_ROUTE_TYPE_MANUAL) {
-                p_idx = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
-                if (p_idx && !pa_atou(p_idx, &parent_idx)) {
-                    /* find parent idx, it's device info. and it's stream idxs */
-                    sp = pa_hashmap_get(m->stream_parents, (const void*)parent_idx);
-                    if (sp)
-                        select_data->idx_manual_devices = (type==STREAM_SINK_INPUT)?(sp->idx_route_out_devices):(sp->idx_route_in_devices);
-                    else
-                        pa_log_warn("Failed to get the stream parent of idx(%u)", idx);
-                }
+        device_none = pa_idxset_get_by_data(avail_devices, "none", NULL);
+        if (list_len == 0 || device_none) {
+            pa_log_warn("there is no available device, stream_type(%d)", type);
+            break;
+        }
+        select_data->idx_avail_devices = avail_devices;
+        if (si->route_type == STREAM_ROUTE_TYPE_MANUAL) {
+            p_idx = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
+            if (p_idx && !pa_atou(p_idx, &parent_idx)) {
+                /* find parent idx, it's device info. and it's stream idxs */
+                sp = pa_hashmap_get(m->stream_parents, (const void*)parent_idx);
+                if (sp)
+                    select_data->idx_manual_devices = (type==STREAM_SINK_INPUT)?(sp->idx_route_out_devices):(sp->idx_route_in_devices);
+                else
+                    pa_log_warn("Failed to get the stream parent of idx(%u)", idx);
             }
         }
         break;
@@ -1786,8 +1786,9 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
         route_data = (pa_stream_manager_hook_data_for_route*)hook_data;
         si = pa_hashmap_get(m->stream_infos, route_data->stream_role);
         avail_devices = (type==STREAM_SINK_INPUT)?si->idx_avail_out_devices:si->idx_avail_in_devices;
-        list_len = pa_idxset_size(avail_devices);
         route_data->route_type = si->route_type;
+        list_len = pa_idxset_size(avail_devices);
+        device_none = pa_idxset_get_by_data(avail_devices, "none", NULL);
 
         if (command == NOTIFY_COMMAND_CHANGE_ROUTE_START_WITH_NEW_DATA)
             p_idx = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
@@ -1800,18 +1801,17 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
         } else
            pa_log_warn("Could not get the parent id of this stream, but keep going...");
 
-        device_name = pa_idxset_get_by_data(avail_devices, "none", NULL);
-        if (list_len == 1 && pa_streq(device_name, "none")) {
-            /* no available devices for this role */
-        } else {
-            route_data->idx_avail_devices = avail_devices;
-            if (si->route_type == STREAM_ROUTE_TYPE_MANUAL) {
-                if (sp) {
-                    route_data->idx_manual_devices = (type==STREAM_SINK_INPUT)?(sp->idx_route_out_devices):(sp->idx_route_in_devices);
-                    route_data->idx_streams = (type==STREAM_SINK_INPUT)?(sp->idx_sink_inputs):(sp->idx_source_outputs);
-                } else
-                    pa_log_warn("Failed to get the stream parent of idx(%u)", parent_idx);
-            }
+        if (list_len == 0 || device_none) {
+            pa_log_warn("there is no available device, stream_type(%d)", type);
+            break;
+        }
+        route_data->idx_avail_devices = avail_devices;
+        if (si->route_type == STREAM_ROUTE_TYPE_MANUAL) {
+            if (sp) {
+                route_data->idx_manual_devices = (type==STREAM_SINK_INPUT)?(sp->idx_route_out_devices):(sp->idx_route_in_devices);
+                route_data->idx_streams = (type==STREAM_SINK_INPUT)?(sp->idx_sink_inputs):(sp->idx_source_outputs);
+            } else
+                pa_log_warn("Failed to get the stream parent of idx(%u)", parent_idx);
         }
         break;
     }

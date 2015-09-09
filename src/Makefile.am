@@ -793,6 +793,131 @@ libpulsecommon_@PA_MAJORMINOR@_la_LIBADD += $(DLOG_LIBS)
 endif
 
 ###################################
+#         Pulsecore headers       #
+###################################
+
+pulsecoreinclude_HEADERS = \
+		pulsecore/arpa-inet.h \
+		pulsecore/asyncmsgq.h \
+		pulsecore/asyncq.h \
+		pulsecore/atomic.h \
+		pulsecore/aupdate.h \
+		pulsecore/auth-cookie.h \
+		pulsecore/authkey.h \
+		pulsecore/avahi-wrap.h \
+		pulsecore/bitset.h \
+		pulsecore/card.h \
+		pulsecore/cli-command.h \
+		pulsecore/client.h \
+		pulsecore/cli.h \
+		pulsecore/cli-text.h \
+		pulsecore/conf-parser.h \
+		pulsecore/core-error.h \
+		pulsecore/core.h \
+		pulsecore/core-rtclock.h \
+		pulsecore/core-scache.h \
+		pulsecore/core-subscribe.h \
+		pulsecore/core-util.h \
+		pulsecore/cpu-arm.h \
+		pulsecore/cpu.h \
+		pulsecore/cpu-orc.h \
+		pulsecore/cpu-x86.h \
+		pulsecore/creds.h \
+		pulsecore/database.h \
+		pulsecore/dbus-shared.h \
+		pulsecore/dbus-util.h \
+		pulsecore/device-port.h \
+		pulsecore/dynarray.h \
+		pulsecore/endianmacros.h \
+		pulsecore/esound.h \
+		pulsecore/fdsem.h \
+		pulsecore/flist.h \
+		pulsecore/g711.h \
+		pulsecore/hashmap.h \
+		pulsecore/hook-list.h \
+		pulsecore/i18n.h \
+		pulsecore/idxset.h \
+		pulsecore/iochannel.h \
+		pulsecore/ioline.h \
+		pulsecore/ipacl.h \
+		pulsecore/llist.h \
+		pulsecore/lock-autospawn.h \
+		pulsecore/log.h \
+		pulsecore/ltdl-helper.h \
+		pulsecore/macro.h \
+		pulsecore/mcalign.h \
+		pulsecore/memblock.h \
+		pulsecore/memblockq.h \
+		pulsecore/memchunk.h \
+		pulsecore/memtrap.h \
+		pulsecore/mime-type.h \
+		pulsecore/mix.h \
+		pulsecore/modargs.h \
+		pulsecore/modinfo.h \
+		pulsecore/module.h \
+		pulsecore/msgobject.h \
+		pulsecore/mutex.h \
+		pulsecore/namereg.h \
+		pulsecore/native-common.h \
+		pulsecore/object.h \
+		pulsecore/once.h \
+		pulsecore/packet.h \
+		pulsecore/parseaddr.h \
+		pulsecore/pdispatch.h \
+		pulsecore/pid.h \
+		pulsecore/pipe.h \
+		pulsecore/play-memblockq.h \
+		pulsecore/play-memchunk.h \
+		pulsecore/poll.h \
+		pulsecore/proplist-util.h \
+		pulsecore/protocol-cli.h \
+		pulsecore/protocol-dbus.h \
+		pulsecore/protocol-esound.h \
+		pulsecore/protocol-http.h \
+		pulsecore/protocol-native.h \
+		pulsecore/protocol-simple.h \
+		pulsecore/pstream.h \
+		pulsecore/pstream-util.h \
+		pulsecore/queue.h \
+		pulsecore/random.h \
+		pulsecore/ratelimit.h \
+		pulsecore/refcnt.h \
+		pulsecore/remap.h \
+		pulsecore/resampler.h \
+		pulsecore/rtkit.h \
+		pulsecore/rtpoll.h \
+		pulsecore/sample-util.h \
+		pulsecore/sconv.h \
+		pulsecore/sconv-s16be.h \
+		pulsecore/sconv-s16le.h \
+		pulsecore/semaphore.h \
+		pulsecore/shared.h \
+		pulsecore/shm.h \
+		pulsecore/sink.h \
+		pulsecore/sink-input.h \
+		pulsecore/sioman.h \
+		pulsecore/sndfile-util.h \
+		pulsecore/socket-client.h \
+		pulsecore/socket.h \
+		pulsecore/socket-server.h \
+		pulsecore/socket-util.h \
+		pulsecore/sound-file.h \
+		pulsecore/sound-file-stream.h \
+		pulsecore/source.h \
+		pulsecore/source-output.h \
+		pulsecore/start-child.h \
+		pulsecore/strbuf.h \
+		pulsecore/strlist.h \
+		pulsecore/tagstruct.h \
+		pulsecore/thread.h \
+		pulsecore/thread-mq.h \
+		pulsecore/time-smoother.h \
+		pulsecore/tokenizer.h \
+		pulsecore/usergroup.h \
+		pulsecore/x11prop.h \
+		pulsecore/x11wrap.h
+
+###################################
 #         Client library          #
 ###################################
 

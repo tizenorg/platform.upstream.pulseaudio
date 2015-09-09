@@ -11,7 +11,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          39
+Release:          40
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -463,10 +463,12 @@ fi
 %manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_includedir}/pulse/*
+%{_includedir}/pulsecore/*
 %{_libdir}/libpulse.so
 %{_libdir}/libpulse-simple.so
 %{_libdir}/libpulse-mainloop-glib.so
 %{_libdir}/pkgconfig/libpulse*.pc
+%{_libdir}/pkgconfig/pulsecore.pc
 %{_datadir}/vala/vapi/libpulse.vapi
 # cmake stuff
 %{_libdir}/cmake/PulseAudio/PulseAudioConfig.cmake

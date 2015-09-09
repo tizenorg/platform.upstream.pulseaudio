@@ -50,7 +50,7 @@ dist_vapi_DATA = \
 		vala/libpulse-mainloop-glib.deps vala/libpulse-mainloop-glib.vapi
 
 pkgconfigdir = $(libdir)/pkgconfig
-pkgconfig_DATA = libpulse.pc libpulse-simple.pc pulseaudio-module-devel.pc
+pkgconfig_DATA = libpulse.pc libpulse-simple.pc pulseaudio-module-devel.pc pulsecore.pc
 
 moduledev_DATA = pulsecore-config.h src/pulsecore/*.h
 moduledevdir   = $(includedir)/pulsemodule/pulsecore

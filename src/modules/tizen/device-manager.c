@@ -1462,7 +1462,6 @@ static void destroy_device_item(dm_device *device_item, pa_device_manager *dm) {
     pa_log_debug("Destroy device item which of type is %s", device_item->type);
 
     _device_list_remove_device(dm->device_list, device_item, dm);
-    notify_device_connection_changed(device_item, FALSE, dm);
 
     device_item_free_func(device_item);
 }
@@ -1625,6 +1624,25 @@ static dm_device_profile* _device_profile_add_source(dm_device_profile *profile_
         return NULL;
 
     return profile_item;
+}
+
+static int _device_profile_get_size(dm_device_profile *profile_item, unsigned int *playback_num, unsigned int *capture_num) {
+    if (!profile_item || !playback_num || !capture_num) {
+        pa_log_error("Invalid Parameter");
+        return -1;
+    }
+
+    if (!(profile_item->playback_devices))
+        *playback_num = 0;
+    else
+        *playback_num = pa_hashmap_size(profile_item->playback_devices);
+
+    if (!(profile_item->capture_devices))
+        *capture_num = 0;
+    else
+        *capture_num = pa_hashmap_size(profile_item->capture_devices);
+
+    return 0;
 }
 
 
@@ -2253,7 +2271,17 @@ static void handle_sink_unloaded(pa_sink *sink, pa_device_manager *dm) {
             if (profile_item->playback_devices) {
                 PA_HASHMAP_FOREACH_KEY(sink_iter, profile_item->playback_devices, state, role) {
                     if (sink_iter == sink) {
+                        unsigned int profile_playback_size = 0, profile_capture_size = 0, item_size = 0;
                         pa_log_debug("device '%s' have this sink", device_item->name);
+                        _device_profile_get_size(profile_item, &profile_playback_size, &profile_capture_size);
+                        item_size = _device_item_get_size(device_item);
+                        pa_log_debug("profile playback size : %u, capture size : %u, item size : %u", profile_playback_size, profile_capture_size, item_size);
+                        if (profile_playback_size == 1 && profile_capture_size == 0) {
+                            if (item_size == 1) {
+                                pa_log_debug("notify device disconnected");
+                                notify_device_connection_changed(device_item, FALSE, dm);
+                            }
+                        }
                         _device_profile_remove_sink(profile_item, role);
                     }
                 }
@@ -2305,7 +2333,18 @@ static void handle_source_unloaded(pa_source *source, pa_device_manager *dm) {
             if (profile_item->capture_devices) {
                 PA_HASHMAP_FOREACH_KEY(source_iter, profile_item->capture_devices, state, role) {
                     if (source_iter == source) {
+                        unsigned int profile_playback_size = 0, profile_capture_size = 0, item_size = 0;
                         pa_log_debug("device '%s' have this source", device_item->name);
+                        _device_profile_get_size(profile_item, &profile_playback_size, &profile_capture_size);
+                        item_size = _device_item_get_size(device_item);
+                        pa_log_debug("profile playback size : %u, capture size : %u, item size : %u", profile_playback_size, profile_capture_size, item_size);
+                        if (profile_capture_size == 1 && profile_playback_size == 0) {
+                            if (item_size == 1) {
+                                pa_log_debug("notify device disconnected");
+                                notify_device_connection_changed(device_item, FALSE, dm);
+                            }
+                        }
+
                         _device_profile_remove_source(profile_item, role);
                     }
                 }
@@ -2997,6 +3036,7 @@ static int handle_device_disconnected(pa_device_manager *dm, const char *device_
     PA_IDXSET_FOREACH(device_item, dm->device_list, device_idx) {
         if (pa_streq(device_item->type, device_type)) {
             if((profile_item = _device_item_get_profile(device_item, device_profile))) {
+                notify_device_connection_changed(profile_item, FALSE, dm);
                 destroy_device_profile(profile_item, dm);
             } else {
                 pa_log_debug("no matching profile");

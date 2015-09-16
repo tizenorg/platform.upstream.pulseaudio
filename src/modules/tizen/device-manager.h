@@ -34,7 +34,7 @@ typedef enum dm_device_changed_into_type {
 } dm_device_changed_info_t;
 
 typedef enum dm_device_state_type {
-    DM_DEVICE_STATE_DEACTIVATED,
+    DM_DEVICE_STATE_DEACTIVATED = 0,
     DM_DEVICE_STATE_ACTIVATED
 } dm_device_state_t;
 
@@ -60,8 +60,8 @@ dm_device* pa_device_manager_get_device_by_id(pa_device_manager *dm, uint32_t id
 
 pa_sink* pa_device_manager_get_sink(dm_device *device, const char *role);
 pa_source* pa_device_manager_get_source(dm_device *device, const char *role);
-void pa_device_manager_set_device_state(dm_device *device, dm_device_state_t state);
-dm_device_state_t pa_device_manager_get_device_state(dm_device *device);
+void pa_device_manager_set_device_state(dm_device *device, dm_device_direction_t direction, dm_device_state_t state);
+dm_device_state_t pa_device_manager_get_device_state(dm_device *device_item, dm_device_direction_t direction);
 uint32_t pa_device_manager_get_device_id(dm_device *device);
 const char* pa_device_manager_get_device_type(dm_device *device);
 const char* pa_device_manager_get_device_subtype(dm_device *device);

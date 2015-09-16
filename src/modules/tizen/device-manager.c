@@ -208,6 +208,7 @@ static const char* const valid_alsa_device_modargs[] = {
 #define MAKE_SINK(s) ((pa_sink*) (s))
 #define MAKE_SOURCE(s) ((pa_source*) (s))
 
+#define COMPOUND_STATE(d) (((dm_device_profile*)d)->playback_state | ((dm_device_profile*)d)->capture_state)
 
 #define BT_CVSD_CODEC_ID 1 // narrow-band
 #define BT_MSBC_CODEC_ID 2 // wide-band
@@ -320,7 +321,8 @@ struct dm_device {
 typedef struct dm_device_profile {
     char *profile;
     dm_device_direction_t direction;
-    dm_device_state_t state;
+    dm_device_state_t playback_state;
+    dm_device_state_t capture_state;
 
     /* Can get proper sink/source in hashmaps with key(=device_role) */
     pa_hashmap *playback_devices;
@@ -963,7 +965,7 @@ static void dump_device_profile_info(dm_device_profile *profile_item) {
 
     pa_log_debug("    profile   : %s", profile_item->profile);
     pa_log_debug("    direction : %s", device_direction_to_string(profile_item->direction));
-    pa_log_debug("    activated : %s", profile_item->state == DM_DEVICE_STATE_ACTIVATED ? "activated" : "not activated");
+    pa_log_debug("    activated : %s", COMPOUND_STATE(profile_item) == DM_DEVICE_STATE_ACTIVATED ? "activated" : "not activated");
     dump_playback_device_list(profile_item->playback_devices);
     dump_capture_device_list(profile_item->capture_devices);
 }
@@ -1508,7 +1510,8 @@ static dm_device_profile* create_device_profile(const char *device_profile, dm_d
     }
     profile_item->profile = device_profile ? strdup(device_profile) : NULL;
     profile_item->direction = direction;
-    profile_item->state = DM_DEVICE_STATE_DEACTIVATED;
+    profile_item->playback_state = DM_DEVICE_STATE_DEACTIVATED;
+    profile_item->capture_state = DM_DEVICE_STATE_DEACTIVATED;
     profile_item->playback_devices = playback;
     profile_item->capture_devices = capture;
 
@@ -1655,11 +1658,20 @@ static dm_device_profile* _device_profile_remove_source(dm_device_profile *profi
     return profile_item;
 }
 
-void _device_profile_set_state(dm_device_profile *profile_item, dm_device_state_t state) {
+void _device_profile_set_state(dm_device_profile *profile_item,  dm_device_direction_t direction, dm_device_state_t state) {
+    dm_device_state_t prev_state, new_state;
     pa_assert(profile_item);
 
-    if (profile_item->state != state) {
-        profile_item->state = state;
+    prev_state = COMPOUND_STATE(profile_item);
+    pa_log_debug("previous playback_state : %d, capture_state : %d => state %d", profile_item->playback_state, profile_item->capture_state, prev_state);
+    if (direction & DM_DEVICE_DIRECTION_IN)
+        profile_item->capture_state = state;
+    if (direction & DM_DEVICE_DIRECTION_OUT)
+        profile_item->playback_state = state;
+    new_state = COMPOUND_STATE(profile_item);
+    pa_log_debug("new playback_state : %d, capture_state : %d => state %d", profile_item->playback_state, profile_item->capture_state, new_state);
+
+    if (prev_state != new_state) {
         notify_device_info_changed(profile_item->device_item, DM_DEVICE_CHANGED_INFO_STATE, profile_item->device_item->dm);
     }
 }
@@ -3036,7 +3048,8 @@ static int handle_device_disconnected(pa_device_manager *dm, const char *device_
     PA_IDXSET_FOREACH(device_item, dm->device_list, device_idx) {
         if (pa_streq(device_item->type, device_type)) {
             if((profile_item = _device_item_get_profile(device_item, device_profile))) {
-                notify_device_connection_changed(profile_item, FALSE, dm);
+                if (_device_item_get_size(device_item) == 1)
+                    notify_device_connection_changed(device_item, FALSE, dm);
                 destroy_device_profile(profile_item, dm);
             } else {
                 pa_log_debug("no matching profile");
@@ -3335,6 +3348,7 @@ static void send_device_connected_signal(dm_device *device_item, pa_bool_t conne
     DBusMessageIter msg_iter, device_iter;
     dm_device_profile *profile_item;
     dbus_bool_t _connected = connected;
+    dm_device_state_t compound_state;
     dbus_int32_t device_id;
 
     pa_assert(device_item);
@@ -3353,10 +3367,11 @@ static void send_device_connected_signal(dm_device *device_item, pa_bool_t conne
     }
 
     device_id = (dbus_int32_t) device_item->id;
+    compound_state = COMPOUND_STATE(profile_item);
     dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &device_id);
     dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_STRING, &device_item->type);
     dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &profile_item->direction);
-    dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &profile_item->state);
+    dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &compound_state);
     dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_STRING, &device_item->name);
     pa_assert_se(dbus_message_iter_close_container(&msg_iter, &device_iter));
     dbus_message_iter_append_basic(&msg_iter, DBUS_TYPE_BOOLEAN, &_connected);
@@ -3370,6 +3385,7 @@ static void send_device_info_changed_signal(dm_device *device_item, int changed_
     DBusMessage *signal_msg;
     DBusMessageIter msg_iter, device_iter;
     dm_device_profile *profile_item;
+    dm_device_state_t compound_state;
     dbus_int32_t device_id;
 
     pa_assert(device_item);
@@ -3387,10 +3403,11 @@ static void send_device_info_changed_signal(dm_device *device_item, int changed_
         return;
     }
     device_id = (dbus_int32_t) device_item->id;
+    compound_state = COMPOUND_STATE(profile_item);
     dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &device_id);
     dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_STRING, &device_item->type);
     dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &profile_item->direction);
-    dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &profile_item->state);
+    dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &compound_state);
     dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_STRING, &device_item->name);
     pa_assert_se(dbus_message_iter_close_container(&msg_iter, &device_iter));
     dbus_message_iter_append_basic(&msg_iter, DBUS_TYPE_INT32, &changed_type);
@@ -3444,9 +3461,9 @@ static pa_bool_t device_item_match_for_mask(dm_device *device_item, int device_f
     }
     if (need_to_check_for_state) {
         match = FALSE;
-        if ((profile_item->state == DM_DEVICE_STATE_DEACTIVATED) && (device_flags & DEVICE_STATE_DEACTIVATED_FLAG))
+        if ((COMPOUND_STATE(profile_item)== DM_DEVICE_STATE_DEACTIVATED) && (device_flags & DEVICE_STATE_DEACTIVATED_FLAG))
             match = TRUE;
-        else if ((profile_item->state == DM_DEVICE_STATE_ACTIVATED) && (device_flags & DEVICE_STATE_ACTIVATED_FLAG))
+        else if ((COMPOUND_STATE(profile_item) == DM_DEVICE_STATE_ACTIVATED) && (device_flags & DEVICE_STATE_ACTIVATED_FLAG))
             match = TRUE;
         if (match) {
             if (!need_to_check_for_type)
@@ -3610,6 +3627,7 @@ static void handle_get_connected_device_list(DBusConnection *conn, DBusMessage *
     DBusMessageIter msg_iter, array_iter, device_iter;
     dm_device *device_item;
     dm_device_profile *profile_item;
+    dm_device_state_t compound_state;
     uint32_t device_idx;
     dbus_int32_t device_id;
     int mask_flags;
@@ -3636,13 +3654,14 @@ static void handle_get_connected_device_list(DBusConnection *conn, DBusMessage *
             pa_log_error("no active profile");
             continue;
         }
+        compound_state = COMPOUND_STATE(profile_item);
         if (device_item_match_for_mask(device_item,  mask_flags, dm)) {
             device_id = (dbus_int32_t)device_item->id;
             pa_assert_se(dbus_message_iter_open_container(&array_iter, DBUS_TYPE_STRUCT, NULL, &device_iter));
             dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &device_id);
             dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_STRING, &profile_item->device_item->type);
             dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &profile_item->direction);
-            dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &profile_item->state);
+            dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_INT32, &compound_state);
             dbus_message_iter_append_basic(&device_iter, DBUS_TYPE_STRING, &device_item->name);
             pa_assert_se(dbus_message_iter_close_container(&array_iter, &device_iter));
         }
@@ -3927,23 +3946,30 @@ pa_source* pa_device_manager_get_source(dm_device *device_item, const char *role
     return pa_hashmap_get(profile_item->capture_devices, role);
 }
 
-void pa_device_manager_set_device_state(dm_device *device_item, dm_device_state_t state) {
+void pa_device_manager_set_device_state(dm_device *device_item, dm_device_direction_t direction, dm_device_state_t state) {
     dm_device_profile *profile_item;
 
     pa_assert(device_item);
     pa_assert(profile_item = _device_item_get_active_profile(device_item));
 
-    pa_log_debug("pa_device_manager_set_device_state : %s.%s -> %d", device_item->type, profile_item->profile, state);
-    _device_profile_set_state(profile_item,  state);
+    pa_log_debug("pa_device_manager_set_device_state : %s.%s  direction %s -> %d", device_item->type, profile_item->profile, device_direction_to_string(direction), state);
+    _device_profile_set_state(profile_item, direction, state);
 }
 
-dm_device_state_t pa_device_manager_get_device_state(dm_device *device_item) {
+dm_device_state_t pa_device_manager_get_device_state(dm_device *device_item, dm_device_direction_t direction) {
     dm_device_profile *profile_item;
 
     pa_assert(device_item);
     pa_assert(profile_item = _device_item_get_active_profile(device_item));
 
-    return profile_item->state;
+    if (direction == DM_DEVICE_DIRECTION_BOTH)
+        return COMPOUND_STATE(profile_item);
+    else if (direction == DM_DEVICE_DIRECTION_OUT)
+        return profile_item->playback_state;
+    else if (direction == DM_DEVICE_DIRECTION_IN)
+        return profile_item->capture_state;
+    else
+        return DM_DEVICE_STATE_DEACTIVATED;
 }
 
 uint32_t pa_device_manager_get_device_id(dm_device *device_item) {

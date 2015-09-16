@@ -214,8 +214,6 @@ enum signal_index {
 #endif
 
 /* Sink & Source names */
-#define SINK_HIGH_LATENCY        "alsa_output.4.analog-stereo"
-#define SINK_HIGH_LATENCY_UHQA   "alsa_output.4.analog-stereo-uhqa"
 #define SINK_COMBINED            "sink_combined"
 #define SINK_NULL                "sink_null"
 #define SOURCE_NULL              "source_null"
@@ -224,8 +222,9 @@ enum signal_index {
 #define POLICY_HIGH_LATENCY "high-latency"
 #define POLICY_HIGH_LATENCY_UHQA "high-latency-uhqa"
 
-/* Sink Identify Macros */
-#define sink_is_highlatency(sink) !strncmp(sink->name, SINK_HIGH_LATENCY, strlen(SINK_HIGH_LATENCY))
+/* Macros */
+#define CONVERT_TO_DEVICE_DIRECTION(stream_type) \
+    ((stream_type==STREAM_SINK_INPUT)?DM_DEVICE_DIRECTION_OUT:DM_DEVICE_DIRECTION_IN)
 
 /* PCM Dump */
 #define PA_DUMP_INI_DEFAULT_PATH                "/usr/etc/mmfw_audio_pcm_dump.ini"
@@ -621,14 +620,14 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
         /* Set device state to deactivate */
         PA_IDXSET_FOREACH(device, conn_devices, conn_idx) {
             dm_device_type = pa_device_manager_get_device_type(device);
-            device_state = pa_device_manager_get_device_state(device);
+            device_state = pa_device_manager_get_device_state(device, CONVERT_TO_DEVICE_DIRECTION(data->stream_type));
             device_direction = pa_device_manager_get_device_direction(device);
             if (device_state == DM_DEVICE_STATE_ACTIVATED &&
                 (((data->stream_type==STREAM_SINK_INPUT) && (device_direction & DM_DEVICE_DIRECTION_OUT)) ||
                 ((data->stream_type==STREAM_SOURCE_OUTPUT) && (device_direction & DM_DEVICE_DIRECTION_IN)))) {
                 pa_log_debug("[RESET] found a matched device and set state to DE-ACTIVATED: type[%s], direction[0x%x]", dm_device_type, device_direction);
                 /* set device state to deactivated */
-                pa_device_manager_set_device_state(device, DM_DEVICE_STATE_DEACTIVATED);
+                pa_device_manager_set_device_state(device, CONVERT_TO_DEVICE_DIRECTION(data->stream_type), DM_DEVICE_STATE_DEACTIVATED);
               }
         }
         route_info.num_of_devices = 1;
@@ -668,7 +667,7 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
                     pa_log_debug("[AUTO(_ALL)] found a matched device and set state to ACTIVATED: type[%s], direction[0x%x], id[%u]",
                         route_info.device_infos[route_info.num_of_devices-1].type, device_direction, device_idx);
                     /* Set device state to activated */
-                    pa_device_manager_set_device_state(device, DM_DEVICE_STATE_ACTIVATED);
+                    pa_device_manager_set_device_state(device, CONVERT_TO_DEVICE_DIRECTION(data->stream_type), DM_DEVICE_STATE_ACTIVATED);
                     break;
                     }
                 }
@@ -677,7 +676,7 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
                 PA_IDXSET_FOREACH(_device, conn_devices, conn_idx) {
                     if (device == _device)
                         continue;
-                    pa_device_manager_set_device_state(_device, DM_DEVICE_STATE_DEACTIVATED);
+                    pa_device_manager_set_device_state(_device, CONVERT_TO_DEVICE_DIRECTION(data->stream_type), DM_DEVICE_STATE_DEACTIVATED);
                 }
 
                 /* Move sink-inputs/source-outputs if needed */
@@ -786,7 +785,7 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
                     }
                 }
                 if (need_to_deactive)
-                    pa_device_manager_set_device_state(_device, DM_DEVICE_STATE_DEACTIVATED);
+                    pa_device_manager_set_device_state(_device, CONVERT_TO_DEVICE_DIRECTION(data->stream_type), DM_DEVICE_STATE_DEACTIVATED);
             }
         }
 
@@ -812,7 +811,7 @@ static pa_hook_result_t route_change_hook_cb(pa_core *c, pa_stream_manager_hook_
                         pa_log_debug("[MANUAL] found a matched device and set state to ACTIVATED: type[%s], direction[0x%x]",
                             route_info.device_infos[route_info.num_of_devices-1].type, device_direction);
                         /* Set device state to activated */
-                        pa_device_manager_set_device_state(device, DM_DEVICE_STATE_ACTIVATED);
+                        pa_device_manager_set_device_state(device, CONVERT_TO_DEVICE_DIRECTION(data->stream_type), DM_DEVICE_STATE_ACTIVATED);
                         }
                 }
             }

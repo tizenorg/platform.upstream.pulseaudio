@@ -343,8 +343,8 @@ struct device_file_map {
 
 struct pa_device_manager {
     pa_core *core;
-    pa_hook_slot *sink_put_hook_slot, *sink_unlink_hook_slot;
-    pa_hook_slot *source_put_hook_slot, *source_unlink_hook_slot;
+    pa_hook_slot *sink_put_hook_slot, *sink_state_changed_slot, *sink_unlink_hook_slot;
+    pa_hook_slot *source_put_hook_slot, *source_state_changed_slot, *source_unlink_hook_slot;
     pa_communicator *comm;
 
     /*
@@ -2453,6 +2453,26 @@ static pa_hook_result_t sink_unlink_hook_callback(pa_core *c, pa_sink *sink, pa_
     return PA_HOOK_OK;
 }
 
+static pa_hook_result_t device_state_changed_hook_cb(pa_core *c, pa_object *o, struct userdata *u) {
+    pa_assert(c);
+    pa_object_assert_ref(o);
+    pa_assert(u);
+
+    if (pa_sink_isinstance(o)) {
+        pa_sink *s = PA_SINK(o);
+        pa_sink_state_t state = pa_sink_get_state(s);
+        pa_log_warn("=========== Sink(%p,%s) state has been changed to [%d](0:RUNNING, 1:IDLE, 2:SUSPEND) ==========", s, s->name, state);
+        /* need to update the output device state that belongs to this sink */
+
+    } else if (pa_source_isinstance(o)) {
+        pa_source *s = PA_SOURCE(o);
+        pa_source_state_t state = pa_source_get_state(s);
+        pa_log_warn("=========== Source(%p,%s) state has been changed to [%d](0:RUNNING, 1:IDLE, 2:SUSPEND) ==========", s, s->name, state);
+        /* need to update the input device state that belongs to this source */
+    }
+
+    return PA_HOOK_OK;
+}
 
 static pa_hook_result_t source_put_hook_callback(pa_core *c, pa_source *source, pa_device_manager *dm) {
     const char *device_string = NULL, *role = NULL, *device_string_removed_params = NULL;
@@ -4195,8 +4215,10 @@ pa_device_manager* pa_device_manager_init(pa_core *c) {
     dbus_init(dm);
 
     dm->sink_put_hook_slot = pa_hook_connect(&dm->core->hooks[PA_CORE_HOOK_SINK_PUT], PA_HOOK_LATE+10, (pa_hook_cb_t) sink_put_hook_callback, dm);
+    dm->sink_state_changed_slot = pa_hook_connect(&dm->core->hooks[PA_CORE_HOOK_SINK_STATE_CHANGED], PA_HOOK_NORMAL, (pa_hook_cb_t) device_state_changed_hook_cb, dm);
     dm->sink_unlink_hook_slot = pa_hook_connect(&dm->core->hooks[PA_CORE_HOOK_SINK_UNLINK], PA_HOOK_EARLY, (pa_hook_cb_t) sink_unlink_hook_callback, dm);
     dm->source_put_hook_slot = pa_hook_connect(&dm->core->hooks[PA_CORE_HOOK_SOURCE_PUT], PA_HOOK_LATE+10, (pa_hook_cb_t) source_put_hook_callback, dm);
+    dm->source_state_changed_slot = pa_hook_connect(&dm->core->hooks[PA_CORE_HOOK_SOURCE_STATE_CHANGED], PA_HOOK_NORMAL, (pa_hook_cb_t) device_state_changed_hook_cb, dm);
     dm->source_unlink_hook_slot = pa_hook_connect(&dm->core->hooks[PA_CORE_HOOK_SOURCE_UNLINK], PA_HOOK_EARLY, (pa_hook_cb_t) source_unlink_hook_callback, dm);
 
     dm->comm = pa_communicator_get(dm->core);
@@ -4247,10 +4269,14 @@ void pa_device_manager_done(pa_device_manager *dm) {
 
     if (dm->sink_put_hook_slot)
         pa_hook_slot_free(dm->sink_put_hook_slot);
+    if (dm->sink_state_changed_slot)
+        pa_hook_slot_free(dm->sink_state_changed_slot);
     if (dm->sink_unlink_hook_slot)
         pa_hook_slot_free(dm->sink_unlink_hook_slot);
     if (dm->source_put_hook_slot)
         pa_hook_slot_free(dm->source_put_hook_slot);
+    if (dm->source_state_changed_slot)
+        pa_hook_slot_free(dm->source_state_changed_slot);
     if (dm->source_unlink_hook_slot)
         pa_hook_slot_free(dm->source_unlink_hook_slot);
 

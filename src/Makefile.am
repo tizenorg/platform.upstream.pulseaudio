@@ -1325,10 +1325,6 @@ if HAVE_DBUS
 # Serveral module (e.g. libalsa-util.la)
 modlibexec_LTLIBRARIES += \
 		module-console-kit.la
-if USE_SAMSUNG_POLICY
-modlibexec_LTLIBRARIES += \
-		module-policy.la
-endif
 endif
 modlibexec_LTLIBRARIES += \
 		module-cli.la \
@@ -1378,8 +1374,7 @@ modlibexec_LTLIBRARIES += \
 		module-filter-heuristics.la \
 		module-role-ducking.la \
 		module-audio-groups.la \
-		module-sound-player.la \
-		module-tizenaudio-sink.la
+		module-sound-player.la
 
 if HAVE_ESOUND
 modlibexec_LTLIBRARIES += \
@@ -1672,7 +1667,6 @@ SYMDEF_FILES = \
 		module-alsa-sink-symdef.h \
 		module-alsa-source-symdef.h \
 		module-alsa-card-symdef.h \
-		module-tizenaudio-sink-symdef.h \
 		module-coreaudio-detect-symdef.h \
 		module-coreaudio-device-symdef.h \
 		module-solaris-symdef.h \
@@ -1723,10 +1717,6 @@ SYMDEF_FILES = \
 		module-audio-groups-symdef.h \
 		module-sound-player-symdef.h
 
-if USE_SAMSUNG_POLICY
-SYMDEF_FILES += \
-		module-policy-symdef.h
-endif
 if HAVE_ESOUND
 SYMDEF_FILES += \
 		module-esound-protocol-tcp-symdef.h \
@@ -2070,11 +2060,6 @@ module_alsa_card_la_SOURCES = modules/alsa/module-alsa-card.c
 module_alsa_card_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_alsa_card_la_LIBADD = $(MODULE_LIBADD) $(ASOUNDLIB_LIBS) libalsa-util.la
 module_alsa_card_la_CFLAGS = $(AM_CFLAGS) $(ASOUNDLIB_CFLAGS)
-
-module_tizenaudio_sink_la_SOURCES = modules/tizen/module-tizenaudio-sink.c
-module_tizenaudio_sink_la_LDFLAGS = $(MODULE_LDFLAGS)
-module_tizenaudio_sink_la_LIBADD = $(MODULE_LIBADD) $(ASOUNDLIB_LIBS)
-module_tizenaudio_sink_la_CFLAGS = $(AM_CFLAGS) $(ASOUNDLIB_CFLAGS)
 
 # Solaris
 
@@ -2420,19 +2405,6 @@ module_rygel_media_server_la_SOURCES = modules/module-rygel-media-server.c
 module_rygel_media_server_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_rygel_media_server_la_LIBADD = $(MODULE_LIBADD) $(DBUS_LIBS) libprotocol-http.la
 module_rygel_media_server_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS)
-
-if USE_SAMSUNG_POLICY
-module_policy_la_SOURCES = \
-        modules/tizen/module-policy.c   \
-        modules/tizen/communicator.c modules/tizen/communicator.h   \
-        modules/tizen/hal-manager.c modules/tizen/hal-manager.h   \
-        modules/tizen/stream-manager.c modules/tizen/stream-manager.h modules/tizen/stream-manager-priv.h   \
-        modules/tizen/stream-manager-volume.c modules/tizen/stream-manager-volume.h modules/tizen/stream-manager-volume-priv.h   \
-        modules/tizen/device-manager.c modules/tizen/device-manager.h
-module_policy_la_LDFLAGS = $(MODULE_LDFLAGS)
-module_policy_la_LIBADD = $(AM_LIBADD) $(DBUS_LIBS) $(VCONF_LIBS) $(INIPARSER_LIBS) $(LIBJSON_LIBS) $(ASOUNDLIB_LIBS) libprotocol-native.la libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la
-module_policy_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS) $(VCONF_CFLAGS) $(INIPARSER_CFLAGS) $(LIBJSON_CFLAGS) $(ASOUNDLIB_CFLAGS)
-endif
 
 module_sound_player_la_SOURCES = modules/module-sound-player.c
 module_sound_player_la_LDFLAGS = $(MODULE_LDFLAGS)

@@ -11,7 +11,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          40
+Release:          41
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -376,7 +376,6 @@ fi
 %{_libdir}/pulse-%{version}/modules/libtunnel-manager.so
 %{_libdir}/pulse-%{version}/modules/module-alsa-sink.so
 %{_libdir}/pulse-%{version}/modules/module-alsa-source.so
-%{_libdir}/pulse-%{version}/modules/module-tizenaudio-sink.so
 %{_libdir}/pulse-%{version}/modules/module-always-sink.so
 %{_libdir}/pulse-%{version}/modules/module-console-kit.so
 %{_libdir}/pulse-%{version}/modules/module-device-restore.so
@@ -440,15 +439,11 @@ fi
 %{_unitdir_user}/pulseaudio.socket
 %{_unitdir}/pulseaudio.service
 %{_unitdir}/multi-user.target.wants/pulseaudio.service
-%if %{with pulseaudio_samsung_policy}
-%{_libdir}/pulse-%{version}/modules/module-policy.so
-%endif
 %{_libdir}/pulse-%{version}/modules/libvolume-api.so
 %{_libdir}/pulse-%{version}/modules/libmain-volume-policy.so
 %{_libdir}/pulse-%{version}/modules/module-volume-api.so
 %{_libdir}/pulse-%{version}/modules/module-main-volume-policy.so
 %{_libdir}/pulse-%{version}/modules/module-audio-groups.so
-%{_libdir}/pulse-%{version}/modules/module-sound-player.so
 
 %config(noreplace) /etc/bash_completion.d/pulseaudio-bash-completion.sh
 

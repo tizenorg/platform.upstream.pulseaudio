@@ -333,13 +333,20 @@ typedef enum _process_command_type {
 
 typedef enum _notify_command_type {
     NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT,
-    NOTIFY_COMMAND_CHANGE_ROUTE_START_WITH_NEW_DATA,
     NOTIFY_COMMAND_CHANGE_ROUTE_START,
     NOTIFY_COMMAND_CHANGE_ROUTE_END,
     NOTIFY_COMMAND_UPDATE_ROUTE_OPTION,
     NOTIFY_COMMAND_INFORM_STREAM_CONNECTED,
     NOTIFY_COMMAND_INFORM_STREAM_DISCONNECTED,
+    NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED,
+    NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_ENDED,
 } notify_command_type_t;
+
+typedef enum _skip_role_result {
+    SKIP_ROLE_RESULT_NO_SKIP,              /* no skip */
+    SKIP_ROLE_RESULT_SKIP_BY_UNKNOWN_ROLE, /* it should be skipped as it is an undefined role */
+    SKIP_ROLE_RESULT_SKIP_BY_EXT_ROLE,     /* it should be skipped as it is a role for external device */
+} skip_role_result_t;
 
 const char* process_command_type_str[] = {
     "PREPARE",
@@ -354,12 +361,13 @@ const char* process_command_type_str[] = {
 
 const char* notify_command_type_str[] = {
     "SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT",
-    "CHANGE_ROUTE_START_WITH_NEW_DATA",
     "CHANGE_ROUTE_START",
     "CHANGE_ROUTE_END",
     "UPDATE_ROUTE_OPTION",
     "INFORM_STREAM_CONNECTED",
     "INFORM_STREAM_DISCONNECTED",
+    "UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED",
+    "UPDATE_EXT_DEVICE_STATE_BY_STREAM_ENDED",
 };
 
 #define STREAM_MAP_FILE "/etc/pulse/stream-map.json"
@@ -381,6 +389,7 @@ const char* notify_command_type_str[] = {
 #define STREAM_MAP_STREAM_AVAIL_FRAMEWORKS "avail-frameworks"
 
 typedef struct _stream_parent {
+    char *role;
     pa_idxset *idx_sink_inputs;
     pa_idxset *idx_source_outputs;
     pa_idxset *idx_route_in_devices;
@@ -411,7 +420,7 @@ typedef struct _stream_route_option {
     int32_t value;
 } stream_route_option;
 
-static void do_notify(pa_stream_manager *m, notify_command_type_t command, stream_type_t type, void *user_data);
+static void do_notify(pa_stream_manager *m, notify_command_type_t command, stream_type_t type, pa_bool_t is_new_data, void *user_data);
 static process_stream_result_t process_stream(stream_type_t type, void *stream, process_command_type_t command, pa_stream_manager *m);
 
 static int get_available_streams(pa_stream_manager *m, stream_list *list) {
@@ -579,7 +588,9 @@ static void handle_set_stream_route_devices(DBusConnection *conn, DBusMessage *m
     int list_len_out = 0;
     uint32_t idx = 0;
     uint32_t *device_id = NULL;
+    void *stream = NULL;
     stream_parent *sp = NULL;
+    const char *role = NULL;
     DBusMessage *reply = NULL;
     pa_stream_manager *m = (pa_stream_manager*)userdata;
 
@@ -615,12 +626,26 @@ static void handle_set_stream_route_devices(DBusConnection *conn, DBusMessage *m
                     pa_log_debug(" -- [in] device id:%u", in_device_list[i]);
                 }
             }
-            if (m->cur_highest_priority.source_output) {
+            PA_IDXSET_FOREACH(stream, sp->idx_source_outputs, idx) {
+                /* find role of stream */
+                role = pa_proplist_gets(GET_STREAM_PROPLIST(stream, STREAM_SOURCE_OUTPUT), PA_PROP_MEDIA_ROLE);
+                if (role) {
+                    pa_log_debug(" -- the role of source_output that belongs to this parent id[%u] is [%s]", id, role);
+                    break;
+                }
+            }
             /* if any stream that belongs to this id has been activated, do notify right away */
+            if (role && IS_ROLE_FOR_EXTERNAL_DEV(role)) {
+                PA_IDXSET_FOREACH(stream, sp->idx_source_outputs, idx) {
+                    pa_log_debug(" -- source_output[%p] belongs to this parent id[%u], do notify for the select proper source", stream, id);
+                    do_notify(m, NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT, STREAM_SOURCE_OUTPUT, FALSE, stream);
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED, STREAM_SOURCE_OUTPUT, FALSE, stream);
+                }
+            } else if (m->cur_highest_priority.source_output) {
                 if (pa_idxset_get_by_data(sp->idx_source_outputs, m->cur_highest_priority.source_output, NULL)) {
                     pa_log_debug(" -- cur_highest_priority.source_output->index[%u] belongs to this parent id[%u], do notify for the route change",
                             (m->cur_highest_priority.source_output)->index, id);
-                    do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, STREAM_SOURCE_OUTPUT, m->cur_highest_priority.source_output);
+                    do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, STREAM_SOURCE_OUTPUT, FALSE, m->cur_highest_priority.source_output);
                 }
             }
         } else {
@@ -639,12 +664,26 @@ static void handle_set_stream_route_devices(DBusConnection *conn, DBusMessage *m
                     pa_log_debug(" -- [out] device id:%u", out_device_list[i]);
                 }
             }
-            if (m->cur_highest_priority.sink_input) {
+            PA_IDXSET_FOREACH(stream, sp->idx_sink_inputs, idx) {
+                /* find role of stream */
+                role = pa_proplist_gets(GET_STREAM_PROPLIST(stream, STREAM_SINK_INPUT), PA_PROP_MEDIA_ROLE);
+                if (role) {
+                    pa_log_debug(" -- the role of sink_input that belongs to this parent id[%u] is [%s]", id, role);
+                    break;
+                }
+            }
             /* if any stream that belongs to this id has been activated, do notify right away */
+            if (role && IS_ROLE_FOR_EXTERNAL_DEV(role)) {
+                PA_IDXSET_FOREACH(stream, sp->idx_sink_inputs, idx) {
+                    pa_log_debug(" -- sink_input[%p] belongs to this parent id[%u], do notify for the select proper sink", stream, id);
+                    do_notify(m, NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT, STREAM_SINK_INPUT, FALSE, stream);
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED, STREAM_SINK_INPUT, FALSE, stream);
+                }
+            } else if (m->cur_highest_priority.sink_input) {
                 if (pa_idxset_get_by_data(sp->idx_sink_inputs, m->cur_highest_priority.sink_input, NULL)) {
                     pa_log_debug(" -- cur_highest_priority.sink_input->index[%u] belongs to this parent id[%u], do notify for the route change",
                             (m->cur_highest_priority.sink_input)->index, id);
-                    do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, STREAM_SINK_INPUT, m->cur_highest_priority.sink_input);
+                    do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, STREAM_SINK_INPUT, FALSE, m->cur_highest_priority.sink_input);
                 }
             }
         } else {
@@ -701,7 +740,7 @@ static void handle_set_stream_route_option(DBusConnection *conn, DBusMessage *ms
                 if (pa_idxset_get_by_data(sp->idx_sink_inputs, m->cur_highest_priority.sink_input, NULL)) {
                     pa_log_debug(" -- cur_highest_priority.sink_input->index[%u] belongs to this parent id[%u], do notify for the options",
                         (m->cur_highest_priority.sink_input)->index, id);
-                    do_notify(m, NOTIFY_COMMAND_UPDATE_ROUTE_OPTION, STREAM_SINK_INPUT, &route_option);
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_ROUTE_OPTION, STREAM_SINK_INPUT, FALSE, &route_option);
                     updated = TRUE;
                 }
             }
@@ -709,7 +748,7 @@ static void handle_set_stream_route_option(DBusConnection *conn, DBusMessage *ms
                 if (pa_idxset_get_by_data(sp->idx_source_outputs, m->cur_highest_priority.source_output, NULL)) {
                     pa_log_debug(" -- cur_highest_priority.source_output->index[%u] belongs to this parent id[%u], do notify for the options",
                         (m->cur_highest_priority.source_output)->index, id);
-                    do_notify(m, NOTIFY_COMMAND_UPDATE_ROUTE_OPTION, STREAM_SOURCE_OUTPUT, &route_option);
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_ROUTE_OPTION, STREAM_SOURCE_OUTPUT, FALSE, &route_option);
                     updated = TRUE;
                 }
             }
@@ -1438,8 +1477,8 @@ static pa_bool_t check_name_to_skip(pa_stream_manager *m, process_command_type_t
     return ret;
 }
 
-static pa_bool_t check_role_to_skip(pa_stream_manager *m, const char *role) {
-    pa_bool_t ret = TRUE;
+static skip_role_result_t check_role_to_skip(pa_stream_manager *m, process_command_type_t command, const char *role) {
+    skip_role_result_t ret = SKIP_ROLE_RESULT_NO_SKIP;
     stream_info *s = NULL;
 
     pa_assert(m);
@@ -1447,11 +1486,17 @@ static pa_bool_t check_role_to_skip(pa_stream_manager *m, const char *role) {
 
     if (m->stream_infos) {
         s = pa_hashmap_get(m->stream_infos, role);
-        if (s)
-            ret = FALSE;
+        if (s) {
+            if (IS_ROLE_FOR_EXTERNAL_DEV(role) &&
+                (command > PROCESS_COMMAND_PREPARE && command < PROCESS_COMMAND_UPDATE_VOLUME)) {
+                /* this role is for external device, set it to skip */
+                ret = SKIP_ROLE_RESULT_SKIP_BY_EXT_ROLE;
+            } else
+                ret = SKIP_ROLE_RESULT_NO_SKIP;
+        } else
+            ret = SKIP_ROLE_RESULT_SKIP_BY_UNKNOWN_ROLE;
     }
-
-    pa_log_info("role is [%s], skip(%d)", role, ret);
+    pa_log_info("role is [%s], skip(%d) for %s", role, ret, process_command_type_str[command]);
 
     return ret;
 }
@@ -1738,14 +1783,14 @@ static pa_bool_t update_the_highest_priority_stream(pa_stream_manager *m, proces
     return TRUE;
 }
 
-static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t command, stream_type_t type, void *stream, pa_stream_manager *m) {
+static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t command, stream_type_t type, void *stream, pa_bool_t is_new_data, pa_stream_manager *m) {
     char *device_none = NULL;
     const char *p_idx = NULL;
     uint32_t parent_idx = 0;
     stream_parent *sp = NULL;
-    uint32_t idx = 0;
     pa_stream_manager_hook_data_for_select *select_data = NULL;
     pa_stream_manager_hook_data_for_route *route_data = NULL;
+    pa_stream_manager_hook_data_for_update_ext_device *update_ext_device_data = NULL;
     stream_info *si;
     pa_idxset *avail_devices;
     uint32_t list_len = 0;
@@ -1768,19 +1813,22 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
         }
         select_data->idx_avail_devices = avail_devices;
         if (si->route_type == STREAM_ROUTE_TYPE_MANUAL) {
-            p_idx = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
+            if (is_new_data)
+                p_idx = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
+            else
+                p_idx = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
             if (p_idx && !pa_atou(p_idx, &parent_idx)) {
                 /* find parent idx, it's device info. and it's stream idxs */
                 sp = pa_hashmap_get(m->stream_parents, (const void*)parent_idx);
                 if (sp)
                     select_data->idx_manual_devices = (type==STREAM_SINK_INPUT)?(sp->idx_route_out_devices):(sp->idx_route_in_devices);
                 else
-                    pa_log_warn("Failed to get the stream parent of idx(%u)", idx);
-            }
+                    pa_log_warn("Failed to get the stream parent of idx(%u)", parent_idx);
+            } else
+                pa_log_warn("Could not get the parent id of this stream, but keep going...");
         }
         break;
     }
-    case NOTIFY_COMMAND_CHANGE_ROUTE_START_WITH_NEW_DATA:
     case NOTIFY_COMMAND_CHANGE_ROUTE_START:
     case NOTIFY_COMMAND_CHANGE_ROUTE_END: {
         route_data = (pa_stream_manager_hook_data_for_route*)hook_data;
@@ -1790,9 +1838,9 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
         list_len = pa_idxset_size(avail_devices);
         device_none = pa_idxset_get_by_data(avail_devices, "none", NULL);
 
-        if (command == NOTIFY_COMMAND_CHANGE_ROUTE_START_WITH_NEW_DATA)
+        if (is_new_data)
             p_idx = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
-        else if (command == NOTIFY_COMMAND_CHANGE_ROUTE_START || command == NOTIFY_COMMAND_CHANGE_ROUTE_END)
+        else
             p_idx = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
         if (p_idx && !pa_atou(p_idx, &parent_idx)) {
             sp = pa_hashmap_get(m->stream_parents, (const void*)parent_idx);
@@ -1815,48 +1863,75 @@ static void fill_device_info_to_hook_data(void *hook_data, notify_command_type_t
         }
         break;
     }
+    case NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED:
+    case NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_ENDED: {
+        update_ext_device_data = (pa_stream_manager_hook_data_for_update_ext_device*)hook_data;
+        if (is_new_data)
+            p_idx = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
+        else
+            p_idx = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_PARENT_ID);
+        if (p_idx && !pa_atou(p_idx, &parent_idx)) {
+            sp = pa_hashmap_get(m->stream_parents, (const void*)parent_idx);
+            if (!sp)
+                pa_log_warn("Failed to get the stream parent of idx(%u)", parent_idx);
+            else
+                update_ext_device_data->idx_manual_devices = (type==STREAM_SINK_INPUT)?(sp->idx_route_out_devices):(sp->idx_route_in_devices);
+        } else
+           pa_log_warn("Could not get the parent id of this stream, but keep going...");
+        break;
+    }
     default:
         break;
     }
     return;
 }
 
-static void do_notify(pa_stream_manager *m, notify_command_type_t command, stream_type_t type, void *user_data) {
+static void do_notify(pa_stream_manager *m, notify_command_type_t command, stream_type_t type, pa_bool_t is_new_data, void *user_data) {
     pa_stream_manager_hook_data_for_select hook_call_select_data;
     pa_stream_manager_hook_data_for_route hook_call_route_data;
     pa_stream_manager_hook_data_for_option hook_call_option_data;
+    pa_stream_manager_hook_data_for_update_ext_device hook_call_update_ext_device_data;
     hal_stream_connection_info stream_conn_info;
     const char *role = NULL;
     void *s = NULL;
 
     pa_assert(m);
-    pa_log_debug("do_notify(%s): type(%d), user_data(%p)", notify_command_type_str[command], type, user_data);
+    pa_log_debug("do_notify(%s): type(%d), is_new_data(%d), user_data(%p)", notify_command_type_str[command], type, is_new_data, user_data);
 
     switch (command) {
     case NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT: {
         pa_assert(user_data);
         memset(&hook_call_select_data, 0, sizeof(pa_stream_manager_hook_data_for_select));
-        s = user_data;
+        hook_call_select_data.stream = s = user_data;
         if (s) {
             hook_call_select_data.stream_type = type;
-            hook_call_select_data.stream_role = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(s, type), PA_PROP_MEDIA_ROLE);
-            fill_device_info_to_hook_data(&hook_call_select_data, command, type, s, m);
-            hook_call_select_data.sample_spec = GET_STREAM_NEW_SAMPLE_SPEC(s, type);
-            if (type == STREAM_SINK_INPUT)
-                hook_call_select_data.proper_sink = &(((pa_sink_input_new_data*)s)->sink);
-            else if (type == STREAM_SOURCE_OUTPUT)
-                hook_call_select_data.proper_source = &(((pa_source_output_new_data*)s)->source);
+            if (is_new_data) {
+                hook_call_select_data.stream_role = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(s, type), PA_PROP_MEDIA_ROLE);
+                fill_device_info_to_hook_data(&hook_call_select_data, command, type, s, is_new_data, m);
+                hook_call_select_data.sample_spec = GET_STREAM_NEW_SAMPLE_SPEC(s, type);
+                if (type == STREAM_SINK_INPUT)
+                    hook_call_select_data.proper_sink = &(((pa_sink_input_new_data*)s)->sink);
+                else if (type == STREAM_SOURCE_OUTPUT)
+                    hook_call_select_data.proper_source = &(((pa_source_output_new_data*)s)->source);
+            } else {
+                hook_call_select_data.stream_role = pa_proplist_gets(GET_STREAM_PROPLIST(s, type), PA_PROP_MEDIA_ROLE);
+                fill_device_info_to_hook_data(&hook_call_select_data, command, type, s, is_new_data ,m);
+                hook_call_select_data.sample_spec = GET_STREAM_SAMPLE_SPEC(s, type);
+                if (type == STREAM_SINK_INPUT)
+                    hook_call_select_data.proper_sink = &(((pa_sink_input*)s)->sink);
+                else if (type == STREAM_SOURCE_OUTPUT)
+                    hook_call_select_data.proper_source = &(((pa_source_output*)s)->source);
+            }
             pa_hook_fire(pa_communicator_hook(m->comm.comm, PA_COMMUNICATOR_HOOK_SELECT_INIT_SINK_OR_SOURCE), &hook_call_select_data);
         }
         break;
     }
-    case NOTIFY_COMMAND_CHANGE_ROUTE_START_WITH_NEW_DATA:
     case NOTIFY_COMMAND_CHANGE_ROUTE_START: {
         pa_assert(user_data);
         memset(&hook_call_route_data, 0, sizeof(pa_stream_manager_hook_data_for_route));
         s = user_data;
         if (s) {
-            if (command == NOTIFY_COMMAND_CHANGE_ROUTE_START_WITH_NEW_DATA) {
+            if (is_new_data) {
                 hook_call_route_data.origins_from_new_data = TRUE;
                 role = pa_proplist_gets(GET_STREAM_NEW_PROPLIST(s, type), PA_PROP_MEDIA_ROLE);
                 hook_call_route_data.sample_spec = GET_STREAM_NEW_SAMPLE_SPEC(s, type);
@@ -1878,11 +1953,11 @@ static void do_notify(pa_stream_manager *m, notify_command_type_t command, strea
             }
             hook_call_route_data.stream_type = type;
             hook_call_route_data.stream_role = role;
-            fill_device_info_to_hook_data(&hook_call_route_data, command, type, s, m);
+            fill_device_info_to_hook_data(&hook_call_route_data, command, type, s, is_new_data, m);
             if (hook_call_route_data.route_type == STREAM_ROUTE_TYPE_MANUAL) {
                 if (hook_call_route_data.idx_manual_devices && !pa_idxset_size(hook_call_route_data.idx_manual_devices)) {
-                    pa_log_info("no manual device for this type(%d), need to unset route", type);
-                    hook_call_route_data.stream_role = "reset";
+                    pa_log_warn("no manual device for this type(%d), skip it..", type);
+                    break;
                 }
             }
             pa_hook_fire(pa_communicator_hook(m->comm.comm, PA_COMMUNICATOR_HOOK_CHANGE_ROUTE), &hook_call_route_data);
@@ -1898,7 +1973,7 @@ static void do_notify(pa_stream_manager *m, notify_command_type_t command, strea
             hook_call_route_data.stream_role = role;
             hook_call_route_data.sample_spec = GET_STREAM_SAMPLE_SPEC(s, type);
             hook_call_route_data.idx_streams = (type==STREAM_SINK_INPUT)?((pa_sink_input*)s)->sink->inputs:((pa_source_output*)s)->source->outputs;
-            fill_device_info_to_hook_data(&hook_call_route_data, command, type, s, m);
+            fill_device_info_to_hook_data(&hook_call_route_data, command, type, s, is_new_data, m);
         } else {
             pa_log_info("no stream for this type(%d), need to unset route", type);
             hook_call_route_data.stream_type = type;
@@ -1934,12 +2009,31 @@ static void do_notify(pa_stream_manager *m, notify_command_type_t command, strea
         }
         break;
     }
+    case NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED:
+    case NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_ENDED: {
+        pa_assert(user_data);
+        memset(&hook_call_update_ext_device_data, 0, sizeof(pa_stream_manager_hook_data_for_update_ext_device));
+        s = user_data;
+        if (s) {
+            hook_call_update_ext_device_data.stream = s;
+            hook_call_update_ext_device_data.stream_type = type;
+            hook_call_update_ext_device_data.is_stream_started = (command==NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED)?TRUE:FALSE;
+            fill_device_info_to_hook_data(&hook_call_update_ext_device_data, command, type, s, is_new_data ,m);
+            if (hook_call_update_ext_device_data.idx_manual_devices && !pa_idxset_size(hook_call_update_ext_device_data.idx_manual_devices)) {
+                pa_log_warn("no manual device for this type(%d), skip it..", type);
+                break;
+            }
+            pa_hook_fire(pa_communicator_hook(m->comm.comm, PA_COMMUNICATOR_HOOK_UPDATE_EXTERNAL_DEVICE_STATE), &hook_call_update_ext_device_data);
+        }
+        break;
+    }
     }
     return;
 }
 
 static process_stream_result_t process_stream(stream_type_t type, void *stream, process_command_type_t command, pa_stream_manager *m) {
     process_stream_result_t result = PROCESS_STREAM_RESULT_OK;
+    skip_role_result_t skip_ret = SKIP_ROLE_RESULT_NO_SKIP;
     const char *role = NULL;
     pa_bool_t ret = TRUE;
     pa_bool_t need_update = FALSE;
@@ -1997,7 +2091,7 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
             pa_log_warn("role is null, set default to [%s]", role);
         } else {
             /* skip roles */
-            if (check_role_to_skip(m, role)) {
+            if (check_role_to_skip(m, command, role)) {
                 result = PROCESS_STREAM_RESULT_SKIP;
                 goto FAILURE;
             }
@@ -2025,7 +2119,7 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
         }
 
         /* notify to select sink or source */
-        do_notify(m, NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT, type, stream);
+        do_notify(m, NOTIFY_COMMAND_SELECT_PROPER_SINK_OR_SOURCE_FOR_INIT, type, TRUE, stream);
 
     } else if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA ||
             command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED) {
@@ -2035,7 +2129,13 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
             role = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
 
         /* skip roles */
-        if (check_role_to_skip(m, role)) {
+        skip_ret = check_role_to_skip(m, command, role);
+        if (skip_ret) {
+            if (skip_ret == SKIP_ROLE_RESULT_SKIP_BY_EXT_ROLE)
+                if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA)
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED, type, TRUE, stream);
+                else if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED)
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_STARTED, type, FALSE, stream);
             result = PROCESS_STREAM_RESULT_SKIP;
             goto FAILURE;
         }
@@ -2067,13 +2167,13 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
         /* if needed, notify to update */
         if (need_update) {
             if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED_WITH_NEW_DATA) {
-                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START_WITH_NEW_DATA, type, stream);
+                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, type, TRUE, stream);
                 if (type==STREAM_SINK_INPUT)
                     m->cur_highest_priority.need_to_update_si = TRUE;
                 else
                     m->cur_highest_priority.need_to_update_so = TRUE;
             } else {
-                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, type, stream);
+                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, type, FALSE, stream);
                 if (type==STREAM_SINK_INPUT)
                     m->cur_highest_priority.sink_input = stream;
                 else
@@ -2081,13 +2181,16 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
             }
         }
         if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_STARTED)
-            do_notify(m, NOTIFY_COMMAND_INFORM_STREAM_CONNECTED, type, stream);
+            do_notify(m, NOTIFY_COMMAND_INFORM_STREAM_CONNECTED, type, FALSE, stream);
 
     } else if (command == PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_ENDED) {
         role = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
         if (role) {
             /* skip roles */
-            if (check_role_to_skip(m, role)) {
+            skip_ret = check_role_to_skip(m, command, role);
+            if (skip_ret) {
+                if (skip_ret == SKIP_ROLE_RESULT_SKIP_BY_EXT_ROLE)
+                    do_notify(m, NOTIFY_COMMAND_UPDATE_EXT_DEVICE_STATE_BY_STREAM_ENDED, type, FALSE, stream);
                 result = PROCESS_STREAM_RESULT_SKIP;
                 goto FAILURE;
             }
@@ -2107,12 +2210,12 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
                 goto FAILURE;
             }
 
-            do_notify(m, NOTIFY_COMMAND_INFORM_STREAM_DISCONNECTED, type, stream);
+            do_notify(m, NOTIFY_COMMAND_INFORM_STREAM_DISCONNECTED, type, FALSE, stream);
 
             /* need to skip if this stream does not belong to internal device */
             /* if needed, notify to update */
             if (need_update)
-                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_END, type, NULL);
+                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_END, type, FALSE, NULL);
 
         } else {
             pa_log_error("role is null, skip it");
@@ -2122,7 +2225,7 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
         role = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
         if (role) {
             /* skip roles */
-            if (check_role_to_skip(m, role)) {
+            if (check_role_to_skip(m, command, role)) {
                 result = PROCESS_STREAM_RESULT_SKIP;
                 goto FAILURE;
             }
@@ -2137,7 +2240,7 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
             /* need to skip if this stream does not belong to internal device */
             /* if needed, notify to update */
             if (need_update)
-                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_END, type, NULL);
+                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_END, type, FALSE, NULL);
 
         } else {
             pa_log_error("role is null, skip it");
@@ -2161,28 +2264,37 @@ static process_stream_result_t process_stream(stream_type_t type, void *stream, 
         }
 
     } else if (command == PROCESS_COMMAND_ADD_PARENT_ID || command == PROCESS_COMMAND_REMOVE_PARENT_ID) {
-        if (command == PROCESS_COMMAND_ADD_PARENT_ID) {
-            if (type == STREAM_SINK_INPUT && m->cur_highest_priority.need_to_update_si) {
-                m->cur_highest_priority.sink_input = stream;
-                m->cur_highest_priority.need_to_update_si = FALSE;
+        role = pa_proplist_gets(GET_STREAM_PROPLIST(stream, type), PA_PROP_MEDIA_ROLE);
+        if (role) {
+            /* skip roles */
+            if (check_role_to_skip(m, command, role)) {
+                result = PROCESS_STREAM_RESULT_SKIP;
+                goto FAILURE;
             }
-            if (type == STREAM_SOURCE_OUTPUT && m->cur_highest_priority.need_to_update_so) {
-                m->cur_highest_priority.source_output = stream;
-                m->cur_highest_priority.need_to_update_so = FALSE;
+            if (!IS_ROLE_FOR_EXTERNAL_DEV(role)) {
+                if (command == PROCESS_COMMAND_ADD_PARENT_ID) {
+                    if (type == STREAM_SINK_INPUT && m->cur_highest_priority.need_to_update_si) {
+                        m->cur_highest_priority.sink_input = stream;
+                        m->cur_highest_priority.need_to_update_si = FALSE;
+                    }
+                    if (type == STREAM_SOURCE_OUTPUT && m->cur_highest_priority.need_to_update_so) {
+                        m->cur_highest_priority.source_output = stream;
+                        m->cur_highest_priority.need_to_update_so = FALSE;
+                    }
+                    do_notify(m, NOTIFY_COMMAND_INFORM_STREAM_CONNECTED, type, FALSE, stream);
+                }
             }
-            if (command == PROCESS_COMMAND_ADD_PARENT_ID)
-                do_notify(m, NOTIFY_COMMAND_INFORM_STREAM_CONNECTED, type, stream);
-        }
-        /* update parent stream info. */
-        ret = update_stream_parent_info(m, command, type, stream);
-        if (ret == FALSE) {
-            pa_log_warn("could not update the parent information of this stream");
-            //return PROCESS_STREAM_RESULT_STOP;
+            /* update parent stream info. */
+            ret = update_stream_parent_info(m, command, type, stream);
+            if (ret == FALSE) {
+                pa_log_warn("could not update the parent information of this stream");
+                //return PROCESS_STREAM_RESULT_STOP;
+            }
         }
     }
 
 FAILURE:
-    pa_log_info("END process_stream(%s): result(%d)", process_command_type_str[command], result);
+    pa_log_info("END process_stream(%s): result(%d), stream(%p)", process_command_type_str[command], result, stream);
     return result;
 }
 
@@ -2340,8 +2452,8 @@ static pa_hook_result_t source_output_unlink_cb(pa_core *core, pa_source_output 
 
     pa_log_info("start source_output_unlink_cb, o(%p, index:%u)", o, o->index);
 
-    process_stream(STREAM_SOURCE_OUTPUT, o, PROCESS_COMMAND_REMOVE_PARENT_ID, m);
     process_stream(STREAM_SOURCE_OUTPUT, o, PROCESS_COMMAND_CHANGE_ROUTE_BY_STREAM_ENDED, m);
+    process_stream(STREAM_SOURCE_OUTPUT, o, PROCESS_COMMAND_REMOVE_PARENT_ID, m);
 
     return PA_HOOK_OK;
 }
@@ -2376,22 +2488,35 @@ static pa_hook_result_t device_connection_changed_hook_cb(pa_core *c, pa_device_
     const char *route_type_str = NULL;
     stream_route_type_t route_type;
     dm_device_direction_t device_direction = DM_DEVICE_DIRECTION_OUT;
+    pa_sink *sink = NULL;
+    pa_source *source = NULL;
 
     device_direction = pa_device_manager_get_device_direction(conn->device);
     pa_log_info("device_connection_changed_hook_cb is called. conn(%p), is_connected(%d), device(%p), direction(0x%x)",
             conn, conn->is_connected, conn->device, device_direction);
 
     /* If the route type of the stream is not manual, notify again */
-    if (m->cur_highest_priority.source_output && (device_direction & DM_DEVICE_DIRECTION_IN)) {
-        route_type_str = pa_proplist_gets(GET_STREAM_PROPLIST(m->cur_highest_priority.source_output, STREAM_SOURCE_OUTPUT), PA_PROP_MEDIA_ROLE_ROUTE_TYPE);
-        if(!pa_atoi(route_type_str, (int32_t*)&route_type))
-            if (route_type != STREAM_ROUTE_TYPE_MANUAL)
-                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, STREAM_SOURCE_OUTPUT, m->cur_highest_priority.source_output);
-    } if (m->cur_highest_priority.sink_input && (device_direction & DM_DEVICE_DIRECTION_OUT)) {
-        route_type_str = pa_proplist_gets(GET_STREAM_PROPLIST(m->cur_highest_priority.sink_input, STREAM_SINK_INPUT), PA_PROP_MEDIA_ROLE_ROUTE_TYPE);
-        if(!pa_atoi(route_type_str, (int32_t*)&route_type))
-            if (route_type != STREAM_ROUTE_TYPE_MANUAL)
-                do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, STREAM_SINK_INPUT, m->cur_highest_priority.sink_input);
+    if (device_direction & DM_DEVICE_DIRECTION_IN) {
+        if (m->cur_highest_priority.source_output) {
+            route_type_str = pa_proplist_gets(GET_STREAM_PROPLIST(m->cur_highest_priority.source_output, STREAM_SOURCE_OUTPUT), PA_PROP_MEDIA_ROLE_ROUTE_TYPE);
+            if (!pa_atoi(route_type_str, (int32_t*)&route_type))
+                if (route_type != STREAM_ROUTE_TYPE_MANUAL) {
+                    source = (pa_source*)(m->cur_highest_priority.source_output)->source;
+                    if (source == pa_device_manager_get_source(conn->device, DEVICE_ROLE_NORMAL))
+                        do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, STREAM_SOURCE_OUTPUT, FALSE, m->cur_highest_priority.source_output);
+                }
+        }
+    }
+    if (device_direction & DM_DEVICE_DIRECTION_OUT) {
+        if (m->cur_highest_priority.sink_input) {
+            route_type_str = pa_proplist_gets(GET_STREAM_PROPLIST(m->cur_highest_priority.sink_input, STREAM_SINK_INPUT), PA_PROP_MEDIA_ROLE_ROUTE_TYPE);
+            if(!pa_atoi(route_type_str, (int32_t*)&route_type))
+                if (route_type != STREAM_ROUTE_TYPE_MANUAL) {
+                    sink = (pa_source*)(m->cur_highest_priority.sink_input)->sink;
+                    if (sink == pa_device_manager_get_sink(conn->device, DEVICE_ROLE_NORMAL))
+                        do_notify(m, NOTIFY_COMMAND_CHANGE_ROUTE_START, STREAM_SINK_INPUT, FALSE, m->cur_highest_priority.sink_input);
+                }
+        }
     }
 
     return PA_HOOK_OK;
@@ -2566,7 +2691,7 @@ pa_stream_manager* pa_stream_manager_init(pa_core *c) {
 
     m->comm.comm = pa_communicator_get(c);
     m->comm.comm_hook_device_connection_changed_slot = pa_hook_connect(pa_communicator_hook(m->comm.comm,PA_COMMUNICATOR_HOOK_DEVICE_CONNECTION_CHANGED),
-            PA_HOOK_EARLY + 10, (pa_hook_cb_t) device_connection_changed_hook_cb, m);
+            PA_HOOK_EARLY - 10, (pa_hook_cb_t) device_connection_changed_hook_cb, m);
     m->comm.comm_hook_device_information_changed_slot = pa_hook_connect(pa_communicator_hook(m->comm.comm,PA_COMMUNICATOR_HOOK_DEVICE_INFORMATION_CHANGED),
             PA_HOOK_EARLY, (pa_hook_cb_t) device_information_changed_hook_cb, m);
 

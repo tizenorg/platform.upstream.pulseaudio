@@ -2,6 +2,16 @@
 #define foostreammanagerfoo
 #include <pulsecore/core.h>
 
+/* NOTE: A role that has this prefix is only for external audio devices.
+ * This is an internal rule for our implementation with stream-map.json file.
+ * Before long, we need to improve it for more generalization. */
+#define PREFIX_ROLE_FOR_EXTERNAL_DEV "ext-"
+#define IS_ROLE_FOR_EXTERNAL_DEV(role) \
+      (!strncmp(PREFIX_ROLE_FOR_EXTERNAL_DEV, role, strlen(PREFIX_ROLE_FOR_EXTERNAL_DEV)))
+#define PREFIX_ROLE_FOR_FILTER "filter"
+#define IS_ROLE_FOR_FILTER(role) \
+      (!strncmp(PREFIX_ROLE_FOR_FILTER, role, strlen(PREFIX_ROLE_FOR_FILTER)))
+
 typedef struct _stream_manager pa_stream_manager;
 
 typedef enum _stream_type {
@@ -16,6 +26,7 @@ typedef enum stream_route_type {
 } stream_route_type_t;
 
 typedef struct _hook_call_data_for_select {
+    void *stream;
     const char *stream_role;
     stream_type_t stream_type;
     stream_route_type_t route_type;
@@ -44,6 +55,13 @@ typedef struct _hook_call_data_for_option {
     const char *name;
     int32_t value;
 } pa_stream_manager_hook_data_for_option;
+
+typedef struct _hook_call_data_for_update_ext_device {
+    void *stream;
+    stream_type_t stream_type;
+    pa_idxset *idx_manual_devices;
+    pa_bool_t is_stream_started;
+} pa_stream_manager_hook_data_for_update_ext_device;
 
 pa_stream_manager* pa_stream_manager_init(pa_core *c);
 void pa_stream_manager_done(pa_stream_manager* m);

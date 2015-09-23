@@ -3946,6 +3946,18 @@ pa_source* pa_device_manager_get_source(dm_device *device_item, const char *role
     return pa_hashmap_get(profile_item->capture_devices, role);
 }
 
+dm_device* pa_device_manager_get_device_with_sink(pa_sink *sink) {
+    pa_assert(sink);
+
+    return sink->device_item;
+}
+
+dm_device* pa_device_manager_get_device_with_source(pa_source *source) {
+    pa_assert(source);
+
+    return source->device_item;
+}
+
 void pa_device_manager_set_device_state(dm_device *device_item, dm_device_direction_t direction, dm_device_state_t state) {
     dm_device_profile *profile_item;
 

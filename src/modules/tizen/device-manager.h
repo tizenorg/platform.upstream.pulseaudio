@@ -66,6 +66,8 @@ uint32_t pa_device_manager_get_device_id(dm_device *device);
 const char* pa_device_manager_get_device_type(dm_device *device);
 const char* pa_device_manager_get_device_subtype(dm_device *device);
 dm_device_direction_t pa_device_manager_get_device_direction(dm_device *device);
+dm_device* pa_device_manager_get_device_with_sink(pa_sink *sink);
+dm_device* pa_device_manager_get_device_with_source(pa_source *source);
 
 int pa_device_manager_load_sink(const char *device_type, const char *device_profile, const char *role, pa_device_manager *dm);
 int pa_device_manager_load_source(const char *device_type, const char *device_profile, const char *role, pa_device_manager *dm);

@@ -11,7 +11,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          41
+Release:          42
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -151,13 +151,6 @@ Group:   Multimedia/Audio
 %description module-filter
 PulseAudio module-filter.
 
-%package module-combine-sink
-Summary: PA module-combine-sink
-Group:   Multimedia/Audio
-
-%description module-combine-sink
-PulseAudio module-combine-sink.
-
 %package module-augment-properties
 Summary: PA module-augment-properties
 Group:   Multimedia/Audio
@@ -171,13 +164,6 @@ Group:   Multimedia/Audio
 
 %description module-dbus-protocol
 PulseAudio module-dbus-protocol.
-
-%package module-null-source
-Summary: PA module-null-source
-Group:   Multimedia/Audio
-
-%description module-null-source
-PulseAudio module-null-source.
 
 %package module-switch-on-connect
 Summary: PA module-swich-on-connect
@@ -385,6 +371,7 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-cli-protocol-unix.so
 %{_libdir}/pulse-%{version}/modules/module-cli.so
 %{_libdir}/pulse-%{version}/modules/module-combine.so
+%{_libdir}/pulse-%{version}/modules/module-combine-sink.so
 %{_libdir}/pulse-%{version}/modules/module-default-device-restore.so
 %{_libdir}/pulse-%{version}/modules/module-detect.so
 %{_libdir}/pulse-%{version}/modules/module-esound-sink.so
@@ -398,6 +385,7 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-native-protocol-tcp.so
 %{_libdir}/pulse-%{version}/modules/module-native-protocol-unix.so
 %{_libdir}/pulse-%{version}/modules/module-null-sink.so
+%{_libdir}/pulse-%{version}/modules/module-null-source.so
 %{_libdir}/pulse-%{version}/modules/module-pipe-sink.so
 %{_libdir}/pulse-%{version}/modules/module-pipe-source.so
 %{_libdir}/pulse-%{version}/modules/module-position-event-sounds.so
@@ -508,11 +496,6 @@ fi
 %defattr(-,root,root,-)
 %{_libdir}/pulse-%{version}/modules/module-filter-*.so
 
-%files module-combine-sink
-%manifest %{name}.manifest
-%defattr(-,root,root,-)
-%{_libdir}/pulse-%{version}/modules/module-combine-sink.so
-
 %files module-augment-properties
 %manifest %{name}.manifest
 %defattr(-,root,root,-)
@@ -522,11 +505,6 @@ fi
 %manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_libdir}/pulse-%{version}/modules/module-dbus-protocol.so
-
-%files module-null-source
-%manifest %{name}.manifest
-%defattr(-,root,root,-)
-%{_libdir}/pulse-%{version}/modules/module-null-source.so
 
 %files module-switch-on-connect
 %manifest %{name}.manifest

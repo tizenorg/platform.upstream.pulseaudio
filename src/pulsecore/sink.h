@@ -314,6 +314,7 @@ struct pa_sink {
     FILE *dump_fp;
     pa_hashmap *device_types;
     void* device_item;
+    pa_bool_t use_internal_codec;
 #endif
 
     void *userdata;

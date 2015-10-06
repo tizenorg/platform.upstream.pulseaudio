@@ -77,6 +77,7 @@ PA_C_DECL_BEGIN
 #ifdef __TIZEN__
 #define PA_PROP_MEDIA_ROLE_PRIORITY            "media.role.priority"
 #define PA_PROP_MEDIA_ROLE_ROUTE_TYPE          "media.role.route_type"
+#define PA_PROP_MEDIA_ROUTE_AUTO_ACTIVE_DEV    "media.route_auto.active_dev"
 #define PA_PROP_MEDIA_PARENT_ID                "media.parent_id"
 #define PA_PROP_MEDIA_TIZEN_VOLUME_TYPE        "media.tizen_volume_type"
 #define PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE   "media.tizen_volume_gain_type"

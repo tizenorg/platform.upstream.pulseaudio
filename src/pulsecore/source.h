@@ -249,6 +249,7 @@ struct pa_source {
     pa_hashmap *device_types;
     FILE *dump_fp;
     void* device_item;
+    pa_bool_t use_internal_codec;
 #endif
 
     void *userdata;

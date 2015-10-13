@@ -651,24 +651,6 @@ PKG_CHECK_MODULES(VCONF, vconf)
 AC_SUBST(VCONF_CFLAGS)
 AC_SUBST(VCONF_LIBS)
 
-dnl use samsung policy module --------------------------------------------------------
-AC_ARG_ENABLE(samsung-policy, AC_HELP_STRING([--enable-samsung-policy], [using samsung-policy]),
-[
- case "${enableval}" in
-	 yes) USE_SAMSUNG_POLICY=yes ;;
-	 no)  USE_SAMSUNG_POLICY=no ;;
-	 *)   AC_MSG_ERROR(bad value ${enableval} for --enable-samsung_policy) ;;
- esac
- ],[USE_SAMSUNG_POLICY=no])
-
-if test "x$USE_SAMSUNG_POLICY" = "xyes"; then
-	PKG_CHECK_MODULES(VCONF, vconf)
-	AC_SUBST(VCONF_CFLAGS)
-	AC_SUBST(VCONF_LIBS)
-fi
-AM_CONDITIONAL(USE_SAMSUNG_POLICY, test "x$USE_SAMSUNG_POLICY" = "xyes")
-dnl end --------------------------------------------------------------------
-
 dnl use dlog --------------------------------------------------------------------------
 AC_ARG_ENABLE(dlog, AC_HELP_STRING([--enable-dlog], [using dlog]),
 [
@@ -1619,7 +1601,6 @@ AS_IF([test "x$HAVE_ESOUND" = "x1" -a "x$USE_PER_USER_ESOUND_SOCKET" = "x1"], EN
 AS_IF([test "x$HAVE_GCOV" = "x1"], ENABLE_GCOV=yes, ENABLE_GCOV=no)
 AS_IF([test "x$HAVE_LIBCHECK" = "x1"], ENABLE_TESTS=yes, ENABLE_TESTS=no)
 AS_IF([test "x$enable_legacy_database_entry_format" != "xno"], ENABLE_LEGACY_DATABASE_ENTRY_FORMAT=yes, ENABLE_LEGACY_DATABASE_ENTRY_FORMAT=no)
-AS_IF([test "x$USE_SAMSUNG_POLICY" = "x1"], ENABLE_SAMSUNG_POLICY=yes, ENABLE_SAMSUNG_POLICY=no)
 AS_IF([test "x$USE_DLOG" = "x1"], ENABLE_DLOG=yes, ENABLE_DLOG=no)
 AS_IF([test "x$USE_PM_LOCK" = "x1"], ENABLE_PM_LOCK=yes, ENABLE_PM_LOCK=no)
 AS_IF([test "x$USE_BT_PROFILE_SET" = "x1"], ENABLE_BT_PROFILE_SET=yes, ENABLE_BT_PROFILE_SET=no)
@@ -1692,7 +1673,6 @@ echo "
     Legacy Database Entry Support: ${ENABLE_LEGACY_DATABASE_ENTRY_FORMAT}
 
     Tizen
-      samsung policy:              ${ENABLE_SAMSUNG_POLICY}
       dlog:                        ${ENABLE_DLOG}
       pmapi:                       ${ENABLE_PM_LOCK}
       bluetooth profile set:       ${ENABLE_BT_PROFILE_SET}

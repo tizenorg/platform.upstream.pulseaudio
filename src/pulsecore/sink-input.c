@@ -28,7 +28,6 @@
 #include <stdlib.h>
 #ifdef __TIZEN__
 #include <time.h>
-#include "tizen-audio.h"
 #endif
 
 #include <pulse/utf8.h>

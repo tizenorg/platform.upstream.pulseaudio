@@ -3,7 +3,6 @@
 %bcond_with pulseaudio_bt_profile_set
 %bcond_without pulseaudio_udev_with_usb_only
 %bcond_with pulseaudio_with_bluez5
-%bcond_with pulseaudio_samsung_policy
 %bcond_with x
 
 %define udev_dir %{_prefix}/lib/udev
@@ -11,7 +10,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          43
+Release:          44
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -241,9 +240,6 @@ NOCONFIGURE=yes ./bootstrap.sh
 %endif
 %if %{with pulseaudio_udev_with_usb_only}
         --enable-udev-with-usb-only \
-%endif
-%if %{with pulseaudio_samsung_policy}
-        --enable-samsung-policy \
 %endif
         --with-udev-rules-dir=%{udev_dir}/rules.d \
         --with-system-user=pulse \

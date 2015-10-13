@@ -957,11 +957,6 @@ pulseinclude_HEADERS = \
 		pulse/volume.h \
 		pulse/xmalloc.h
 
-if USE_SAMSUNG_POLICY
-pulseinclude_HEADERS += \
-		pulse/ext-policy.h
-endif
-
 lib_LTLIBRARIES = \
 		libpulse.la \
 		libpulse-simple.la
@@ -1010,11 +1005,6 @@ libpulse_la_SOURCES = \
 		pulse/util.c pulse/util.h \
 		pulse/volume.c pulse/volume.h \
 		pulse/xmalloc.c pulse/xmalloc.h
-
-if USE_SAMSUNG_POLICY
-libpulse_la_SOURCES += \
-        pulse/ext-policy.c pulse/ext-policy.h
-endif
 
 libpulse_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS) $(LIBJSON_CFLAGS)
 libpulse_la_LIBADD = $(AM_LIBADD) $(WINSOCK_LIBS) $(LTLIBICONV) $(LIBJSON_LIBS) libpulsecommon-@PA_MAJORMINOR@.la

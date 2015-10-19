@@ -60,6 +60,16 @@
 
 #include "protocol-native.h"
 
+#ifdef __TIZEN__
+#include <pulsecore/iochannel.h>
+#include "cynara-creds-socket.h"
+#include "cynara-client.h"
+#include "cynara-session.h"
+
+#define VOLUME_SET_PRIVILEGE "http://tizen.org/privilege/volume.set"
+#define RECORDER_PRIVILEGE "http://tizen.org/privilege/recorder"
+#endif
+
 /* #define PROTOCOL_NATIVE_DEBUG */
 
 /* Kick a client if it doesn't authenticate within this time */
@@ -307,6 +317,11 @@ static void command_set_sink_or_source_port(pa_pdispatch *pd, uint32_t command, 
 static void command_set_port_latency_offset(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 static void command_set_volume_ramp(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 
+#ifdef __TIZEN__
+void cynara_log(const char *string, int cynara_status);
+bool cynara_check_privilege(pa_native_connection *c, const char *privilege);
+#endif
+
 static const pa_pdispatch_cb_t command_table[PA_COMMAND_MAX] = {
     [PA_COMMAND_ERROR] = NULL,
     [PA_COMMAND_TIMEOUT] = NULL,
@@ -421,6 +436,99 @@ static const pa_pdispatch_cb_t command_table[PA_COMMAND_MAX] = {
 
     [PA_COMMAND_EXTENSION] = command_extension
 };
+
+#ifdef __TIZEN__
+
+/* Cynara check privilege */
+
+void cynara_log(const char *string, int cynara_status) {
+    const int buflen = 255;
+    char buf[buflen];
+
+    int ret = cynara_strerror(cynara_status, buf, buflen);
+    if(ret != CYNARA_API_SUCCESS) {
+      strncpy("cynara_strerror failed", buf, buflen);
+    }
+    if(cynara_status < 0)
+      pa_log_error("%s: %s", string, buf);
+    else
+      pa_log_debug("%s: %s", string, buf);
+}
+
+bool cynara_check_privilege(pa_native_connection *c, const char *privilege) {
+    cynara *p_cynara = NULL;
+    cynara_configuration *p_conf = NULL;
+
+    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
+
+    int ret = 0;
+    int result = false;
+
+    char *user = NULL;
+    char *client = NULL;
+    char *session = NULL;
+    int pid = 0;
+
+    ret = cynara_configuration_create(&p_conf);
+    cynara_log("cynara_configuration_create()", ret);
+    if (ret != CYNARA_API_SUCCESS) {
+        goto CLEANUP;
+    }
+
+    ret = cynara_configuration_set_cache_size(p_conf, 0);
+    cynara_log("cynara_configuration_set_cache_size()", ret);
+    if (ret != CYNARA_API_SUCCESS) {
+        goto CLEANUP;
+    }
+
+    ret = cynara_initialize(&p_cynara, p_conf);
+    cynara_log("cynara_initialize()", ret);
+    if (ret != CYNARA_API_SUCCESS) {
+        goto CLEANUP;
+    }
+
+    ret = cynara_creds_socket_get_user(fd, USER_METHOD_DEFAULT, &user);
+    cynara_log("cynara_creds_socket_get_user()", ret);
+    if (ret != CYNARA_API_SUCCESS) {
+        goto CLEANUP;
+    }
+
+    ret = cynara_creds_socket_get_pid(fd, &pid);
+    cynara_log("cynara_creds_socket_get_pid()", ret);
+    if (ret != CYNARA_API_SUCCESS) {
+        goto CLEANUP;
+    }
+
+    ret = cynara_creds_socket_get_client(fd, CLIENT_METHOD_DEFAULT, &client);
+    cynara_log("cynara_creds_socket_get_client()", ret);
+    if (ret != CYNARA_API_SUCCESS) {
+        goto CLEANUP;
+    }
+
+    session = cynara_session_from_pid(pid);
+    if (session == NULL) {
+        pa_log_error("cynara_session_from_pid(): failed");
+        goto CLEANUP;
+    }
+
+
+    pa_log_debug("cynara client credentials: %s, user: %s, session: %s, privilege: %s", client, user, session, privilege);
+
+    ret = cynara_check(p_cynara, client, session, user, privilege);
+    cynara_log("cynara_check()", ret);
+    if (ret == CYNARA_API_ACCESS_ALLOWED) {
+        result = true;
+    }
+
+CLEANUP:
+    cynara_configuration_destroy(p_conf);
+    cynara_finish(p_cynara);
+    free(user);
+    free(session);
+    free(client);
+    return result;
+}
+#endif
 
 /* structure management */
 
@@ -2453,6 +2561,13 @@ static void command_create_record_stream(pa_pdispatch *pd, uint32_t command, uin
     pa_idxset *formats = NULL;
     uint32_t i;
 
+    #ifdef __TIZEN__
+    if (!cynara_check_privilege(c, RECORDER_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
+
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -3002,6 +3117,13 @@ static void command_get_record_latency(pa_pdispatch *pd, uint32_t command, uint3
     record_stream *s;
     struct timeval tv, now;
     uint32_t idx;
+
+    #ifdef __TIZEN__
+    if (!cynara_check_privilege(c, RECORDER_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);
@@ -3841,6 +3963,13 @@ static void command_set_volume(
     const char *name = NULL;
     const char *client_name;
 
+    #ifdef __TIZEN__
+    if (!cynara_check_privilege(c, VOLUME_SET_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
+
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -3936,6 +4065,13 @@ static void command_set_volume_ramp(
     const char *name = NULL;
     const char *client_name;
 
+    #ifdef __TIZEN__
+    if (!cynara_check_privilege(c, VOLUME_SET_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
+
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -4001,6 +4137,13 @@ static void command_set_mute(
     pa_sink_input *si = NULL;
     pa_source_output *so = NULL;
     const char *name = NULL, *client_name;
+
+    #ifdef __TIZEN__
+    if (!cynara_check_privilege(c, VOLUME_SET_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);

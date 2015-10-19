@@ -83,6 +83,14 @@ MODULE_LDFLAGS = $(AM_LDFLAGS) -module -disable-static -avoid-version $(NOUNDEFI
 MODULE_LIBADD = $(AM_LIBADD) libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la
 
 ###################################
+#             Cynara              #
+###################################
+
+AM_CFLAGS += -I/usr/include/cynara
+AM_CPPFLAGS += -I/usr/include/cynara
+AM_LDADD += -lcynara-creds-socket -lcynara-client -lcynara-session
+
+###################################
 #          Extra files            #
 ###################################
 

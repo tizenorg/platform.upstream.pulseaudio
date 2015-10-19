@@ -66,4 +66,8 @@ bool pa_pstream_is_pending(pa_pstream *p);
 void pa_pstream_enable_shm(pa_pstream *p, bool enable);
 bool pa_pstream_get_shm(pa_pstream *p);
 
+#ifdef __TIZEN__
+pa_iochannel *pa_pstream_get_iochannel(pa_pstream *p);
+#endif
+
 #endif

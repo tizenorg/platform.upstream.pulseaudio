@@ -39,6 +39,9 @@ BuildRequires:    pkgconfig(tdb)
 BuildRequires:    pkgconfig(vconf)
 BuildRequires:    systemd-devel
 BuildRequires:    libcap-devel
+BuildRequires:    pkgconfig(cynara-client)
+BuildRequires:    pkgconfig(cynara-creds-socket)
+BuildRequires:    pkgconfig(cynara-session)
 %if %{with pulseaudio_dlog}
 BuildRequires:    pkgconfig(dlog)
 %endif

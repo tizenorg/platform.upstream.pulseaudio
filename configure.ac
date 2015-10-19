@@ -646,7 +646,7 @@ PKG_CHECK_MODULES(LIBSNDFILE, [ sndfile >= 1.0.20 ])
 PKG_CHECK_MODULES(INIPARSER, iniparser)
 AC_SUBST(INIPARSER_CFLAGS)
 AC_SUBST(INIPARSER_LIBS)
-	
+
 PKG_CHECK_MODULES(VCONF, vconf)
 AC_SUBST(VCONF_CFLAGS)
 AC_SUBST(VCONF_LIBS)
@@ -1703,6 +1703,8 @@ echo "
 if test "${ENABLE_SPEEX}" = "no" && test "${ENABLE_WEBRTC}" = "no" && test "${ENABLE_ADRIAN_EC}" = "no" ; then
 AC_MSG_ERROR([At least one echo canceller implementation must be available.])
 fi
+
+
 
 if test "${ENABLE_DBUS}" = "no" && test "x$os_is_win32" != "x1" ; then
    echo "

@@ -57,8 +57,14 @@
 #include <pulsecore/core-util.h>
 #include <pulsecore/ipacl.h>
 #include <pulsecore/thread-mq.h>
+#include <pulsecore/iochannel.h>
 
 #include "protocol-native.h"
+
+#include "cynara-creds-socket.h"
+#include "cynara-client.h"
+#include "cynara-session.h"
+
 
 /* #define PROTOCOL_NATIVE_DEBUG */
 
@@ -2731,7 +2737,6 @@ static void command_auth(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_ta
 
 #ifdef HAVE_CREDS
         const pa_creds *creds;
-
         if ((creds = pa_pdispatch_creds(pd))) {
             if (creds->uid == getuid())
                 success = true;
@@ -3824,6 +3829,70 @@ static void command_subscribe(pa_pdispatch *pd, uint32_t command, uint32_t tag, 
     pa_pstream_send_simple_ack(c->pstream, tag);
 }
 
+bool checkPrivilege(pa_native_connection *c, const char * privilege) {
+  cynara * cyn = NULL;
+
+  int fd = c->client->ifd;
+
+  int ret = 0;
+  int result = false;
+
+  char * user = NULL;
+  char * client = NULL;
+  char * session = NULL;
+  int pid = 0;
+
+  ret = cynara_initialize(&cyn, NULL);
+  if (ret != CYNARA_API_SUCCESS) {
+    pa_log_error("Can not initialize cynara!");
+    goto CLEANUP;
+  }
+
+  ret = cynara_creds_socket_get_user(fd, USER_METHOD_DEFAULT, &user);
+  if (ret != CYNARA_API_SUCCESS) {
+    pa_log_error("Can not get user id!");
+    goto CLEANUP;
+  }
+
+  ret = cynara_creds_socket_get_pid(fd, &pid);
+  if (ret != CYNARA_API_SUCCESS) {
+    pa_log_error("Can not get pid!");
+    goto CLEANUP;
+  }
+
+  ret = cynara_creds_socket_get_client(fd, CLIENT_METHOD_DEFAULT, &client);
+  if (ret != CYNARA_API_SUCCESS) {
+    pa_log_error("Can not get client!");
+    goto CLEANUP;
+  }
+
+  session = cynara_session_from_pid(pid);
+  if (session == NULL) {
+    pa_log_error("Can not get session!");
+    goto CLEANUP;
+  }
+
+  ret = cynara_check(cyn, client, session, user, "http://tizen.org/privilege/volume.set");
+  pa_log_debug("Cynara check returned: %d", ret);
+
+  switch(ret) {
+    case CYNARA_API_ACCESS_ALLOWED:
+      result = true;
+      break;
+    case CYNARA_API_ACCESS_DENIED:
+      break;
+    default:
+      pa_log_debug("Cynara error!!");
+  }
+
+CLEANUP:
+  cynara_finish(cyn);
+  free(user);
+  free(session);
+  free(client);
+  return result;
+}
+
 static void command_set_volume(
         pa_pdispatch *pd,
         uint32_t command,
@@ -3840,6 +3909,11 @@ static void command_set_volume(
     pa_source_output *so = NULL;
     const char *name = NULL;
     const char *client_name;
+
+    if (!checkPrivilege(c, "http://tizen.org/privilege/volume.set")) {
+      pa_pstream_send_simple_ack(c->pstream, tag);
+      return;
+    }
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);
@@ -3893,7 +3967,7 @@ static void command_set_volume(
     if (sink) {
         CHECK_VALIDITY(c->pstream, volume.channels == 1 || pa_cvolume_compatible(&volume, &sink->sample_spec), tag, PA_ERR_INVALID);
 
-        pa_log_debug("Client %s changes volume of sink %s.", client_name, sink->name);
+        pa_log_debug("Client %s, changes volume of sink %s.", client_name, sink->name);
         pa_sink_set_volume(sink, &volume, true, true);
     } else if (source) {
         CHECK_VALIDITY(c->pstream, volume.channels == 1 || pa_cvolume_compatible(&volume, &source->sample_spec), tag, PA_ERR_INVALID);
@@ -5455,6 +5529,7 @@ void pa_native_protocol_connect(pa_native_protocol *p, pa_iochannel *io, pa_nati
     c->client->send_event = client_send_event_cb;
     c->client->userdata = c;
 
+
     c->pstream = pa_pstream_new(p->core->mainloop, io, p->core->mempool);
     pa_pstream_set_receive_packet_callback(c->pstream, pstream_packet_callback, c);
     pa_pstream_set_receive_memblock_callback(c->pstream, pstream_memblock_callback, c);
@@ -5462,6 +5537,9 @@ void pa_native_protocol_connect(pa_native_protocol *p, pa_iochannel *io, pa_nati
     pa_pstream_set_drain_callback(c->pstream, pstream_drain_callback, c);
     pa_pstream_set_revoke_callback(c->pstream, pstream_revoke_callback, c);
     pa_pstream_set_release_callback(c->pstream, pstream_release_callback, c);
+
+    c->client->ofd = pa_iochannel_get_send_fd(io);
+    c->client->ifd = pa_iochannel_get_recv_fd(io);
 
     c->pdispatch = pa_pdispatch_new(p->core->mainloop, true, command_table, PA_COMMAND_MAX);
 

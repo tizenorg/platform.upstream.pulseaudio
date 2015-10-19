@@ -50,6 +50,9 @@ struct pa_client {
     void (*kill)(pa_client *c);
 
     void (*send_event)(pa_client *c, const char *name, pa_proplist *data);
+
+    int ofd;
+    int ifd;
 };
 
 typedef struct pa_client_new_data {

@@ -41,6 +41,9 @@ BuildRequires:    pkgconfig(tdb)
 BuildRequires:    pkgconfig(vconf)
 BuildRequires:    systemd-devel
 BuildRequires:    libcap-devel
+BuildRequires: pkgconfig(cynara-client)
+BuildRequires: pkgconfig(cynara-creds-socket)
+BuildRequires: pkgconfig(cynara-session)
 %if %{with pulseaudio_dlog}
 BuildRequires:    pkgconfig(dlog)
 %endif
@@ -195,19 +198,19 @@ echo "%{version}" > .tarball-version
 cp %{SOURCE1001} .
 
 %build
-export CFLAGS="%{optflags} -fno-strict-aliasing -D__TIZEN__ -D__TIZEN_BT__ -D__TIZEN_LOG__ -DTIZEN_MICRO -DBLUETOOTH_APTX_SUPPORT"
+export CFLAGS="%{optflags} -O0 -fno-strict-aliasing -D__TIZEN__ -D__TIZEN_BT__ -D__TIZEN_LOG__ -DTIZEN_MICRO -DBLUETOOTH_APTX_SUPPORT -I/usr/include/cynara"
 %if 0%{?sec_build_binary_debug_enable}
-export CFLAGS+=" -DTIZEN_DEBUG_ENABLE"
-export CXXFLAGS="$CXXFLAGS -DTIZEN_DEBUG_ENABLE"
-export FFLAGS="$FFLAGS -DTIZEN_DEBUG_ENABLE"
+export CFLAGS+=" -DTIZEN_DEBUG_ENABLE -I/usr/include/cynara"
+export CXXFLAGS="$CXXFLAGS -DTIZEN_DEBUG_ENABLE -I/usr/include/cynara"
+export FFLAGS="$FFLAGS -DTIZEN_DEBUG_ENABLE -I/usr/include/cynara"
 %endif
 
 %if "%{?tizen_profile_name}" == "wearable"
 	echo "tizen profile werable"
-	export CFLAGS+=" -DTIZEN_MICRO -DPM_ASYNC -DADJUST_ANDROID_BITPOOL"
+	export CFLAGS+=" -DTIZEN_MICRO -DPM_ASYNC -DADJUST_ANDROID_BITPOOL -I/usr/include/cynara"
 %else if "%{?tizen_profile_name}" == "mobile"
 	echo "tizen profile mobile"
-	export CFLAGS+=" -DTIZEN_MOBILE -DPM_ASYNC "
+	export CFLAGS+=" -DTIZEN_MOBILE -DPM_ASYNC -I/usr/include/cynara"
 %endif
 
 export LD_AS_NEEDED=0
@@ -250,7 +253,7 @@ NOCONFIGURE=yes ./bootstrap.sh
         --with-system-group=pulse \
         --with-access-group=pulse-access
 
-%__make %{?_smp_mflags} V=0
+%__make %{?_smp_mflags} V=1
 
 %install
 %make_install

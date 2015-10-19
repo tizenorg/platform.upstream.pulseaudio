@@ -45,17 +45,19 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/src \
 	-I$(top_srcdir)/src/modules \
 	-I$(top_builddir)/src/modules \
+	-I/usr/include/cynara \
 	-DPA_ALSA_PATHS_DIR=\"$(alsapathsdir)\" \
 	-DPA_ALSA_PROFILE_SETS_DIR=\"$(alsaprofilesetsdir)\"
 AM_CFLAGS = \
 	$(PTHREAD_CFLAGS) \
+	-I/usr/include/cynara \
 	-DPA_SRCDIR=\"$(abs_srcdir)\" \
 	-DPA_BUILDDIR=\"$(abs_builddir)\"
 AM_CXXFLAGS = $(AM_CFLAGS)
 SERVER_CFLAGS = -D__INCLUDED_FROM_PULSE_AUDIO
 
 AM_LIBADD = $(PTHREAD_LIBS) $(INTLLIBS)
-AM_LDADD = $(PTHREAD_LIBS) $(INTLLIBS)
+AM_LDADD = $(PTHREAD_LIBS) $(INTLLIBS)  -lcynara-creds-socket -lcynara-client -lcynara-session
 AM_LDFLAGS = $(NODELETE_LDFLAGS)
 
 if HAVE_GCOV

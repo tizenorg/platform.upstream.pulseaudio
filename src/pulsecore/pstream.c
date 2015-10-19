@@ -1038,3 +1038,9 @@ bool pa_pstream_get_shm(pa_pstream *p) {
 
     return p->use_shm;
 }
+
+#ifdef __TIZEN__
+pa_iochannel *pa_pstream_get_iochannel(pa_pstream *p) {
+    return p->io;
+}
+#endif

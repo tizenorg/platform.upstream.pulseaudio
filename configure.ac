@@ -1371,6 +1371,12 @@ else
     USE_PER_USER_ESOUND_SOCKET=0
 fi
 
+#### Cynara ####
+
+PKG_CHECK_MODULES(CYNARA, [cynara-client, cynara-creds-socket, cynara-session])
+AC_SUBST(CYNARA_CFLAGS)
+AC_SUBST(CYNARA_LIBS)
+
 #### PulseAudio system runtime dir ####
 
 PA_SYSTEM_RUNTIME_PATH="${localstatedir}/run/pulse"

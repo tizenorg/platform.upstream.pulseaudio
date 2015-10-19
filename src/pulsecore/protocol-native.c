@@ -57,8 +57,13 @@
 #include <pulsecore/core-util.h>
 #include <pulsecore/ipacl.h>
 #include <pulsecore/thread-mq.h>
+#include <pulsecore/iochannel.h>
 
 #include "protocol-native.h"
+
+#include "cynara-creds-socket.h"
+#include "cynara-client.h"
+#include "cynara-session.h"
 
 /* #define PROTOCOL_NATIVE_DEBUG */
 
@@ -76,6 +81,8 @@
 #ifdef __TIZEN__
 #define DEVICE_BUS_BUILTIN "builtin"
 #endif
+
+#define VOLUME_SET_PRIVILEGE "http://tizen.org/privilege/volume.set"
 
 struct pa_native_protocol;
 
@@ -3824,6 +3831,70 @@ static void command_subscribe(pa_pdispatch *pd, uint32_t command, uint32_t tag, 
     pa_pstream_send_simple_ack(c->pstream, tag);
 }
 
+bool checkPrivilege(pa_native_connection *c, const char * privilege) {
+  cynara * cyn = NULL;
+
+  int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
+
+  int ret = 0;
+  int result = false;
+
+  char * user = NULL;
+  char * client = NULL;
+  char * session = NULL;
+  int pid = 0;
+
+  ret = cynara_initialize(&cyn, NULL);
+  if (ret != CYNARA_API_SUCCESS) {
+    pa_log_error("cynara_initialize() failed");
+    goto CLEANUP;
+  }
+
+  ret = cynara_creds_socket_get_user(fd, USER_METHOD_DEFAULT, &user);
+  if (ret != CYNARA_API_SUCCESS) {
+    pa_log_error("cynara_creds_socket_get_user() failed");
+    goto CLEANUP;
+  }
+
+  ret = cynara_creds_socket_get_pid(fd, &pid);
+  if (ret != CYNARA_API_SUCCESS) {
+    pa_log_error("cynara_creds_socket_get_pid() failed");
+    goto CLEANUP;
+  }
+
+  ret = cynara_creds_socket_get_client(fd, CLIENT_METHOD_DEFAULT, &client);
+  if (ret != CYNARA_API_SUCCESS) {
+    pa_log_error("cynara_creds_socket_get_client() failed");
+    goto CLEANUP;
+  }
+
+  session = cynara_session_from_pid(pid);
+  if (session == NULL) {
+    pa_log_error("cynara_session_from_pid() failed");
+    goto CLEANUP;
+  }
+
+  ret = cynara_check(cyn, client, session, user, VOLUME_SET_PRIVILEGE);
+  pa_log_debug("Cynara check returned: %d", ret);
+
+  switch(ret) {
+    case CYNARA_API_ACCESS_ALLOWED:
+      result = true;
+      break;
+    case CYNARA_API_ACCESS_DENIED:
+      break;
+    default:
+      pa_log_debug("Cynara error!!");
+  }
+
+CLEANUP:
+  cynara_finish(cyn);
+  free(user);
+  free(session);
+  free(client);
+  return result;
+}
+
 static void command_set_volume(
         pa_pdispatch *pd,
         uint32_t command,
@@ -3840,6 +3911,11 @@ static void command_set_volume(
     pa_source_output *so = NULL;
     const char *name = NULL;
     const char *client_name;
+
+    if (!checkPrivilege(c, VOLUME_SET_PRIVILEGE)) {
+      pa_pstream_send_simple_ack(c->pstream, tag);
+      return;
+    }
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);
@@ -3936,6 +4012,11 @@ static void command_set_volume_ramp(
     const char *name = NULL;
     const char *client_name;
 
+    if (!checkPrivilege(c, VOLUME_SET_PRIVILEGE)) {
+      pa_pstream_send_simple_ack(c->pstream, tag);
+      return;
+    }
+
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -4001,6 +4082,11 @@ static void command_set_mute(
     pa_sink_input *si = NULL;
     pa_source_output *so = NULL;
     const char *name = NULL, *client_name;
+
+    if (!checkPrivilege(c, VOLUME_SET_PRIVILEGE)) {
+      pa_pstream_send_simple_ack(c->pstream, tag);
+      return;
+    }
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);

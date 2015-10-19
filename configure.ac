@@ -385,7 +385,6 @@ AS_IF([test "x$LIBLTDL" = "x"],
     [AC_MSG_ERROR([Unable to find libltdl version 2. Makes sure you have libtool 2.4 or later installed.])])
 AC_SUBST([LIBLTDL])
 
-
 ###################################
 #   Basic environment checks      #
 ###################################
@@ -1370,6 +1369,11 @@ if test "x$enable_per_user_esound_socket" != "xno"; then
 else
     USE_PER_USER_ESOUND_SOCKET=0
 fi
+
+#### Cynara ####
+PKG_CHECK_MODULES(CYNARA, [cynara-client, cynara-creds-socket, cynara-session])
+AC_SUBST(CYNARA_CFLAGS)
+AC_SUBST(CYNARA_LIBS)
 
 #### PulseAudio system runtime dir ####
 

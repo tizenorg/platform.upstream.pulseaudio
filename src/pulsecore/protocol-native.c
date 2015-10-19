@@ -60,6 +60,11 @@
 
 #include "protocol-native.h"
 
+#ifdef __TIZEN__
+#include <pulsecore/cynara.h>
+#include <pulsecore/iochannel.h>
+#endif
+
 /* #define PROTOCOL_NATIVE_DEBUG */
 
 /* Kick a client if it doesn't authenticate within this time */
@@ -2453,6 +2458,14 @@ static void command_create_record_stream(pa_pdispatch *pd, uint32_t command, uin
     pa_idxset *formats = NULL;
     uint32_t i;
 
+    #ifdef __TIZEN__
+    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
+    if (!cynara_check_privilege(fd, RECORDER_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
+
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -3002,6 +3015,14 @@ static void command_get_record_latency(pa_pdispatch *pd, uint32_t command, uint3
     record_stream *s;
     struct timeval tv, now;
     uint32_t idx;
+
+    #ifdef __TIZEN__
+    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
+    if (!cynara_check_privilege(fd, RECORDER_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);
@@ -3841,6 +3862,14 @@ static void command_set_volume(
     const char *name = NULL;
     const char *client_name;
 
+    #ifdef __TIZEN__
+    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
+    if (!cynara_check_privilege(fd, VOLUME_SET_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
+
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -3936,6 +3965,14 @@ static void command_set_volume_ramp(
     const char *name = NULL;
     const char *client_name;
 
+    #ifdef __TIZEN__
+    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
+    if (!cynara_check_privilege(fd, VOLUME_SET_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
+
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -4001,6 +4038,14 @@ static void command_set_mute(
     pa_sink_input *si = NULL;
     pa_source_output *so = NULL;
     const char *name = NULL, *client_name;
+
+    #ifdef __TIZEN__
+    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
+    if (!cynara_check_privilege(fd, VOLUME_SET_PRIVILEGE)) {
+        pa_pstream_send_simple_ack(c->pstream, tag);
+        return;
+    }
+    #endif
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);

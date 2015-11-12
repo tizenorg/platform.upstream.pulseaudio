@@ -10,7 +10,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          47
+Release:          48
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -29,7 +29,6 @@ BuildRequires:    pkgconfig(gconf-2.0)
 BuildRequires:    pkgconfig(bluez)
 BuildRequires:    pkgconfig(sbc)
 BuildRequires:    pkgconfig(dbus-1)
-BuildRequires:    pkgconfig(iniparser)
 %if %{with x}
 BuildRequires:    pkgconfig(xi)
 %endif

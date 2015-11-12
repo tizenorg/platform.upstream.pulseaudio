@@ -42,19 +42,12 @@
 #include <pulsecore/thread.h>
 #include <pulsecore/conf-parser.h>
 #include <pulsecore/core-rtclock.h>
-#ifdef __TIZEN__
-#include <pulsecore/shared.h>
-#endif
 
 #include "alsa-util.h"
 #include "alsa-mixer.h"
 
 #ifdef HAVE_UDEV
 #include "udev-util.h"
-#endif
-
-#ifdef __TIZEN__
-#include "tizen-audio.h"
 #endif
 
 static int set_format(snd_pcm_t *pcm_handle, snd_pcm_hw_params_t *hwparams, pa_sample_format_t *f) {
@@ -729,8 +722,6 @@ snd_pcm_t *pa_alsa_open_by_device_string(
 #ifdef __TIZEN__
     int ret = 0;
     int hdmi_ch_enum_val = 0;
-    void *audio_data = NULL;
-    audio_interface_t *audio_intf = NULL;
 #endif
 
     pa_assert(device);
@@ -742,19 +733,6 @@ snd_pcm_t *pa_alsa_open_by_device_string(
     for (;;) {
         pa_log_debug("Trying %s %s SND_PCM_NO_AUTO_FORMAT ...", d, reformat ? "without" : "with");
 
-#ifdef __TIZEN__
-        audio_data = pa_shared_get(c, "tizen-audio-data");
-        audio_intf = pa_shared_get(c, "tizen-audio-interface");
-        if (audio_intf && audio_intf->alsa_pcm_open) {
-            audio_return_t audio_ret = AUDIO_RET_OK;
-
-            if (AUDIO_IS_ERROR((audio_ret = audio_intf->alsa_pcm_open(audio_data, (void **)&pcm_handle, d, (mode == SND_PCM_STREAM_PLAYBACK) ? AUDIO_DIRECTION_OUT : AUDIO_DIRECTION_IN,
-                SND_PCM_NONBLOCK | SND_PCM_NO_AUTO_RESAMPLE | SND_PCM_NO_AUTO_CHANNELS | (reformat ? 0 : SND_PCM_NO_AUTO_FORMAT))))) {
-                pa_log("Error opening PCM device %s: %x", d, audio_ret);
-                goto fail;
-            }
-        } else
-#endif
         if ((err = snd_pcm_open(&pcm_handle, d, mode,
                                 SND_PCM_NONBLOCK|
                                 SND_PCM_NO_AUTO_RESAMPLE|
@@ -778,12 +756,6 @@ snd_pcm_t *pa_alsa_open_by_device_string(
 
             if (!reformat) {
                 reformat = true;
-
-#ifdef __TIZEN__
-                if (audio_data && audio_intf && audio_intf->alsa_pcm_close) {
-                    audio_intf->alsa_pcm_close(audio_data, pcm_handle);
-                } else
-#endif
                 snd_pcm_close(pcm_handle);
                 continue;
             }
@@ -797,22 +769,11 @@ snd_pcm_t *pa_alsa_open_by_device_string(
                 d = t;
 
                 reformat = false;
-
-#ifdef __TIZEN__
-                if (audio_data && audio_intf && audio_intf->alsa_pcm_close) {
-                    audio_intf->alsa_pcm_close(audio_data, pcm_handle);
-                } else
-#endif
                 snd_pcm_close(pcm_handle);
                 continue;
             }
 
             pa_log_info("Failed to set hardware parameters on %s: %s", d, pa_alsa_strerror(err));
-#ifdef __TIZEN__
-            if (audio_data && audio_intf && audio_intf->alsa_pcm_close) {
-                audio_intf->alsa_pcm_close(audio_data, pcm_handle);
-            } else
-#endif
             snd_pcm_close(pcm_handle);
 
             goto fail;

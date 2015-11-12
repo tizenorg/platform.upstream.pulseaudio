@@ -49,18 +49,10 @@
 #include <pulsecore/thread-mq.h>
 #include <pulsecore/rtpoll.h>
 #include <pulsecore/time-smoother.h>
-#ifdef __TIZEN__
-#include <pulsecore/shared.h>
-#endif
-
 #include <modules/reserve-wrap.h>
 
 #include "alsa-util.h"
 #include "alsa-source.h"
-
-#ifdef __TIZEN__
-#include "tizen-audio.h"
-#endif
 
 /* #define DEBUG_TIMING */
 
@@ -864,10 +856,6 @@ static int build_pollfd(struct userdata *u) {
 
 /* Called from IO context */
 static int suspend(struct userdata *u) {
-#ifdef __TIZEN__
-    void *audio_data = pa_shared_get(u->core, "tizen-audio-data");
-    audio_interface_t *audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
-#endif
 
     pa_assert(u);
     pa_assert(u->pcm_handle);
@@ -875,11 +863,6 @@ static int suspend(struct userdata *u) {
     pa_smoother_pause(u->smoother, pa_rtclock_now());
 
     /* Let's suspend */
-#ifdef __TIZEN__
-    if (audio_intf && audio_intf->alsa_pcm_close) {
-        audio_intf->alsa_pcm_close(audio_data, u->pcm_handle);
-    } else
-#endif
     snd_pcm_close(u->pcm_handle);
     u->pcm_handle = NULL;
 
@@ -993,27 +976,10 @@ static int unsuspend(struct userdata *u) {
     int err;
     bool b, d;
     snd_pcm_uframes_t period_size, buffer_size;
-#ifdef __TIZEN__
-    void *audio_data = pa_shared_get(u->core, "tizen-audio-data");
-    audio_interface_t *audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
-#endif
-
     pa_assert(u);
     pa_assert(!u->pcm_handle);
 
     pa_log_info("Trying resume...");
-
-#ifdef __TIZEN__
-    if (audio_intf && audio_intf->alsa_pcm_open) {
-        audio_return_t audio_ret = AUDIO_RET_OK;
-
-        if (AUDIO_IS_ERROR((audio_ret = audio_intf->alsa_pcm_open(audio_data, (void **)&u->pcm_handle, u->device_name, AUDIO_DIRECTION_IN,
-            SND_PCM_NONBLOCK | SND_PCM_NO_AUTO_RESAMPLE | SND_PCM_NO_AUTO_CHANNELS | SND_PCM_NO_AUTO_FORMAT)))) {
-            pa_log("Error opening PCM device %s: %x", u->device_name, audio_ret);
-            goto fail;
-        }
-    } else
-#endif
     if ((err = snd_pcm_open(&u->pcm_handle, u->device_name, SND_PCM_STREAM_CAPTURE,
                             SND_PCM_NONBLOCK|
                             SND_PCM_NO_AUTO_RESAMPLE|
@@ -1077,11 +1043,6 @@ static int unsuspend(struct userdata *u) {
 
 fail:
     if (u->pcm_handle) {
-#ifdef __TIZEN__
-        if (audio_intf && audio_intf->alsa_pcm_close) {
-            audio_intf->alsa_pcm_close(audio_data, u->pcm_handle);
-        } else
-#endif
         snd_pcm_close(u->pcm_handle);
         u->pcm_handle = NULL;
     }
@@ -2207,11 +2168,6 @@ fail:
 }
 
 static void userdata_free(struct userdata *u) {
-#ifdef __TIZEN__
-    void *audio_data = pa_shared_get(u->core, "tizen-audio-data");
-    audio_interface_t *audio_intf = pa_shared_get(u->core, "tizen-audio-interface");
-#endif
-
     pa_assert(u);
 
     if (u->source)
@@ -2238,14 +2194,8 @@ static void userdata_free(struct userdata *u) {
 
     if (u->pcm_handle) {
         snd_pcm_drop(u->pcm_handle);
-#ifdef __TIZEN__
-        if (audio_intf && audio_intf->alsa_pcm_close) {
-            audio_intf->alsa_pcm_close(audio_data, u->pcm_handle);
-        } else
-#endif
         snd_pcm_close(u->pcm_handle);
     }
-
     if (u->mixer_fdl)
         pa_alsa_fdlist_free(u->mixer_fdl);
 

@@ -10,7 +10,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          48
+Release:          49
 Group:            Multimedia/Audio
 License:          GPL-2.0+ and LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -35,7 +35,6 @@ BuildRequires:    pkgconfig(xi)
 BuildRequires:    pkgconfig(libudev)
 BuildRequires:    pkgconfig(openssl)
 BuildRequires:    pkgconfig(json-c)
-BuildRequires:    pkgconfig(tdb)
 BuildRequires:    pkgconfig(vconf)
 BuildRequires:    systemd-devel
 BuildRequires:    libcap-devel
@@ -230,7 +229,6 @@ NOCONFIGURE=yes ./bootstrap.sh
         --disable-bluez4 \
         --with-bluetooth-headset-backend=ofono \
         --enable-systemd \
-        --with-database=tdb \
 %if %{with pulseaudio_dlog}
         --enable-dlog \
 %endif

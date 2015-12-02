@@ -2458,13 +2458,19 @@ static void command_create_record_stream(pa_pdispatch *pd, uint32_t command, uin
     pa_idxset *formats = NULL;
     uint32_t i;
 
-    #ifdef __TIZEN__
-    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
-    if (!cynara_check_privilege(fd, RECORDER_PRIVILEGE)) {
-        pa_pstream_send_simple_ack(c->pstream, tag);
-        return;
+#ifdef __TIZEN__
+    {
+        bool is_virtual_stream = FALSE;
+        int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
+
+        pa_tagstruct_get_boolean(t, &is_virtual_stream);
+        pa_log_info("is virtual stream : %s", pa_yes_no(is_virtual_stream));
+        if (!is_virtual_stream && !cynara_check_privilege(fd, RECORDER_PRIVILEGE)) {
+            pa_pstream_send_simple_ack(c->pstream, tag);
+            return;
+        }
     }
-    #endif
+#endif
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);

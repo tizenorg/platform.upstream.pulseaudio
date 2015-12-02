@@ -1266,6 +1266,18 @@ static int create_stream(
             (uint32_t) (s->direction == PA_STREAM_PLAYBACK ? PA_COMMAND_CREATE_PLAYBACK_STREAM : PA_COMMAND_CREATE_RECORD_STREAM),
             &tag);
 
+#ifdef __TIZEN__
+    if (direction == PA_STREAM_RECORD) {
+        const char *media_name = NULL;
+        bool is_virtual = FALSE;
+        media_name = pa_proplist_gets(s->proplist, PA_PROP_MEDIA_NAME);
+        if (media_name && pa_streq(media_name, "VIRTUAL_STREAM"))
+            is_virtual = TRUE;
+        pa_log_info("Is this stream virtual : %s", pa_yes_no(is_virtual));
+        pa_tagstruct_put_boolean(t, is_virtual);
+    }
+#endif
+
     if (s->context->version < 13)
         pa_tagstruct_puts(t, pa_proplist_gets(s->proplist, PA_PROP_MEDIA_NAME));
 

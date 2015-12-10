@@ -1368,10 +1368,22 @@ else
 fi
 
 #### Cynara ####
-
+dnl use security ---------------------------------------------------------------
+AC_ARG_ENABLE(security, AC_HELP_STRING([--enable-security], [using security]),
+[
+    case "${enableval}" in
+        yes) USE_SECURITY=yes ;;
+        no)  USE_SECURITY=no ;;
+        *)   AC_MSG_ERROR(bad value ${enableval} for --enable-security) ;;
+    esac
+],[USE_SECURITY=no])
+if test "x$USE_SECURITY" = "xyes"; then
 PKG_CHECK_MODULES(CYNARA, [cynara-client, cynara-creds-socket, cynara-session])
 AC_SUBST(CYNARA_CFLAGS)
 AC_SUBST(CYNARA_LIBS)
+fi
+AM_CONDITIONAL(USE_SECURITY, test "x$USE_SECURITY" = "xyes")
+dnl end ------------------------------------------------------------------------
 
 #### PulseAudio system runtime dir ####
 

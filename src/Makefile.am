@@ -49,15 +49,19 @@ AM_CPPFLAGS = \
 	-DPA_ALSA_PROFILE_SETS_DIR=\"$(alsaprofilesetsdir)\"
 AM_CFLAGS = \
 	$(PTHREAD_CFLAGS) \
-	$(CYNARA_CFLAGS) \
 	-DPA_SRCDIR=\"$(abs_srcdir)\" \
 	-DPA_BUILDDIR=\"$(abs_builddir)\"
 AM_CXXFLAGS = $(AM_CFLAGS)
 SERVER_CFLAGS = -D__INCLUDED_FROM_PULSE_AUDIO
 
 AM_LIBADD = $(PTHREAD_LIBS) $(INTLLIBS)
-AM_LDADD = $(PTHREAD_LIBS) $(INTLLIBS) $(CYNARA_LIBS)
+AM_LDADD = $(PTHREAD_LIBS) $(INTLLIBS)
 AM_LDFLAGS = $(NODELETE_LDFLAGS)
+
+if USE_SECURITY
+AM_CFLAGS += $(CYNARA_CFLAGS) -DUSE_SECURITY
+AM_LDADD += $(CYNARA_LIBS)
+endif
 
 if HAVE_GCOV
 AM_CFLAGS+=$(GCOV_CFLAGS)
@@ -1240,14 +1244,16 @@ libprotocol_http_la_SOURCES = pulsecore/protocol-http.c pulsecore/protocol-http.
 libprotocol_http_la_LDFLAGS = $(AM_LDFLAGS) -avoid-version
 libprotocol_http_la_LIBADD = $(AM_LIBADD) libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la
 
-libprotocol_native_la_SOURCES = pulsecore/protocol-native.c pulsecore/protocol-native.h pulsecore/native-common.h \
-pulsecore/cynara.c pulsecore/cynara.h
+libprotocol_native_la_SOURCES = pulsecore/protocol-native.c pulsecore/protocol-native.h pulsecore/native-common.h
 libprotocol_native_la_CFLAGS = $(AM_CFLAGS) $(SERVER_CFLAGS)
 libprotocol_native_la_LDFLAGS = $(AM_LDFLAGS) -avoid-version
 libprotocol_native_la_LIBADD = $(AM_LIBADD) libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la
 if HAVE_DBUS
 libprotocol_native_la_CFLAGS += $(DBUS_CFLAGS)
 libprotocol_native_la_LIBADD += $(DBUS_LIBS)
+endif
+if USE_SECURITY
+libprotocol_native_la_SOURCES += pulsecore/cynara.c pulsecore/cynara.h
 endif
 
 libtunnel_manager_la_SOURCES = \

@@ -1172,6 +1172,19 @@ finish:
     pa_stream_unref(s);
 }
 
+static bool is_virtual_stream(pa_proplist* p) {
+    const char *media_name = NULL;
+    bool is_virtual = false;
+
+    media_name = pa_proplist_gets(p, PA_PROP_MEDIA_NAME);
+    if (media_name && pa_streq(media_name, "VIRTUAL_STREAM"))
+        is_virtual = true;
+
+    pa_log_info("Is virtual stream : %s", pa_yes_no(is_virtual));
+
+    return is_virtual;
+}
+
 static int create_stream(
         pa_stream_direction_t direction,
         pa_stream *s,
@@ -1266,18 +1279,6 @@ static int create_stream(
             (uint32_t) (s->direction == PA_STREAM_PLAYBACK ? PA_COMMAND_CREATE_PLAYBACK_STREAM : PA_COMMAND_CREATE_RECORD_STREAM),
             &tag);
 
-#ifdef __TIZEN__
-    if (direction == PA_STREAM_RECORD) {
-        const char *media_name = NULL;
-        bool is_virtual = FALSE;
-        media_name = pa_proplist_gets(s->proplist, PA_PROP_MEDIA_NAME);
-        if (media_name && pa_streq(media_name, "VIRTUAL_STREAM"))
-            is_virtual = TRUE;
-        pa_log_info("Is this stream virtual : %s", pa_yes_no(is_virtual));
-        pa_tagstruct_put_boolean(t, is_virtual);
-    }
-#endif
-
     if (s->context->version < 13)
         pa_tagstruct_puts(t, pa_proplist_gets(s->proplist, PA_PROP_MEDIA_NAME));
 
@@ -1312,8 +1313,12 @@ static int create_stream(
                 PA_TAG_INVALID);
 
         pa_tagstruct_put_cvolume(t, volume);
-    } else
+    } else {
         pa_tagstruct_putu32(t, s->buffer_attr.fragsize);
+#ifdef __TIZEN__
+        pa_tagstruct_put_boolean(t, is_virtual_stream(s->proplist));
+#endif
+    }
 
     if (s->context->version >= 12) {
         pa_tagstruct_put(

@@ -60,7 +60,7 @@
 
 #include "protocol-native.h"
 
-#ifdef __TIZEN__
+#ifdef USE_SECURITY
 #include <pulsecore/cynara.h>
 #include <pulsecore/iochannel.h>
 #endif
@@ -428,6 +428,12 @@ static const pa_pdispatch_cb_t command_table[PA_COMMAND_MAX] = {
 };
 
 /* structure management */
+
+#ifdef __USE_SECURITY
+static int _get_connection_out_fd(pa_native_connection *c)
+    return pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c));
+}
+#endif
 
 /* Called from main context */
 static void upload_stream_unlink(upload_stream *s) {
@@ -2458,18 +2464,8 @@ static void command_create_record_stream(pa_pdispatch *pd, uint32_t command, uin
     pa_idxset *formats = NULL;
     uint32_t i;
 
-#ifdef __TIZEN__
-    {
-        bool is_virtual_stream = FALSE;
-        int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
-
-        pa_tagstruct_get_boolean(t, &is_virtual_stream);
-        pa_log_info("is virtual stream : %s", pa_yes_no(is_virtual_stream));
-        if (!is_virtual_stream && !cynara_check_privilege(fd, RECORDER_PRIVILEGE)) {
-            pa_pstream_send_simple_ack(c->pstream, tag);
-            return;
-        }
-    }
+#ifdef USE_SECURITY
+    bool is_virtual_stream = false;
 #endif
 
     pa_native_connection_assert_ref(c);
@@ -2496,8 +2492,14 @@ static void command_create_record_stream(pa_pdispatch *pd, uint32_t command, uin
     CHECK_VALIDITY_GOTO(c->pstream, !source_name || source_index == PA_INVALID_INDEX, tag, PA_ERR_INVALID, finish);
 
 #ifdef USE_SECURITY
-    CHECK_VALIDITY(c->pstream, pa_pstream_check_security(c->pstream), tag, PA_ERR_ACCESS_BY_SECURITY);
+    pa_tagstruct_get_boolean(t, &is_virtual_stream);
+    pa_log_info("is virtual stream : %s", pa_yes_no(is_virtual_stream));
+    if (!is_virtual_stream) {
+        CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), RECORDER_PRIVILEGE),
+                       tag, PA_ERR_ACCESS_BY_SECURITY);
+    }
 #endif /* USE_SECURITY */
+
     p = pa_proplist_new();
 
     if (name)
@@ -3021,14 +3023,6 @@ static void command_get_record_latency(pa_pdispatch *pd, uint32_t command, uint3
     record_stream *s;
     struct timeval tv, now;
     uint32_t idx;
-
-    #ifdef __TIZEN__
-    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
-    if (!cynara_check_privilege(fd, RECORDER_PRIVILEGE)) {
-        pa_pstream_send_simple_ack(c->pstream, tag);
-        return;
-    }
-    #endif
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);
@@ -3868,14 +3862,6 @@ static void command_set_volume(
     const char *name = NULL;
     const char *client_name;
 
-    #ifdef __TIZEN__
-    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
-    if (!cynara_check_privilege(fd, VOLUME_SET_PRIVILEGE)) {
-        pa_pstream_send_simple_ack(c->pstream, tag);
-        return;
-    }
-    #endif
-
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -3892,6 +3878,11 @@ static void command_set_volume(
     CHECK_VALIDITY(c->pstream, !name || pa_namereg_is_valid_name_or_wildcard(name, command == PA_COMMAND_SET_SINK_VOLUME ? PA_NAMEREG_SINK : PA_NAMEREG_SOURCE), tag, PA_ERR_INVALID);
     CHECK_VALIDITY(c->pstream, (idx != PA_INVALID_INDEX) ^ (name != NULL), tag, PA_ERR_INVALID);
     CHECK_VALIDITY(c->pstream, pa_cvolume_valid(&volume), tag, PA_ERR_INVALID);
+
+#ifdef USE_SECURITY
+    CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), VOLUME_SET_PRIVILEGE),
+                   tag, PA_ERR_ACCESS_BY_SECURITY);
+#endif /* USE_SECURITY */
 
     switch (command) {
 
@@ -3971,14 +3962,6 @@ static void command_set_volume_ramp(
     const char *name = NULL;
     const char *client_name;
 
-    #ifdef __TIZEN__
-    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
-    if (!cynara_check_privilege(fd, VOLUME_SET_PRIVILEGE)) {
-        pa_pstream_send_simple_ack(c->pstream, tag);
-        return;
-    }
-    #endif
-
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -3996,6 +3979,10 @@ static void command_set_volume_ramp(
     CHECK_VALIDITY(c->pstream, idx != PA_INVALID_INDEX || name, tag, PA_ERR_INVALID);
     CHECK_VALIDITY(c->pstream, idx == PA_INVALID_INDEX || !name, tag, PA_ERR_INVALID);
     CHECK_VALIDITY(c->pstream, !name || idx == PA_INVALID_INDEX, tag, PA_ERR_INVALID);
+#ifdef USE_SECURITY
+    CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), VOLUME_SET_PRIVILEGE),
+                   tag, PA_ERR_ACCESS_BY_SECURITY);
+#endif /* USE_SECURITY */
 
     switch (command) {
 
@@ -4045,14 +4032,6 @@ static void command_set_mute(
     pa_source_output *so = NULL;
     const char *name = NULL, *client_name;
 
-    #ifdef __TIZEN__
-    int fd = pa_iochannel_get_send_fd(pa_pstream_get_iochannel(pa_native_connection_get_pstream(c)));
-    if (!cynara_check_privilege(fd, VOLUME_SET_PRIVILEGE)) {
-        pa_pstream_send_simple_ack(c->pstream, tag);
-        return;
-    }
-    #endif
-
     pa_native_connection_assert_ref(c);
     pa_assert(t);
 
@@ -4068,6 +4047,10 @@ static void command_set_mute(
     CHECK_VALIDITY(c->pstream, c->authorized, tag, PA_ERR_ACCESS);
     CHECK_VALIDITY(c->pstream, !name || pa_namereg_is_valid_name_or_wildcard(name, command == PA_COMMAND_SET_SINK_MUTE ? PA_NAMEREG_SINK : PA_NAMEREG_SOURCE), tag, PA_ERR_INVALID);
     CHECK_VALIDITY(c->pstream, (idx != PA_INVALID_INDEX) ^ (name != NULL), tag, PA_ERR_INVALID);
+#ifdef USE_SECURITY
+    CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), VOLUME_SET_PRIVILEGE),
+                   tag, PA_ERR_ACCESS_BY_SECURITY);
+#endif /* USE_SECURITY */
 
     switch (command) {
 

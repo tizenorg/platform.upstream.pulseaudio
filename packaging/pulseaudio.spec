@@ -244,7 +244,8 @@ NOCONFIGURE=yes ./bootstrap.sh
         --with-udev-rules-dir=%{udev_dir}/rules.d \
         --with-system-user=pulse \
         --with-system-group=pulse \
-        --with-access-group=pulse-access
+        --with-access-group=pulse-access \
+        --enable-security
 
 %__make %{?_smp_mflags} V=0
 

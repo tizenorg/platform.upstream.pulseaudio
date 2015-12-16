@@ -813,8 +813,16 @@ static int unix_write(struct userdata *u, pa_usec_t *sleep_usec, bool polled, bo
 
             if (PA_UNLIKELY(frames < 0)) {
 
+#ifdef __TIZEN__
+                /* To avoid assert reset for Hawk-P platform because it is able to return EAGAIN code when after_avail is TRUE */
+                if ((int) frames == -EAGAIN) {
+                    pa_log_warn("snd_pcm_writei returned EAGAIN, after_avail : %s", pa_yes_no(after_avail));
+                    break;
+                }
+#else
                 if (!after_avail && (int) frames == -EAGAIN)
                     break;
+#endif
 
                 if ((r = try_recover(u, "snd_pcm_writei", (int) frames)) == 0)
                     continue;

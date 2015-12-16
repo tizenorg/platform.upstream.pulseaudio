@@ -1103,10 +1103,6 @@ static int unsuspend(struct userdata *u) {
     bool b, d;
     snd_pcm_uframes_t period_size, buffer_size;
     char *device_name = NULL;
-#ifdef __TIZEN__
-    int ret = 0;
-    int hdmi_ch_enum_val = 0;
-#endif
 
     pa_assert(u);
     pa_assert(!u->pcm_handle);
@@ -1136,13 +1132,6 @@ static int unsuspend(struct userdata *u) {
     b = u->use_mmap;
     d = u->use_tsched;
 
-#ifdef __TIZEN__
-    if (pa_streq (u->device_name, "hw:0,1")) {
-        hdmi_ch_enum_val = ss.channels - 2;
-        ret = pa_alsa_set_mixer_control("HDMI_RX Channels", hdmi_ch_enum_val);
-        pa_log_warn("This is HDMI(%s) device, set channelinfo(%d) mixer, ret=%d", u->device_name, hdmi_ch_enum_val, ret);
-    }
-#endif
     if ((err = pa_alsa_set_hw_params(u->pcm_handle, &ss, &period_size, &buffer_size, 0, &b, &d, true)) < 0) {
         pa_log("Failed to set hardware parameters: %s", pa_alsa_strerror(err));
         goto fail;

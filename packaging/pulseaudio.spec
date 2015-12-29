@@ -12,7 +12,7 @@ Summary:          Improved Linux sound server
 Version:          5.0
 Release:          53
 Group:            Multimedia/Audio
-License:          GPL-2.0+ and LGPL-2.1+
+License:          LGPL-2.1+
 URL:              http://pulseaudio.org
 Source0:          http://www.freedesktop.org/software/pulseaudio/releases/%{name}-%{version}.tar.gz
 Source99:         baselibs.conf
@@ -112,7 +112,7 @@ or audio gateway
 
 %package module-devel
 Summary:    Headers and libraries for PulseAudio module development
-License:    LGPL-2.0+
+License:    LGPL-2.1+
 Group:      Multimedia/Development
 Requires:   libpulse-devel = %{version}
 
@@ -339,7 +339,7 @@ fi
 %files
 %manifest %{name}.manifest
 %defattr(-,root,root,-)
-%license LICENSE GPL LGPL
+%license LICENSE LGPL
 %config %{_sysconfdir}/pulse/filter/*.dat
 %{_bindir}/esdcompat
 %{_bindir}/pulseaudio

@@ -26,8 +26,10 @@ BuildRequires:    pkgconfig(sndfile)
 BuildRequires:    pkgconfig(alsa)
 BuildRequires:    pkgconfig(glib-2.0)
 BuildRequires:    pkgconfig(gconf-2.0)
+%if "%{?tizen_target_name}" != "hawkp"
 BuildRequires:    pkgconfig(bluez)
 BuildRequires:    pkgconfig(sbc)
+%endif
 BuildRequires:    pkgconfig(dbus-1)
 %if %{with x}
 BuildRequires:    pkgconfig(xi)
@@ -225,7 +227,9 @@ NOCONFIGURE=yes ./bootstrap.sh
         --disable-jack \
         --disable-xen \
         --without-fftw \
+%if "%{?tizen_target_name}" != "hawkp"
         --enable-bluez5 \
+%endif
         --disable-bluez4 \
         --with-bluetooth-headset-backend=ofono \
         --enable-systemd \
@@ -475,12 +479,14 @@ fi
 
 %files module-bluetooth
 %manifest %{name}.manifest
+%if "%{?tizen_target_name}" != "hawkp"
 %defattr(-,root,root,-)
 %{_libdir}/pulse-%{version}/modules/module-bluetooth-discover.so
 %{_libdir}/pulse-%{version}/modules/module-bluetooth-policy.so
 %{_libdir}/pulse-%{version}/modules/module-bluez5-discover.so
 %{_libdir}/pulse-%{version}/modules/module-bluez5-device.so
 %{_libdir}/pulse-%{version}/modules/libbluez5-util.so
+%endif
 
 %files module-raop
 %manifest %{name}.manifest

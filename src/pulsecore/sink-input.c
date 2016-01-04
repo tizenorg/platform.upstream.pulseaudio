@@ -1144,7 +1144,7 @@ void pa_sink_input_peek(pa_sink_input *i, size_t slength /* in sink bytes */, pa
             pa_xfree(dump_path);
         }
     /* close file for dump pcm when config is changed */
-    } else if (!i->core->dump_sink && i->dump_fp) {
+    } else if (!i->core->dump_sink_input && i->dump_fp) {
         fclose(i->dump_fp);
         i->dump_fp = NULL;
     }

@@ -474,9 +474,15 @@ static void process_device(struct userdata *u, struct udev_device *dev) {
     pa_log_debug ("parent subsystem = %s", udev_device_get_subsystem(udev_device_get_parent(dev)));
 
 #ifdef ENABLE_UDEV_ONLY_USB
-    /* If parent's subsystem is not USB, return */
-    if (!pa_streq(udev_device_get_subsystem(udev_device_get_parent(dev)), "usb")) {
-        pa_log_debug("Ignoring %s, because it's parent subsystem is not a USB.", udev_device_get_devpath(dev));
+    if (udev_device_get_subsystem(udev_device_get_parent(dev))) {
+        /* If parent's subsystem is not USB, return */
+        if (!pa_streq(udev_device_get_subsystem(udev_device_get_parent(dev)), "usb")) {
+            pa_log_debug("Ignoring %s, because it's parent subsystem is not a USB.", udev_device_get_devpath(dev));
+            return;
+        }
+    } else if(!strstr(udev_device_get_devpath(dev), "usb")) {
+        /* If there is no parent subsystem, we detemine this with devpath */
+        pa_log_debug("Ignoring %s, because it's devpath is not under usb.", udev_device_get_devpath(dev));
         return;
     }
 #endif

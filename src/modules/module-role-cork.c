@@ -92,6 +92,22 @@ static bool shall_cork(struct userdata *u, pa_sink *s, pa_sink_input *ignore) {
     return false;
 }
 
+static bool shall_corks(struct userdata *u, pa_sink *s, pa_sink_input *ignore) {
+    bool ret = false;
+
+    pa_assert(u);
+
+    if (u->global) {
+        uint32_t idx;
+        PA_IDXSET_FOREACH(s, u->core->sinks, idx)
+            if ((ret = shall_cork(u, s, ignore)))
+                break;
+    } else
+        ret = shall_cork(u, s, ignore);
+
+    return ret;
+}
+
 static inline void apply_cork_to_sink(struct userdata *u, pa_sink *s, pa_sink_input *ignore, bool cork) {
     pa_sink_input *j;
     uint32_t idx, role_idx;
@@ -171,7 +187,7 @@ static pa_hook_result_t process(struct userdata *u, pa_sink_input *i, bool creat
     if (!i->sink)
         return PA_HOOK_OK;
 
-    cork = shall_cork(u, i->sink, create ? NULL : i);
+    cork = shall_corks(u, i->sink, create ? NULL : i);
     apply_cork(u, i->sink, create ? NULL : i, cork);
 
     return PA_HOOK_OK;

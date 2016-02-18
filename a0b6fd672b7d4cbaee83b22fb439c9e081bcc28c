@@ -1,0 +1,8 @@
+Code-Review+2: Sangchul Lee <sc11.lee@samsung.com>
+Code-Review+1: Seungbae Shin <seungbae.shin@samsung.com>
+Verified+1: Jeongho Mok <jho.mok@samsung.com>
+Submitted-by: Jeongho Mok <jho.mok@samsung.com>
+Submitted-at: Wed, 17 Feb 2016 23:38:45 -0800
+Reviewed-on: https://review.tizen.org/gerrit/59362
+Project: platform/upstream/pulseaudio
+Branch: refs/heads/pulseaudio_8.0_upgrade

@@ -198,8 +198,10 @@ static int reserve_init(struct userdata *u, const char *dname) {
     if (u->reserve)
         return 0;
 
+#ifndef __TIZEN__
     if (pa_in_system_mode())
         return 0;
+#endif
 
     if (!(rname = pa_alsa_get_reserve_name(dname)))
         return 0;
@@ -254,8 +256,10 @@ static int reserve_monitor_init(struct userdata *u, const char *dname) {
     pa_assert(u);
     pa_assert(dname);
 
+#ifndef __TIZEN__
     if (pa_in_system_mode())
         return 0;
+#endif
 
     if (!(rname = pa_alsa_get_reserve_name(dname)))
         return 0;

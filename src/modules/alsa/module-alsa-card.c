@@ -650,7 +650,11 @@ int pa__init(pa_module *m) {
         goto fail;
     }
 
+#ifdef __TIZEN__
+    if (true) {
+#else
     if (!pa_in_system_mode()) {
+#endif
         char *rname;
 
         if ((rname = pa_alsa_get_reserve_name(u->device_id))) {

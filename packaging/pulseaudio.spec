@@ -45,6 +45,7 @@ BuildRequires:    pkgconfig(cynara-session)
 %if %{with pulseaudio_dlog}
 BuildRequires:    pkgconfig(dlog)
 %endif
+BuildRequires:    pkgconfig(jack)
 Requires:         udev
 Requires(post):   /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
@@ -231,7 +232,7 @@ NOCONFIGURE=yes ./bootstrap.sh
         --disable-hal-compat \
         --disable-lirc \
         --disable-avahi \
-        --disable-jack \
+        --enable-jack \
         --disable-xen \
         --without-fftw \
 %if "%{?tizen_target_name}" != "hawkp"
@@ -450,6 +451,9 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-volume-api.so
 %{_libdir}/pulse-%{version}/modules/module-main-volume-policy.so
 %{_libdir}/pulse-%{version}/modules/module-audio-groups.so
+%{_libdir}/pulse-%{version}/modules/module-jackdbus-detect.so
+%{_libdir}/pulse-%{version}/modules/module-jack-sink.so
+%{_libdir}/pulse-%{version}/modules/module-jack-source.so
 
 %exclude %config(noreplace) /etc/bash_completion.d/pulseaudio-bash-completion.sh
 

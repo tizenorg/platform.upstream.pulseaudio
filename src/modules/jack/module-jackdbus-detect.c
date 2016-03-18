@@ -243,7 +243,11 @@ int pa__init(pa_module *m) {
         goto fail;
     }
 
+#ifdef __TIZEN__
+    if (!(connection = pa_dbus_bus_get(m->core, DBUS_BUS_SYSTEM, &error)) || dbus_error_is_set(&error)) {
+#else
     if (!(connection = pa_dbus_bus_get(m->core, DBUS_BUS_SESSION, &error)) || dbus_error_is_set(&error)) {
+#endif
 
         if (connection)
             pa_dbus_connection_unref(connection);

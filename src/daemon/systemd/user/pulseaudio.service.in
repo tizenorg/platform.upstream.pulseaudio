@@ -2,6 +2,7 @@
 Description=Sound Service
 
 [Service]
+Environment=JACK_PROMISCUOUS_SERVER=audio
 ExecStart=@PA_BINARY@ --daemonize=no
 Restart=on-failure
 

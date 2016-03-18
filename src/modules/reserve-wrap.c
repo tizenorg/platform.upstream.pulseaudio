@@ -136,6 +136,15 @@ pa_reserve_wrapper* pa_reserve_wrapper_get(pa_core *c, const char *device_name) 
     pa_assert_se(pa_shared_set(c, r->shared_name, r) >= 0);
 
 #ifdef HAVE_DBUS
+#ifdef __TIZEN__
+    if (!(r->connection = pa_dbus_bus_get(c, DBUS_BUS_SYSTEM, &error)) || dbus_error_is_set(&error)) {
+        pa_log_debug("Unable to contact D-Bus system bus: %s: %s", error.name, error.message);
+
+        /* We don't treat this as error here because we want allow PA
+         * to run even when no system bus is available. */
+        return r;
+    }
+#else
     if (!(r->connection = pa_dbus_bus_get(c, DBUS_BUS_SESSION, &error)) || dbus_error_is_set(&error)) {
         pa_log_debug("Unable to contact D-Bus session bus: %s: %s", error.name, error.message);
 
@@ -143,6 +152,7 @@ pa_reserve_wrapper* pa_reserve_wrapper_get(pa_core *c, const char *device_name) 
          * to run even when no session bus is available. */
         return r;
     }
+#endif
 
     if ((k = rd_acquire(
                  &r->device,
@@ -279,6 +289,15 @@ pa_reserve_monitor_wrapper* pa_reserve_monitor_wrapper_get(pa_core *c, const cha
     pa_assert_se(pa_shared_set(c, w->shared_name, w) >= 0);
 
 #ifdef HAVE_DBUS
+#ifdef __TIZEN__
+    if (!(w->connection = pa_dbus_bus_get(c, DBUS_BUS_SYSTEM, &error)) || dbus_error_is_set(&error)) {
+        pa_log_debug("Unable to contact D-Bus system bus: %s: %s", error.name, error.message);
+
+        /* We don't treat this as error here because we want allow PA
+         * to run even when no system bus is available. */
+        return w;
+    }
+#else
     if (!(w->connection = pa_dbus_bus_get(c, DBUS_BUS_SESSION, &error)) || dbus_error_is_set(&error)) {
         pa_log_debug("Unable to contact D-Bus session bus: %s: %s", error.name, error.message);
 
@@ -286,6 +305,7 @@ pa_reserve_monitor_wrapper* pa_reserve_monitor_wrapper_get(pa_core *c, const cha
          * to run even when no session bus is available. */
         return w;
     }
+#endif
 
     if ((k = rm_watch(
                  &w->monitor,

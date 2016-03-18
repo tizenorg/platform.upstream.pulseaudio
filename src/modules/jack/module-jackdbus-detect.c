@@ -243,6 +243,16 @@ int pa__init(pa_module *m) {
         goto fail;
     }
 
+#ifdef __TIZEN__
+    if (!(connection = pa_dbus_bus_get(m->core, DBUS_BUS_SYSTEM, &error)) || dbus_error_is_set(&error)) {
+
+        if (connection)
+            pa_dbus_connection_unref(connection);
+
+        pa_log_error("Unable to contact D-Bus system bus: %s: %s", error.name, error.message);
+        goto fail;
+    }
+#else
     if (!(connection = pa_dbus_bus_get(m->core, DBUS_BUS_SESSION, &error)) || dbus_error_is_set(&error)) {
 
         if (connection)
@@ -251,6 +261,7 @@ int pa__init(pa_module *m) {
         pa_log_error("Unable to contact D-Bus session bus: %s: %s", error.name, error.message);
         goto fail;
     }
+#endif
     u->connection = connection;
 
     if (!dbus_connection_add_filter(pa_dbus_connection_get(connection), dbus_filter_handler, m, NULL)) {

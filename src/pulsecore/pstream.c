@@ -1111,3 +1111,9 @@ void pa_pstream_set_srbchannel(pa_pstream *p, pa_srbchannel *srb) {
     else
         do_write(p);
 }
+
+#ifdef USE_SECURITY
+pa_iochannel *pa_pstream_get_iochannel(pa_pstream *p) {
+    return p->io;
+}
+#endif

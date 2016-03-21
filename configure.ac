@@ -108,6 +108,9 @@ AM_GNU_GETTEXT([external])
 GETTEXT_PACKAGE=pulseaudio
 AC_SUBST([GETTEXT_PACKAGE])
 AC_DEFINE_UNQUOTED([GETTEXT_PACKAGE],["$GETTEXT_PACKAGE"],[Gettext package])
+
+pulselocaledir='${prefix}/${DATADIRNAME}/locale'
+AX_DEFINE_DIR(PULSE_LOCALEDIR, pulselocaledir, [Gettext locale dir])
 else
 # workaround till an intltool m4 bug is fixed upstream
 # (https://bugs.launchpad.net/intltool/+bug/904647)
@@ -666,6 +669,28 @@ PKG_CHECK_MODULES(LIBJSON, [ json-c >= 0.11 ])
 
 PKG_CHECK_MODULES(LIBSNDFILE, [ sndfile >= 1.0.20 ])
 
+PKG_CHECK_MODULES(VCONF, vconf)
+AC_SUBST(VCONF_CFLAGS)
+AC_SUBST(VCONF_LIBS)
+
+dnl use dlog --------------------------------------------------------------------------
+AC_ARG_ENABLE(dlog, AC_HELP_STRING([--enable-dlog], [using dlog]),
+[
+ case "${enableval}" in
+	 yes) USE_DLOG=yes ;;
+	 no)  USE_DLOG=no ;;
+	 *)   AC_MSG_ERROR(bad value ${enableval} for --enable-dlog) ;;
+ esac
+ ],[USE_DLOG=no])
+
+if test "x$USE_DLOG" = "xyes"; then
+	PKG_CHECK_MODULES(DLOG, dlog)
+	AC_SUBST(DLOG_CFLAGS)
+	AC_SUBST(DLOG_LIBS)
+fi
+AM_CONDITIONAL(USE_DLOG, test "x$USE_DLOG" = "xyes")
+dnl end --------------------------------------------------------------------
+
 #### atomic-ops ####
 
 AC_MSG_CHECKING([whether we need libatomic_ops])
@@ -697,6 +722,18 @@ AM_CONDITIONAL([HAVE_LIBSAMPLERATE], [test "x$HAVE_LIBSAMPLERATE" = x1])
 AS_IF([test "x$HAVE_LIBSAMPLERATE" = "x1"], AC_DEFINE([HAVE_LIBSAMPLERATE], 1, [Have libsamplerate?]))
 
 AS_IF([test "x$HAVE_LIBSAMPLERATE" = "x1"], AC_MSG_WARN([Support for libsamplerate is DEPRECATED]))
+
+#### samsung PM API support ####
+
+AC_ARG_ENABLE(pmlock, AC_HELP_STRING([--enable-pmlock], [using Samsung power management api]),
+[
+ case "${enableval}" in
+     yes) USE_PM_LOCK=yes ;;
+     no)  USE_PM_LOCK=no ;;
+     *)   AC_MSG_ERROR(bad value ${enableval} for --enable-pmlock) ;;
+ esac
+ ],[USE_PM_LOCK=no])
+AM_CONDITIONAL(USE_PM_LOCK, test "x$USE_PM_LOCK" = "xyes")
 
 #### Database support ####
 
@@ -817,6 +854,8 @@ AS_IF([test "x$HAVE_ALSA" = "x1"],
     ],
     HAVE_ALSA_UCM=0)
 
+AC_SUBST(ASOUNDLIB_CFLAGS)
+AC_SUBST(ASOUNDLIB_LIBS)
 AC_SUBST(HAVE_ALSA)
 AM_CONDITIONAL([HAVE_ALSA], [test "x$HAVE_ALSA" = x1])
 AS_IF([test "x$HAVE_ALSA" = "x1"], AC_DEFINE([HAVE_ALSA], 1, [Have ALSA?]))
@@ -1243,6 +1282,13 @@ AS_IF([test "x$HAVE_SYSTEMD" = "x1"],
         HAVE_SYSTEMD_JOURNAL=1
     ])
 
+AC_ARG_WITH([systemdsystemunitdir],
+        AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd system service files]),
+        [], [with_systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])
+if test "x$with_systemdsystemunitdir" != xno; then
+        AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
+fi
+
 AC_ARG_WITH([systemduserunitdir],
         AS_HELP_STRING([--with-systemduserunitdir=DIR], [Directory for systemd user service files]),
         [], [with_systemduserunitdir=$($PKG_CONFIG --variable=systemduserunitdir systemd)])
@@ -1258,6 +1304,9 @@ AS_IF([test "x$enable_systemd_daemon" != "xno"],
 
 AS_IF([test "x$enable_systemd_daemon" = "xyes" && test "x$HAVE_SYSTEMD_DAEMON" = "x0"],
     [AC_MSG_ERROR([*** Needed systemd daemon support not found])])
+
+AS_IF([test "x$HAVE_SYSTEMD_DAEMON" = "x1"], [ PA_DEFAULT_AUTOSPAWN=no ], [ PA_DEFAULT_AUTOSPAWN=yes ])
+AC_SUBST(PA_DEFAULT_AUTOSPAWN)
 
 AC_SUBST(HAVE_SYSTEMD_DAEMON)
 AM_CONDITIONAL([HAVE_SYSTEMD_DAEMON], [test "x$HAVE_SYSTEMD_DAEMON" = x1])
@@ -1334,6 +1383,24 @@ if test "x$enable_per_user_esound_socket" != "xno"; then
 else
     USE_PER_USER_ESOUND_SOCKET=0
 fi
+
+#### Cynara ####
+dnl use security ---------------------------------------------------------------
+AC_ARG_ENABLE(security, AC_HELP_STRING([--enable-security], [using security]),
+[
+    case "${enableval}" in
+        yes) USE_SECURITY=yes ;;
+        no)  USE_SECURITY=no ;;
+        *)   AC_MSG_ERROR(bad value ${enableval} for --enable-security) ;;
+    esac
+],[USE_SECURITY=no])
+if test "x$USE_SECURITY" = "xyes"; then
+PKG_CHECK_MODULES(CYNARA, [cynara-client, cynara-creds-socket, cynara-session])
+AC_SUBST(CYNARA_CFLAGS)
+AC_SUBST(CYNARA_LIBS)
+fi
+AM_CONDITIONAL(USE_SECURITY, test "x$USE_SECURITY" = "xyes")
+dnl end ------------------------------------------------------------------------
 
 #### PulseAudio system runtime dir ####
 
@@ -1451,21 +1518,21 @@ AC_ARG_WITH(
 
 AC_SUBST(udevrulesdir)
 
-AC_ARG_WITH([bash-completion-dir],
-        AS_HELP_STRING([--with-bash-completion-dir=DIR], [Directory for bash completion files]),
-        [bashcompletiondir=$withval], [bashcompletiondir=$($PKG_CONFIG --variable=completionsdir bash-completion)])
-if test "x$bashcompletionsdir" = "x"; then
-	bashcompletiondir="${datadir}/bash-completion/completions"
-fi
+#AC_ARG_WITH([bash-completion-dir],
+#        AS_HELP_STRING([--with-bash-completion-dir=DIR], [Directory for bash completion files]),
+#        [bashcompletiondir=$withval], [bashcompletiondir=$($PKG_CONFIG --variable=completionsdir bash-completion)])
+#if test "x$bashcompletionsdir" = "x"; then
+#	bashcompletiondir="${datadir}/bash-completion/completions"
+#fi
+#
+#AC_SUBST(bashcompletiondir)
 
-AC_SUBST(bashcompletiondir)
-
-AC_ARG_WITH(
-        [zsh-completion-dir],
-        AS_HELP_STRING([--with-zsh-completion-dir], [Zsh completions directory (defaults to ${datadir}/zsh/site-functions)]),
-        [zshcompletiondir=$withval], [zshcompletiondir="${datadir}/zsh/site-functions"])
-
-AC_SUBST(zshcompletiondir)
+#AC_ARG_WITH(
+#        [zsh-completion-dir],
+#        AS_HELP_STRING([--with-zsh-completion-dir], [Zsh completions directory (defaults to ${datadir}/zsh/site-functions)]),
+#        [zshcompletiondir=$withval], [zshcompletiondir="${datadir}/zsh/site-functions"])
+#
+#AC_SUBST(zshcompletiondir)
 
 AC_ARG_ENABLE([force-preopen],
     AS_HELP_STRING([--enable-force-preopen],[Preopen modules, even when dlopen() is supported.]))
@@ -1485,6 +1552,7 @@ man/Makefile
 libpulse.pc
 libpulse-simple.pc
 libpulse-mainloop-glib.pc
+pulsecore.pc
 doxygen/Makefile
 doxygen/doxygen.conf
 src/pulse/version.h
@@ -1502,6 +1570,7 @@ man/pulse-client.conf.5.xml
 man/default.pa.5.xml
 man/pulse-cli-syntax.5.xml
 man/start-pulseaudio-x11.1.xml
+pulseaudio-module-devel.pc
 ])
 
 AC_CONFIG_FILES([src/esdcompat:src/daemon/esdcompat.in], [chmod +x src/esdcompat])
@@ -1515,7 +1584,8 @@ AC_CONFIG_FILES([src/system.pa:src/daemon/system.pa.in],
     [m4 src/system.pa > src/system.pa.gen && mv src/system.pa.gen src/system.pa])
 AS_IF([test "x$HAVE_SYSTEMD_DAEMON" = "x1"],
     [
-        AC_CONFIG_FILES([src/pulseaudio.service:src/daemon/systemd/user/pulseaudio.service.in])
+        AC_CONFIG_FILES([src/daemon/systemd/user/pulseaudio.service:src/daemon/systemd/user/pulseaudio.service.in])
+        AC_CONFIG_FILES([src/daemon/systemd/system/pulseaudio.service:src/daemon/systemd/system/pulseaudio.service.in])
     ])
 
 # CMake related ProjectConfig files
@@ -1575,6 +1645,11 @@ AS_IF([test "x$HAVE_ESOUND" = "x1" -a "x$USE_PER_USER_ESOUND_SOCKET" = "x1"], EN
 AS_IF([test "x$HAVE_GCOV" = "x1"], ENABLE_GCOV=yes, ENABLE_GCOV=no)
 AS_IF([test "x$HAVE_LIBCHECK" = "x1"], ENABLE_TESTS=yes, ENABLE_TESTS=no)
 AS_IF([test "x$enable_legacy_database_entry_format" != "xno"], ENABLE_LEGACY_DATABASE_ENTRY_FORMAT=yes, ENABLE_LEGACY_DATABASE_ENTRY_FORMAT=no)
+AS_IF([test "x$USE_DLOG" = "x1"], ENABLE_DLOG=yes, ENABLE_DLOG=no)
+AS_IF([test "x$USE_PM_LOCK" = "x1"], ENABLE_PM_LOCK=yes, ENABLE_PM_LOCK=no)
+AS_IF([test "x$USE_DUMP" = "x1"], ENABLE_DUMP=yes, ENABLE_DUMP=no)
+AS_IF([test "x$USE_BT_PROFILE_SET" = "x1"], ENABLE_BT_PROFILE_SET=yes, ENABLE_BT_PROFILE_SET=no)
+AS_IF([test "x$HAVE_BT_A2DP_APTX" = "x1"], HAVE_BT_A2DP_APTX=yes, HAVE_BT_A2DP_APTX=no)
 
 echo "
  ---{ $PACKAGE_NAME $VERSION }---
@@ -1586,8 +1661,6 @@ echo "
     System Runtime Path:           ${PA_SYSTEM_RUNTIME_PATH}
     System State Path:             ${PA_SYSTEM_STATE_PATH}
     System Config Path:            ${PA_SYSTEM_CONFIG_PATH}
-    Zsh completions directory:     ${zshcompletiondir}
-    Bash completions directory:    ${bashcompletiondir}
     Compiler:                      ${CC}
     CFLAGS:                        ${CFLAGS}
     CPPFLAGS:                      ${CPPFLAGS}
@@ -1645,6 +1718,10 @@ echo "
     Preopened modules:             ${PREOPEN_MODS}
 
     Legacy Database Entry Support: ${ENABLE_LEGACY_DATABASE_ENTRY_FORMAT}
+
+    Tizen
+      dlog:                        ${ENABLE_DLOG}
+      pmapi:                       ${ENABLE_PM_LOCK}
 "
 
 if test "${ENABLE_SPEEX}" = "no" && test "${ENABLE_WEBRTC}" = "no" && test "${ENABLE_ADRIAN_EC}" = "no" ; then

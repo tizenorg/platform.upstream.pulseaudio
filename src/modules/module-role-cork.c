@@ -90,6 +90,24 @@ static bool shall_cork(struct userdata *u, pa_sink *s, pa_sink_input *ignore) {
     return false;
 }
 
+#ifdef __TIZEN__
+static bool shall_corks(struct userdata *u, pa_sink *s, pa_sink_input *ignore) {
+    bool ret = false;
+
+    pa_assert(u);
+
+    if (u->global) {
+        uint32_t idx;
+        PA_IDXSET_FOREACH(s, u->core->sinks, idx)
+            if ((ret = shall_cork(u, s, ignore)))
+                break;
+    } else
+        ret = shall_cork(u, s, ignore);
+
+    return ret;
+}
+#endif
+
 static inline void apply_cork_to_sink(struct userdata *u, pa_sink *s, pa_sink_input *ignore, bool cork) {
     pa_sink_input *j;
     uint32_t idx, role_idx;
@@ -160,13 +178,21 @@ static pa_hook_result_t process(struct userdata *u, pa_sink_input *i, bool creat
     if (!create)
         pa_hashmap_remove(u->cork_state, i);
 
+#ifdef __TIZEN__
+    if (!i->proplist)
+        return PA_HOOK_OK;
+#endif
+
     if (!(role = pa_proplist_gets(i->proplist, PA_PROP_MEDIA_ROLE)))
         return PA_HOOK_OK;
 
     if (!i->sink)
         return PA_HOOK_OK;
-
+#ifdef __TIZEN__
+    cork = shall_corks(u, i->sink, create ? NULL : i);
+#else
     cork = shall_cork(u, i->sink, create ? NULL : i);
+#endif
     apply_cork(u, i->sink, create ? NULL : i, cork);
 
     return PA_HOOK_OK;

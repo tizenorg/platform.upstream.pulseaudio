@@ -25,6 +25,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __TIZEN__
+#include <time.h>
+#endif
 
 #include <pulse/introspect.h>
 #include <pulse/format.h>
@@ -69,11 +72,82 @@ struct sink_message_set_port {
     int ret;
 };
 
+#ifdef __TIZEN__
+//#define PA_DUMP_SINK_FOR_EACH_SUSPEND
+#define PA_DUMP_SINK_PATH_PREFIX            "/tmp/dump_pa_sink"
+#endif
+
 static void sink_free(pa_object *s);
 
 static void pa_sink_volume_change_push(pa_sink *s);
 static void pa_sink_volume_change_flush(pa_sink *s);
 static void pa_sink_volume_change_rewind(pa_sink *s, size_t nbytes);
+
+#ifdef __TIZEN__
+static void __toggle_open_close_n_write_dump(pa_sink *s, pa_memchunk *target)
+{
+    /* open file for dump pcm */
+    if (s->core->dump_sink && !s->dump_fp) {
+        char *dump_path = NULL, *dump_path_surfix = NULL;
+        const char *s_device_api_str;
+#ifdef PA_DUMP_SINK_FOR_EACH_SUSPEND
+        time_t t;
+        char datetime[12];
+
+        time(&t);
+        memset(&datetime[0], 0x00, sizeof(datetime));
+        strftime(&datetime[0], sizeof(datetime), "%m%d_%H%M%S", localtime(&t));
+#endif
+
+        if ((s_device_api_str = pa_proplist_gets(s->proplist, PA_PROP_DEVICE_API))) {
+            if (pa_streq(s_device_api_str, "alsa")) {
+                const char *card_idx_str, *device_idx_str;
+                uint32_t card_idx = 0, device_idx = 0;
+
+                if ((card_idx_str = pa_proplist_gets(s->proplist, "alsa.card")))
+                    pa_atou(card_idx_str, &card_idx);
+                if ((device_idx_str = pa_proplist_gets(s->proplist, "alsa.device")))
+                    pa_atou(device_idx_str, &device_idx);
+                dump_path_surfix = pa_sprintf_malloc("alsa_%d_%d.pcm", card_idx, device_idx);
+            } else if (pa_streq(s_device_api_str, "bluez")) {
+                dump_path_surfix = pa_sprintf_malloc("bluez.pcm");
+            }
+        }
+        if (!dump_path_surfix) {
+            dump_path_surfix = pa_sprintf_malloc("idx_%d.pcm", s->index);
+        }
+
+#ifdef PA_DUMP_SINK_FOR_EACH_SUSPEND
+        dump_path = pa_sprintf_malloc("%s_%s_%s", PA_DUMP_SINK_PATH_PREFIX, &datetime[0], dump_path_surfix);
+#else
+        dump_path = pa_sprintf_malloc("%s_%s", PA_DUMP_SINK_PATH_PREFIX, dump_path_surfix);
+#endif
+
+        if (dump_path) {
+            s->dump_fp = fopen(dump_path, "w");
+            pa_log_info("pa_sink dump started:%s", dump_path);
+            pa_xfree(dump_path);
+        }
+        if (dump_path_surfix)
+            pa_xfree(dump_path_surfix);
+    /* close file for dump pcm when config is changed */
+    } else if (!s->core->dump_sink && s->dump_fp) {
+        fclose(s->dump_fp);
+        s->dump_fp = NULL;
+    }
+
+    /* dump pcm */
+    if (s->dump_fp) {
+        void *ptr;
+
+        ptr = pa_memblock_acquire(target->memblock);
+
+        fwrite((uint8_t*) ptr + target->index, 1, target->length, s->dump_fp);
+
+        pa_memblock_release(target->memblock);
+    }
+}
+#endif
 
 pa_sink_new_data* pa_sink_new_data_init(pa_sink_new_data *data) {
     pa_assert(data);
@@ -316,6 +390,9 @@ pa_sink* pa_sink_new(
 
     s->save_volume = data->save_volume;
     s->save_muted = data->save_muted;
+#ifdef __TIZEN__
+    s->dump_fp = NULL;
+#endif
 
     pa_silence_memchunk_get(
             &core->silence_cache,
@@ -749,6 +826,13 @@ static void sink_free(pa_object *o) {
     if (s->ports)
         pa_hashmap_free(s->ports);
 
+#ifdef ____TIZEN____
+    /* close file for dump pcm */
+    if (s->dump_fp) {
+        fclose(s->dump_fp);
+        s->dump_fp = NULL;
+    }
+#endif
     pa_xfree(s);
 }
 
@@ -834,6 +918,9 @@ void pa_sink_set_mixer_dirty(pa_sink *s, bool is_dirty) {
 
 /* Called from main context */
 int pa_sink_suspend(pa_sink *s, bool suspend, pa_suspend_cause_t cause) {
+#ifdef __TIZEN__
+    int ret = 0;
+#endif
     pa_sink_assert_ref(s);
     pa_assert_ctl_context();
     pa_assert(PA_SINK_IS_LINKED(s->state));
@@ -868,14 +955,44 @@ int pa_sink_suspend(pa_sink *s, bool suspend, pa_suspend_cause_t cause) {
         }
     }
 
-    if ((pa_sink_get_state(s) == PA_SINK_SUSPENDED) == !!s->suspend_cause)
+    if ((pa_sink_get_state(s) == PA_SINK_SUSPENDED) == !!s->suspend_cause) {
+#ifdef __TIZEN__
+        if (cause == PA_SUSPEND_INTERNAL) {
+            /* Clear suspend by switch after manual suspend */
+            s->suspend_cause &= ~cause;
+        }
+#endif
         return 0;
+    }
 
     pa_log_debug("Suspend cause of sink %s is 0x%04x, %s", s->name, s->suspend_cause, s->suspend_cause ? "suspending" : "resuming");
 
+#ifdef __TIZEN__
+#ifdef PA_DUMP_SINK_FOR_EACH_SUSPEND
+    /* close file for dump pcm */
+    if (suspend && s->dump_in_fp) {
+        fclose(s->dump_in_fp);
+        s->dump_in_fp = NULL;
+    }
+    if (suspend && s->dump_out_fp) {
+        fclose(s->dump_out_fp);
+        s->dump_out_fp = NULL;
+    }
+#endif
+
+    if (s->suspend_cause) {
+        ret = sink_set_state(s, PA_SINK_SUSPENDED);
+        if (ret == 0 && cause == PA_SUSPEND_INTERNAL) {
+            /* Clear suspend by switch after manual suspend */
+            s->suspend_cause &= ~cause;
+        }
+        return ret;
+    } else
+#else
     if (s->suspend_cause)
         return sink_set_state(s, PA_SINK_SUSPENDED);
     else
+#endif /* __TIZEN__ */
         return sink_set_state(s, pa_sink_used_by(s) ? PA_SINK_RUNNING : PA_SINK_IDLE);
 }
 
@@ -1012,6 +1129,12 @@ void pa_sink_process_rewind(pa_sink *s, size_t nbytes) {
         pa_log_debug("Processing rewind...");
         if (s->flags & PA_SINK_DEFERRED_VOLUME)
             pa_sink_volume_change_rewind(s, nbytes);
+#ifdef __TIZEN__
+        /* rewind pcm */
+        if (s->dump_fp) {
+            fseeko(s->dump_fp, (off_t)nbytes * (-1), SEEK_CUR);
+        }
+#endif
     }
 
     PA_HASHMAP_FOREACH(i, s->thread_info.inputs, state) {
@@ -1245,6 +1368,10 @@ void pa_sink_render(pa_sink*s, size_t length, pa_memchunk *result) {
 
     inputs_drop(s, info, n, result);
 
+#ifdef __TIZEN__
+    __toggle_open_close_n_write_dump(s, result);
+#endif
+
     pa_sink_unref(s);
 }
 
@@ -1307,7 +1434,7 @@ void pa_sink_render_into(pa_sink*s, pa_memchunk *target) {
 
             if (!pa_cvolume_is_norm(&volume)) {
                 pa_memchunk_make_writable(&vchunk, 0);
-                pa_volume_memchunk(&vchunk, &s->sample_spec, &volume);
+                        pa_volume_memchunk(&vchunk, &s->sample_spec, &volume);
             }
 
             pa_memchunk_memcpy(target, &vchunk);
@@ -1330,6 +1457,9 @@ void pa_sink_render_into(pa_sink*s, pa_memchunk *target) {
 
     inputs_drop(s, info, n, target);
 
+#ifdef __TIZEN__
+    __toggle_open_close_n_write_dump(s, target);
+#endif
     pa_sink_unref(s);
 }
 
@@ -3330,6 +3460,7 @@ size_t pa_sink_get_max_request(pa_sink *s) {
 /* Called from main context */
 int pa_sink_set_port(pa_sink *s, const char *name, bool save) {
     pa_device_port *port;
+    pa_device_port *old_port;
     int ret;
 
     pa_sink_assert_ref(s);

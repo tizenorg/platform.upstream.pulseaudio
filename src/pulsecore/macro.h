@@ -55,6 +55,10 @@
 #define PA_PAGE_SIZE ((size_t) 4096)
 #endif
 
+#ifdef __TIZEN__
+typedef int  pa_bool_t;
+#endif
+
 /* Rounds down */
 static inline void* PA_ALIGN_PTR(const void *p) {
     return (void*) (((size_t) p) & ~(sizeof(void*) - 1));

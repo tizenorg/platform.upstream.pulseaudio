@@ -53,8 +53,19 @@ dist_vapi_DATA = \
 		vala/libpulse-simple.deps vala/libpulse-simple.vapi
 
 pkgconfigdir = $(libdir)/pkgconfig
-pkgconfig_DATA = libpulse.pc libpulse-simple.pc
+pkgconfig_DATA = libpulse.pc libpulse-simple.pc pulseaudio-module-devel.pc pulsecore.pc
 
+moduledev_DATA = pulsecore-config.h src/pulsecore/*.h
+moduledevdir   = $(includedir)/pulsemodule/pulsecore
+
+moduledevinternal_DATA = src/pulse/internal.h src/pulse/client-conf.h src/pulse/fork-detect.h
+moduledevinternaldir   = $(includedir)/pulsemodule/pulse
+
+filterdir = /etc/pulse/filter
+filter_DATA = filter/filter_44100_48000.dat \
+	      filter/filter_44100_8000.dat \
+	      filter/filter_48000_44100.dat \
+	      filter/filter_8000_44100.dat
 if HAVE_GLIB20
 pkgconfig_DATA += \
 	 libpulse-mainloop-glib.pc
@@ -63,23 +74,11 @@ endif
 cmakedir = $(libdir)/cmake/PulseAudio
 cmake_DATA = PulseAudioConfig.cmake PulseAudioConfigVersion.cmake
 
-bashcompletiondir=@bashcompletiondir@
+bashcompletiondir=$(sysconfdir)/bash_completion.d
 dist_bashcompletion_DATA = shell-completion/bash/pulseaudio
 
-install-bashcompletion-aliases:
-	$(LN_S) -f pulseaudio $(DESTDIR)$(bashcompletiondir)/pactl
-	$(LN_S) -f pulseaudio $(DESTDIR)$(bashcompletiondir)/pacmd
-	$(LN_S) -f pulseaudio $(DESTDIR)$(bashcompletiondir)/pasuspender
-	$(LN_S) -f pulseaudio $(DESTDIR)$(bashcompletiondir)/padsp
-	$(LN_S) -f pulseaudio $(DESTDIR)$(bashcompletiondir)/pacat
-	$(LN_S) -f pulseaudio $(DESTDIR)$(bashcompletiondir)/paplay
-	$(LN_S) -f pulseaudio $(DESTDIR)$(bashcompletiondir)/parec
-	$(LN_S) -f pulseaudio $(DESTDIR)$(bashcompletiondir)/parecord
-
-install-data-hook: install-bashcompletion-aliases
-
-zshcompletiondir=@zshcompletiondir@
-dist_zshcompletion_DATA = shell-completion/zsh/_pulseaudio
+#zshcompletiondir=@zshcompletiondir@
+#dist_zshcompletion_DATA = shell-completion/zsh/_pulseaudio
 
 homepage: all dist doxygen
 	test -d $$HOME/homepage/private
@@ -106,6 +105,9 @@ dist-hook:
 
 check-daemon:
 	$(MAKE) -C src check-daemon
+
+pulsecore-config.h: config.h
+	cp $< $@
 
 .PHONY: homepage distcleancheck doxygen
 

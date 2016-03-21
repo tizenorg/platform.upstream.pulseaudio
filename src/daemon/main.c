@@ -36,6 +36,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#ifdef __TIZEN__
+#include <fcntl.h>
+#endif
+
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
@@ -97,6 +101,10 @@
 #include "caps.h"
 #include "ltdl-bind-now.h"
 #include "server-lookup.h"
+
+#ifdef __TIZEN__
+#define PA_READY "/tmp/.pa_ready"
+#endif
 
 #ifdef HAVE_LIBWRAP
 /* Only one instance of these variables */
@@ -1109,12 +1117,20 @@ int main(int argc, char *argv[]) {
     c->disallow_module_loading = conf->disallow_module_loading;
 
 #ifdef HAVE_DBUS
+#if defined(__TIZEN__) && defined(SYSTEM_SERVER_LOOKUP)
+	/* TIZEN pulseaudio is running as system mode currently, thus use SYSTEM BUS */
+    if ((server_lookup = pa_dbusobj_server_lookup_new(c))) {
+        if (!(lookup_service_bus = register_dbus_name(c, DBUS_BUS_SYSTEM, "org.PulseAudio1")))
+            goto finish;
+    }
+#else
     if (!conf->system_instance) {
         if ((server_lookup = pa_dbusobj_server_lookup_new(c))) {
             if (!(lookup_service_bus = register_dbus_name(c, DBUS_BUS_SESSION, "org.PulseAudio1")))
                 goto finish;
         }
     }
+#endif
 
     if (start_server)
         server_bus = register_dbus_name(c, conf->system_instance ? DBUS_BUS_SYSTEM : DBUS_BUS_SESSION, "org.pulseaudio.Server");
@@ -1130,6 +1146,10 @@ int main(int argc, char *argv[]) {
 #endif
 
     pa_log_info("Daemon startup complete.");
+#ifdef __TIZEN__
+    /* broadcast if we're ready */
+    creat(PA_READY, 0644);
+#endif
 
 #ifdef HAVE_SYSTEMD_DAEMON
     sd_notify(0, "READY=1");

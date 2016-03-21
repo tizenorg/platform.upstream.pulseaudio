@@ -191,6 +191,14 @@ int pa_daemon_conf_set_log_target(pa_daemon_conf *c, const char *string) {
 
     c->log_target = log_target;
 
+#ifdef USE_DLOG
+    else if (!strcmp(string, "dlog")) {
+        c->log_target = PA_LOG_DLOG;
+    } else if (!strcmp(string, "dlog-color")) {
+        c->log_target = PA_LOG_DLOG_COLOR;
+    }
+#endif
+
     return 0;
 }
 

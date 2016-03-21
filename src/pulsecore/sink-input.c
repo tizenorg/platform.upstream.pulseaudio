@@ -24,6 +24,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef USE_DUMP
+#include <time.h>
+#endif
 
 #include <pulse/utf8.h>
 #include <pulse/xmalloc.h>
@@ -52,6 +55,9 @@ struct volume_factor_entry {
     char *key;
     pa_cvolume volume;
 };
+#ifdef USE_DUMP
+#define PA_SINK_INPUT_DUMP_PATH_PREFIX      "/tmp/dump_ap_out_stream"
+#endif
 
 static struct volume_factor_entry *volume_factor_entry_new(const char *key, const pa_cvolume *volume) {
     struct volume_factor_entry *entry;
@@ -526,6 +532,10 @@ int pa_sink_input_new(
     reset_callbacks(i);
     i->userdata = NULL;
 
+#ifdef USE_DUMP
+    i->dump_fp = NULL;
+#endif
+
     i->thread_info.state = i->state;
     i->thread_info.attached = false;
     pa_atomic_store(&i->thread_info.drained, 1);
@@ -739,6 +749,13 @@ static void sink_input_free(pa_object *o) {
     if (i->thread_info.resampler)
         pa_resampler_free(i->thread_info.resampler);
 
+#ifdef USE_DUMP
+    /* close file for dump pcm */
+    if (i->dump_fp) {
+        fclose(i->dump_fp);
+        i->dump_fp = NULL;
+    }
+#endif
     if (i->format)
         pa_format_info_free(i->format);
 
@@ -1012,6 +1029,39 @@ void pa_sink_input_peek(pa_sink_input *i, size_t slength /* in sink bytes */, pa
         pa_cvolume_mute(volume, i->sink->sample_spec.channels);
     else
         *volume = i->thread_info.soft_volume;
+#ifdef USE_DUMP
+    /* open file for dump pcm */
+    if (i->core->dump_sink_input && !i->dump_fp) {
+        time_t t;
+        char datetime[12];
+        char *dump_path = NULL;
+
+        time(&t);
+        memset(&datetime[0], 0x00, sizeof(datetime));
+        strftime(&datetime[0], sizeof(datetime), "%m%d_%H%M%S", localtime(&t));
+        dump_path = pa_sprintf_malloc("%s_%s_%d_sink%d.pcm", PA_SINK_INPUT_DUMP_PATH_PREFIX, &datetime[0], i->index, i->sink->index);
+
+        if (dump_path) {
+            i->dump_fp = fopen(dump_path, "w");
+            pa_xfree(dump_path);
+        }
+    /* close file for dump pcm when config is changed */
+    } else if (!i->core->dump_sink && i->dump_fp) {
+        fclose(i->dump_fp);
+        i->dump_fp = NULL;
+    }
+
+    /* dump pcm */
+    if (i->dump_fp) {
+        void *ptr;
+
+        ptr = pa_memblock_acquire(chunk->memblock);
+
+        fwrite((uint8_t*) ptr + chunk->index, 1, chunk->length, i->dump_fp);
+
+        pa_memblock_release(chunk->memblock);
+    }
+#endif
 }
 
 /* Called from thread context */
@@ -1069,6 +1119,13 @@ void pa_sink_input_process_rewind(pa_sink_input *i, size_t nbytes /* in sink sam
 
     if (i->thread_info.rewrite_nbytes == (size_t) -1) {
 
+#ifdef USE_DUMP
+        /* rewind pcm */
+        if (i->dump_fp) {
+            fseeko(i->dump_fp, (off_t)pa_memblockq_get_length(i->thread_info.render_memblockq) * (-1), SEEK_CUR);
+        }
+#endif
+
         /* We were asked to drop all buffered data, and rerequest new
          * data from implementor the next time peek() is called */
 
@@ -1089,6 +1146,13 @@ void pa_sink_input_process_rewind(pa_sink_input *i, size_t nbytes /* in sink sam
 
         if (amount > 0) {
             pa_log_debug("Have to rewind %lu bytes on implementor.", (unsigned long) amount);
+
+#ifdef USE_DUMP
+            /* rewind pcm */
+            if (i->dump_fp) {
+                fseeko(i->dump_fp, (off_t)amount * (-1), SEEK_CUR);
+            }
+#endif
 
             /* Tell the implementor */
             if (i->process_rewind)

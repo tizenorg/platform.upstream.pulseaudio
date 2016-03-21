@@ -454,7 +454,11 @@ pa_dbusobj_server_lookup *pa_dbusobj_server_lookup_new(pa_core *c) {
     sl->core = c;
     sl->path_registered = false;
 
+#ifdef __TIZEN__
+    if (!(sl->conn = pa_dbus_bus_get(c, DBUS_BUS_SYSTEM, &error)) || dbus_error_is_set(&error)) {
+#else
     if (!(sl->conn = pa_dbus_bus_get(c, DBUS_BUS_SESSION, &error)) || dbus_error_is_set(&error)) {
+#endif
         pa_log_warn("Unable to contact D-Bus: %s: %s", error.name, error.message);
         goto fail;
     }

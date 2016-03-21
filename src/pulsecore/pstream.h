@@ -69,4 +69,8 @@ bool pa_pstream_get_shm(pa_pstream *p);
    Setting srb to NULL will free any existing srbchannel. */
 void pa_pstream_set_srbchannel(pa_pstream *p, pa_srbchannel *srb);
 
+#ifdef USE_SECURITY
+pa_iochannel *pa_pstream_get_iochannel(pa_pstream *p);
+#endif
+
 #endif

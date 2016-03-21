@@ -155,10 +155,18 @@ static pa_stream *pa_stream_new_with_proplist_internal(
          * 48000 Hz, 2 ch, S16 PCM, but this can very well be incorrect */
         pa_sample_spec tmp_ss = {
             .format   = PA_SAMPLE_S16NE,
+#ifdef __TIZEN__
+            .rate     = 44100,
+#else
             .rate     = 48000,
+#endif
             .channels = 2,
         };
+#ifdef __TIZEN__
+        s->buffer_attr.tlength = (uint32_t) pa_usec_to_bytes(350*PA_USEC_PER_MSEC, &tmp_ss); /* 350ms of buffering */
+#else
         s->buffer_attr.tlength = (uint32_t) pa_usec_to_bytes(250*PA_USEC_PER_MSEC, &tmp_ss); /* 250ms of buffering */
+#endif
     }
     s->buffer_attr.minreq = (uint32_t) -1;
     s->buffer_attr.prebuf = (uint32_t) -1;
@@ -1180,6 +1188,21 @@ finish:
     pa_stream_unref(s);
 }
 
+#ifdef __TIZEN__
+static bool is_virtual_stream(pa_proplist* p) {
+    const char *media_name = NULL;
+    bool is_virtual = false;
+
+    media_name = pa_proplist_gets(p, PA_PROP_MEDIA_NAME);
+    if (media_name && pa_streq(media_name, "VIRTUAL_STREAM"))
+        is_virtual = true;
+
+    pa_log_info("Is virtual stream : %s", pa_yes_no(is_virtual));
+
+    return is_virtual;
+}
+#endif
+
 static int create_stream(
         pa_stream_direction_t direction,
         pa_stream *s,
@@ -1307,8 +1330,12 @@ static int create_stream(
                 PA_TAG_INVALID);
 
         pa_tagstruct_put_cvolume(t, volume);
-    } else
+    } else {
         pa_tagstruct_putu32(t, s->buffer_attr.fragsize);
+#ifdef __TIZEN__
+        pa_tagstruct_put_boolean(t, is_virtual_stream(s->proplist));
+#endif
+    }
 
     if (s->context->version >= 12) {
         pa_tagstruct_put(

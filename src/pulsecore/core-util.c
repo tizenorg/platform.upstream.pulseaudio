@@ -1738,7 +1738,9 @@ static char* make_random_dir(mode_t m) {
 
     char *fn;
     size_t pathlen;
-
+#ifdef __TIZEN__
+    srand (time(NULL));
+#endif
     fn = pa_sprintf_malloc("%s" PA_PATH_SEP "pulse-XXXXXXXXXXXX", pa_get_temp_dir());
     pathlen = strlen(fn);
 
@@ -1804,7 +1806,9 @@ static int make_random_dir_and_link(mode_t m, const char *k) {
 char *pa_get_runtime_dir(void) {
     char *d, *k = NULL, *p = NULL, *t = NULL, *mid;
     mode_t m;
-
+#ifdef __TIZEN__
+    int retry_count = 100;
+#endif
     /* The runtime directory shall contain dynamic data that needs NOT
      * to be kept across reboots and is usually private to the user,
      * except in system mode, where it might be accessible by other
@@ -1827,6 +1831,7 @@ char *pa_get_runtime_dir(void) {
         return pa_xstrdup(d);
     }
 
+#ifndef __TIZEN__
     /* Use the XDG standard for the runtime directory. */
     d = getenv("XDG_RUNTIME_DIR");
     if (d) {
@@ -1849,6 +1854,7 @@ char *pa_get_runtime_dir(void) {
 
         return k;
     }
+#endif
 
     /* XDG_RUNTIME_DIR wasn't set, use the old legacy fallback */
     d = get_pulse_home();
@@ -1873,7 +1879,23 @@ char *pa_get_runtime_dir(void) {
 
     for (;;) {
         /* OK, first let's check if the "runtime" symlink already exists */
+#ifdef __TIZEN__
+        /* FIXME: This is recovery routine for infinite waiting issue such as below situation.
+         * eg. 50f64052a5dbbe087c11dfac4effb63c-runtime -> /tmp/pulse-LDK8gTL6Dh9N
+               50f64052a5dbbe087c11dfac4effb63c-runtime.tmp -> /tmp/pulse-cDM1bQhObZ7O */
+        if (retry_count-- == 0) {
+            pa_log_error ("retry is over....do cleanup");
 
+            /* Remove original file */
+            unlink (k);
+
+            /* Remove original.tmp file */
+            t = pa_sprintf_malloc("%s.tmp", k);
+            unlink (t);
+            pa_xfree(t);
+            t = NULL;
+        }
+#endif
         p = pa_readlink(k);
         if (!p) {
 
@@ -3424,7 +3446,11 @@ const char *pa_get_temp_dir(void) {
         pa_is_path_absolute(t))
         return t;
 
+#ifdef __TIZEN__
+    return "/tmp/pulseaudio";
+#else
     return "/tmp";
+#endif
 }
 
 int pa_open_cloexec(const char *fn, int flags, mode_t mode) {

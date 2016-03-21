@@ -1,0 +1,99 @@
+* Fri Dec 12 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- New cascaded setup for true multiuser audio
+- It is applied only if cascaded setup package is installed
+- Otherwise should not alter previous behavior
+- Fix issue of muting the hdmi
+- Fix crash in volume-api with bluetooth
+- Various small fixes
+
+* Fri Nov 5 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- Bring in systemd socket activation - fixes partly TC-1742 (xwalk doesn't autospawn pulse)
+- add tcp sockets to systemd socket activation
+- don't load esound protocol module
+- disable msbc from bluetooth, because the implementation is missing
+
+* Fri Oct 10 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- spec file cleanup
+
+* Thu Oct 09 2014 John L. Whiteman <john.l.whiteman@intel.com> accepted/tizen/ivi/20141001.194551-1-gabc4c3a
+- Fixed TC-1588. Added libcap-tools requirement
+
+* Mon Sep 29 2014 Jaska Uimonen <jaska.uimonen@intel.com> None
+- fix P1 bug with pulseaudio network queries causing delay in startup
+
+* Thu Aug 28 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- various volume fixes for main volume
+- realtime prio setting from separate package
+
+* Mon May 22 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- update to pulseaudio 5.0
+- clean tizen patch set
+- add volume api patches
+
+* Fri Feb 14 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- disable bluez4 to get rid of extra logging spam
+- enable build without X
+
+* Mon Jan 20 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- make things compile for common pc distros
+- fix a lot of warnings
+- fix a bug in volume ramp
+- make samsung policy compilation optional
+
+* Tue Jan 7 2014 Jaska Uimonen <jaska.uimonen@intel.com>
+- fix crash in ofono communication with NULL sender TIVI-2489
+- fix assert if ofono is started after pulseaudio
+
+* Fri Dec 06 2013 Rusty Lynch <rusty.lynch@intel.com> accepted/tizen/20131112.015302@01340f9
+- Explicitly setting User execute label on pulseaudio binary
+
+* Wed Oct 22 2013 Jaska Uimonen <jaska.uimonen@intel.com>
+- update pulseaudio to 4.0+ with bluez5 enabling patches
+
+* Wed Oct 2 2013 Jaska Uimonen <jaska.uimonen@intel.com>
+- add tcp client module loading with murphy
+
+* Thu Sep 12 2013 Jaska Uimonen <jaska.uimonen@intel.com>
+- add libcap dependency
+- add key configuration to stream restore
+
+* Fri Aug 16 2013 Vivian Zhang <vivian.zhang@intel.com>
+- remove pulseaudio.service which launch pa in system mode
+- check module-fileter-xx.so exists before loading them to avoid module load failure
+
+* Thu Aug 15 2013 Jaska Uimonen <jaska.uimonen@intel.com> - 4.0
+- upgrade to 4.0 version
+
+* Fri Jun 28 2013 Jaska Uimonen <jaska.uimonen@intel.com>
+- do not use nested ifdefs in default.pa
+
+* Wed Jun 26 2013 Jaska Uimonen <jaska.uimonen@intel.com>
+- make separate packages out of combine and augment modules
+- add conditional murphy module loading to default.pa
+- add internal corking state for sink-input
+- revert and update patches for module development kit.
+
+* Tue Jun 25 2013 Jaska Uimonen <jaska.uimonen@intel.com>
+- updated volume ramp patches to be able to compile pulseaudio-module-murphy-ivi
+
+* Mon Jun 10 2013 Philippe Coval <philippe.coval@eurogiciel.fr> accepted/tizen/20130520.100459@54c01bc
+- spec: change database format from gdbm to tdb
+  Bug-Tizen: #TZPC-945
+
+* Thu Apr 11 2013 Anas Nashif <anas.nashif@intel.com> v2.1@278f744
+- Remove IVI configuration patch
+
+* Fri Mar 22 2013 Anas Nashif <anas.nashif@intel.com> accepted/trunk/20130207.031005@3411be6
+- Fixed package groups
+
+* Thu Jan 31 2013 Anas Nashif <anas.nashif@intel.com> submit/trunk/20130104.143337@72303c1
+- enable tizen with all options
+
+* Fri Jan 04 2013 Anas Nashif <anas.nashif@intel.com> submit/trunk/20130104.143211@a196c38
+- enable policy
+
+* Thu Jan 03 2013 Anas Nashif <anas.nashif@intel.com> submit/trunk/20130104.045038@0b4a02e
+- install sysconfig file
+
+* Fri Dec 14 2012 Anas Nashif <anas.nashif@intel.com> upstream/2.1@8df5628
+- Initial release

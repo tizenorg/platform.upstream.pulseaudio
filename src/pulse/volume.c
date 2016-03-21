@@ -445,9 +445,16 @@ int pa_cvolume_channels_equal_to(const pa_cvolume *a, pa_volume_t v) {
     unsigned c;
     pa_assert(a);
 
+#ifdef __TIZEN__
+    if (pa_cvolume_valid(a) == 0)
+        abort();
+
+    /* pa_return_val_if_fail(pa_cvolume_valid(a), 0); */
+    pa_return_val_if_fail(PA_VOLUME_IS_VALID(v), 0);
+#else
     pa_return_val_if_fail(pa_cvolume_valid(a), 0);
     pa_return_val_if_fail(PA_VOLUME_IS_VALID(v), 0);
-
+#endif
     for (c = 0; c < a->channels; c++)
         if (a->values[c] != v)
             return 0;

@@ -159,6 +159,13 @@ pa_core* pa_core_new(pa_mainloop_api *m, bool shared, size_t shm_size) {
 
     pa_core_check_idle(c);
 
+#ifdef __TIZEN__
+    c->dump_sink = false;
+    c->dump_sink_input = false;
+    c->dump_source = false;
+    c->dump_source_output = false;
+#endif
+
     c->state = PA_CORE_RUNNING;
 
     return c;

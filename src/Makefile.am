@@ -59,6 +59,11 @@ AM_LDFLAGS =
 # Should only be applied to libraries.
 AM_LIBLDFLAGS = $(NODELETE_LDFLAGS)
 
+if USE_SECURITY
+AM_CFLAGS += $(CYNARA_CFLAGS) -DUSE_SECURITY
+AM_LIBADD += $(CYNARA_LIBS)
+endif
+
 if HAVE_GCOV
 AM_CFLAGS+=$(GCOV_CFLAGS)
 AM_CXXFLAGS+=$(GCOV_CFLAGS)
@@ -96,6 +101,8 @@ EXTRA_DIST = \
 		depmod.py \
 		daemon/esdcompat.in \
 		daemon/start-pulseaudio-x11.in \
+		daemon/systemd/system/pulseaudio.service.in \
+		daemon/systemd/system/pulseaudio.socket \
 		daemon/systemd/user/pulseaudio.service.in \
 		daemon/systemd/user/pulseaudio.socket \
 		utils/padsp.in \
@@ -149,7 +156,7 @@ pulseaudio_SOURCES = \
 		daemon/ltdl-bind-now.c daemon/ltdl-bind-now.h \
 		daemon/main.c
 
-pulseaudio_CFLAGS = $(AM_CFLAGS) $(CAP_CFLAGS)
+pulseaudio_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) $(CAP_CFLAGS) $(DBUS_CFLAGS) -fPIC -pie
 pulseaudio_LDADD = $(AM_LDADD) libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la $(LIBLTDL) $(CAP_LIBS)
 # This is needed because automake doesn't properly expand the foreach below
 pulseaudio_DEPENDENCIES = libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la $(PREOPEN_LIBS)
@@ -177,6 +184,10 @@ pulseaudio_CFLAGS += $(SYSTEMD_FLAGS) $(SYSTEMDDAEMON_FLAGS)
 pulseaudio_LDFLAGS += $(SYSTEMD_LIBS) $(SYSTEMDDAEMON_LIBS)
 endif
 
+if USE_DLOG
+pulseaudio_CFLAGS += -DUSE_DLOG
+endif
+
 ###################################
 #       Utility programs          #
 ###################################
@@ -202,12 +213,12 @@ endif
 
 pacat_SOURCES = utils/pacat.c
 pacat_LDADD = $(AM_LDADD) libpulse.la libpulsecommon-@PA_MAJORMINOR@.la $(LIBSNDFILE_LIBS)
-pacat_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS)
+pacat_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) -fPIC -pie
 pacat_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 pactl_SOURCES = utils/pactl.c
 pactl_LDADD = $(AM_LDADD) libpulse.la libpulsecommon-@PA_MAJORMINOR@.la $(LIBSNDFILE_LIBS)
-pactl_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS)
+pactl_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) -fPIC -pie
 pactl_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 pasuspender_SOURCES = utils/pasuspender.c
@@ -216,7 +227,7 @@ pasuspender_CFLAGS = $(AM_CFLAGS)
 pasuspender_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 pacmd_SOURCES = utils/pacmd.c
-pacmd_CFLAGS = $(AM_CFLAGS)
+pacmd_CFLAGS = $(AM_CFLAGS) -fPIC -pie
 pacmd_LDADD = $(AM_LDADD) libpulse.la libpulsecommon-@PA_MAJORMINOR@.la
 pacmd_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
@@ -227,8 +238,12 @@ pax11publish_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 if HAVE_SYSTEMD_DAEMON
 
+systemdsystemunit_DATA = \
+    daemon/systemd/system/pulseaudio.service \
+    daemon/systemd/system/pulseaudio.socket
+
 systemduserunit_DATA = \
-    pulseaudio.service \
+    daemon/systemd/user/pulseaudio.service \
     daemon/systemd/user/pulseaudio.socket
 
 endif
@@ -440,7 +455,7 @@ mcalign_test_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 pacat_simple_SOURCES = tests/pacat-simple.c
 pacat_simple_LDADD = $(AM_LDADD) libpulse.la libpulse-simple.la
-pacat_simple_CFLAGS = $(AM_CFLAGS)
+pacat_simple_CFLAGS = $(AM_CFLAGS) -fPIC -pie
 pacat_simple_LDFLAGS = $(AM_LDFLAGS) $(BINLDFLAGS)
 
 parec_simple_SOURCES = tests/parec-simple.c
@@ -791,6 +806,133 @@ libpulsecommon_@PA_MAJORMINOR@_la_LIBADD += $(DBUS_LIBS)
 endif
 
 ###################################
+#         Pulsecore headers       #
+###################################
+
+pulsecoreinclude_HEADERS = \
+		pulsecore/arpa-inet.h \
+		pulsecore/asyncmsgq.h \
+		pulsecore/asyncq.h \
+		pulsecore/atomic.h \
+		pulsecore/aupdate.h \
+		pulsecore/auth-cookie.h \
+		pulsecore/authkey.h \
+		pulsecore/avahi-wrap.h \
+		pulsecore/bitset.h \
+		pulsecore/card.h \
+		pulsecore/cli-command.h \
+		pulsecore/client.h \
+		pulsecore/cli.h \
+		pulsecore/cli-text.h \
+		pulsecore/conf-parser.h \
+		pulsecore/core-error.h \
+		pulsecore/core.h \
+		pulsecore/core-rtclock.h \
+		pulsecore/core-scache.h \
+		pulsecore/core-subscribe.h \
+		pulsecore/core-util.h \
+		pulsecore/cpu-arm.h \
+		pulsecore/cpu.h \
+		pulsecore/cpu-orc.h \
+		pulsecore/cpu-x86.h \
+		pulsecore/creds.h \
+		pulsecore/database.h \
+		pulsecore/dbus-shared.h \
+		pulsecore/dbus-util.h \
+		pulsecore/device-port.h \
+		pulsecore/dynarray.h \
+		pulsecore/endianmacros.h \
+		pulsecore/esound.h \
+		pulsecore/fdsem.h \
+		pulsecore/flist.h \
+		pulsecore/g711.h \
+		pulsecore/hashmap.h \
+		pulsecore/hook-list.h \
+		pulsecore/i18n.h \
+		pulsecore/idxset.h \
+		pulsecore/iochannel.h \
+		pulsecore/ioline.h \
+		pulsecore/ipacl.h \
+		pulsecore/llist.h \
+		pulsecore/lock-autospawn.h \
+		pulsecore/log.h \
+		pulsecore/ltdl-helper.h \
+		pulsecore/macro.h \
+		pulsecore/mcalign.h \
+		pulsecore/memblock.h \
+		pulsecore/memblockq.h \
+		pulsecore/memchunk.h \
+		pulsecore/memtrap.h \
+		pulsecore/mime-type.h \
+		pulsecore/mix.h \
+		pulsecore/modargs.h \
+		pulsecore/modinfo.h \
+		pulsecore/module.h \
+		pulsecore/msgobject.h \
+		pulsecore/mutex.h \
+		pulsecore/namereg.h \
+		pulsecore/native-common.h \
+		pulsecore/object.h \
+		pulsecore/once.h \
+		pulsecore/packet.h \
+		pulsecore/parseaddr.h \
+		pulsecore/pdispatch.h \
+		pulsecore/pid.h \
+		pulsecore/pipe.h \
+		pulsecore/play-memblockq.h \
+		pulsecore/play-memchunk.h \
+		pulsecore/poll.h \
+		pulsecore/proplist-util.h \
+		pulsecore/protocol-cli.h \
+		pulsecore/protocol-dbus.h \
+		pulsecore/protocol-esound.h \
+		pulsecore/protocol-http.h \
+		pulsecore/protocol-native.h \
+		pulsecore/protocol-simple.h \
+		pulsecore/pstream.h \
+		pulsecore/pstream-util.h \
+		pulsecore/queue.h \
+		pulsecore/random.h \
+		pulsecore/ratelimit.h \
+		pulsecore/refcnt.h \
+		pulsecore/remap.h \
+		pulsecore/resampler.h \
+		pulsecore/filter/lfe-filter.h \
+		pulsecore/srbchannel.h \
+		pulsecore/rtkit.h \
+		pulsecore/rtpoll.h \
+		pulsecore/sample-util.h \
+		pulsecore/sconv.h \
+		pulsecore/sconv-s16be.h \
+		pulsecore/sconv-s16le.h \
+		pulsecore/semaphore.h \
+		pulsecore/shared.h \
+		pulsecore/shm.h \
+		pulsecore/sink.h \
+		pulsecore/sink-input.h \
+		pulsecore/sioman.h \
+		pulsecore/sndfile-util.h \
+		pulsecore/socket-client.h \
+		pulsecore/socket.h \
+		pulsecore/socket-server.h \
+		pulsecore/socket-util.h \
+		pulsecore/sound-file.h \
+		pulsecore/sound-file-stream.h \
+		pulsecore/source.h \
+		pulsecore/source-output.h \
+		pulsecore/start-child.h \
+		pulsecore/strbuf.h \
+		pulsecore/strlist.h \
+		pulsecore/tagstruct.h \
+		pulsecore/thread.h \
+		pulsecore/thread-mq.h \
+		pulsecore/time-smoother.h \
+		pulsecore/tokenizer.h \
+		pulsecore/usergroup.h \
+		pulsecore/x11prop.h \
+		pulsecore/x11wrap.h
+
+###################################
 #         Client library          #
 ###################################
 
@@ -872,7 +1014,7 @@ libpulse_la_SOURCES = \
 		pulse/volume.c pulse/volume.h \
 		pulse/xmalloc.c pulse/xmalloc.h
 
-libpulse_la_CFLAGS = $(AM_CFLAGS) $(LIBJSON_CFLAGS)
+libpulse_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS) $(LIBJSON_CFLAGS)
 libpulse_la_LIBADD = $(AM_LIBADD) $(WINSOCK_LIBS) $(LTLIBICONV) $(LIBJSON_LIBS) libpulsecommon-@PA_MAJORMINOR@.la
 libpulse_la_LDFLAGS = $(AM_LDFLAGS) $(AM_LIBLDFLAGS) $(VERSIONING_LDFLAGS) -version-info $(LIBPULSE_VERSION_INFO)
 
@@ -882,7 +1024,7 @@ libpulse_la_LIBADD += $(DBUS_LIBS)
 endif
 
 libpulse_simple_la_SOURCES = pulse/simple.c pulse/simple.h
-libpulse_simple_la_CFLAGS = $(AM_CFLAGS)
+libpulse_simple_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS)
 libpulse_simple_la_LIBADD = $(AM_LIBADD) libpulse.la libpulsecommon-@PA_MAJORMINOR@.la
 libpulse_simple_la_LDFLAGS = $(AM_LDFLAGS) $(AM_LIBLDFLAGS) $(VERSIONING_LDFLAGS) -version-info $(LIBPULSE_SIMPLE_VERSION_INFO)
 
@@ -919,7 +1061,8 @@ libpulsedsp_la_LDFLAGS = $(AM_LDFLAGS) $(AM_LIBLDFLAGS) -avoid-version -disable-
 #      Daemon core library        #
 ###################################
 
-pkglib_LTLIBRARIES = libpulsecore-@PA_MAJORMINOR@.la
+#pkglib_LTLIBRARIES = libpulsecore-@PA_MAJORMINOR@.la
+lib_LTLIBRARIES += libpulsecore-@PA_MAJORMINOR@.la
 
 # Pure core stuff
 libpulsecore_@PA_MAJORMINOR@_la_SOURCES = \
@@ -937,6 +1080,7 @@ libpulsecore_@PA_MAJORMINOR@_la_SOURCES = \
 		pulsecore/core-scache.c pulsecore/core-scache.h \
 		pulsecore/core-subscribe.c pulsecore/core-subscribe.h \
 		pulsecore/core.c pulsecore/core.h \
+		pulsecore/fdsem.c pulsecore/fdsem.h \
 		pulsecore/hook-list.c pulsecore/hook-list.h \
 		pulsecore/ltdl-helper.c pulsecore/ltdl-helper.h \
 		pulsecore/modargs.c pulsecore/modargs.h \
@@ -1114,6 +1258,9 @@ libprotocol_native_la_LIBADD = $(AM_LIBADD) libpulsecore-@PA_MAJORMINOR@.la libp
 if HAVE_DBUS
 libprotocol_native_la_CFLAGS += $(DBUS_CFLAGS)
 libprotocol_native_la_LIBADD += $(DBUS_LIBS)
+endif
+if USE_SECURITY
+libprotocol_native_la_SOURCES += pulsecore/cynara.c pulsecore/cynara.h
 endif
 
 if HAVE_ESOUND
@@ -2020,6 +2167,9 @@ module_suspend_on_idle_la_SOURCES = modules/module-suspend-on-idle.c
 module_suspend_on_idle_la_LDFLAGS = $(MODULE_LDFLAGS)
 module_suspend_on_idle_la_LIBADD = $(MODULE_LIBADD)
 module_suspend_on_idle_la_CFLAGS = $(AM_CFLAGS)
+if USE_PM_LOCK
+module_suspend_on_idle_la_CFLAGS += -DUSE_PM_LOCK
+endif
 
 # echo-cancel module
 module_echo_cancel_la_SOURCES = \
@@ -2203,6 +2353,7 @@ module_rygel_media_server_la_CFLAGS = $(AM_CFLAGS) $(DBUS_CFLAGS)
 
 CLEANFILES += daemon/pulseaudio.desktop
 DISTCLEANFILES = esdcompat client.conf default.pa system.pa daemon.conf start-pulseaudio-x11 pulseaudio.service
+DISTCLEANFILES += daemon/systemd/system/pulseaudio.service
 
 if OS_IS_WIN32
 SYMLINK_PROGRAM=cd $(DESTDIR)$(bindir) && cp

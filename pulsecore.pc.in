@@ -1,0 +1,10 @@
+prefix=@prefix@
+libdir=@libdir@
+includedir=${prefix}/include
+libexecdir=@libexecdir@
+
+Name: pulsecore
+Description: Module building interface for pulseaudio
+Version: @PACKAGE_VERSION@
+Libs: -L${libdir} -lpulsecore-@PA_MAJORMINOR@ -lpulse -L${libdir}/pulse-@PA_MAJORMINOR@/modules -lprotocol-native -L${libdir}/pulseaudio -lpulsecommon-@PA_MAJORMINOR@ @PTHREAD_LIBS@
+Cflags: -D_REENTRANT -D__TIZEN__ -D__INCLUDED_FROM_PULSE_AUDIO -DPA_DEFAULT_CONFIG_DIR=\"@PA_DEFAULT_CONFIG_DIR@\" -I${includedir}

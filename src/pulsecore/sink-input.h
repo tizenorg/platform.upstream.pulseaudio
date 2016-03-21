@@ -251,6 +251,10 @@ struct pa_sink_input {
         pa_hashmap *direct_outputs;
     } thread_info;
 
+#ifdef __TIZEN__
+    FILE *dump_fp;
+#endif
+
     void *userdata;
 };
 

@@ -72,6 +72,18 @@ PA_C_DECL_BEGIN
 /** For streams: the name of a filter that should specifically suppressed (i.e.\ overrides PA_PROP_FILTER_WANT). Useful for the times that PA_PROP_FILTER_WANT is automatically added (e.g. echo-cancellation for phone streams when $VOIP_APP does its own, internal AEC) \since 1.0 */
 #define PA_PROP_FILTER_SUPPRESS                "filter.suppress"
 
+#ifdef __TIZEN__
+#define PA_PROP_MEDIA_ROLE_PRIORITY            "media.role.priority"
+#define PA_PROP_MEDIA_ROLE_ROUTE_TYPE          "media.role.route_type"
+#define PA_PROP_MEDIA_ROUTE_AUTO_ACTIVE_DEV    "media.route_auto.active_dev"
+#define PA_PROP_MEDIA_PARENT_ID                "media.parent_id"
+#define PA_PROP_MEDIA_TIZEN_VOLUME_TYPE        "media.tizen_volume_type"
+#define PA_PROP_MEDIA_TIZEN_VOLUME_GAIN_TYPE   "media.tizen_volume_gain_type"
+#define PA_PROP_MEDIA_TIZEN_GAIN_TYPE          "media.tizen_gain_type" // It will be deprecated.
+#define PA_PROP_MEDIA_TIZEN_AUDIO_LATENCY      "media.tizen_audio_latency"
+#define PA_PROP_MEDIA_FOCUS_STATUS             "media.focus_status"
+#endif
+
 /** For event sound streams: XDG event sound name. e.g.\ "message-new-email" (Event sound streams are those with media.role set to "event") */
 #define PA_PROP_EVENT_ID                       "event.id"
 

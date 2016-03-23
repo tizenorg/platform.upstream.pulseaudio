@@ -169,25 +169,9 @@ pa_usec_t pa_simple_get_latency(pa_simple *s, int *error);
 
 /** Flush the playback or record buffer. This discards any audio in the buffer. */
 int pa_simple_flush(pa_simple *s, int *error);
-/** Mute the playback stream */
-int pa_simple_mute(pa_simple *p, int mute, int *rerror);
-
-#ifdef __TIZEN__
-/** Return the final latency. */
-pa_usec_t pa_simple_get_final_latency(pa_simple *s, int *error);
-#endif
-
-/** Volume control the playback stream */
-int pa_simple_set_volume(pa_simple *p, int volume, int *rerror);
 
 /** Get stream index */
 int pa_simple_get_stream_index(pa_simple *p, unsigned int *idx, int *rerror);
-
-/** Cork on=1/off=0 stream */
-int pa_simple_cork(pa_simple *p, int cork, int *rerror);
-
-/** Check whether stream is corked or not */
-int pa_simple_is_corked(pa_simple *p);
 
 PA_C_DECL_END
 

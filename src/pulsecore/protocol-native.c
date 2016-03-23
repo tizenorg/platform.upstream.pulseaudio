@@ -285,15 +285,8 @@ static void command_subscribe(pa_pdispatch *pd, uint32_t command, uint32_t tag, 
 static void command_set_volume(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 static void command_set_mute(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 static void command_cork_playback_stream(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
-#ifdef __TIZEN__
-static void command_cork_playback_stream_all(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
-#endif
 static void command_trigger_or_flush_or_prebuf_playback_stream(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 static void command_set_default_sink_or_source(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
-#ifdef __TIZEN__
-static void command_set_default_sink_by_api_bus(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
-static void command_set_default_sink_for_usb(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
-#endif
 static void command_set_stream_name(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 static void command_kill(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 static void command_load_module(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
@@ -368,9 +361,6 @@ static const pa_pdispatch_cb_t command_table[PA_COMMAND_MAX] = {
     [PA_COMMAND_SUSPEND_SOURCE] = command_suspend,
 
     [PA_COMMAND_CORK_PLAYBACK_STREAM] = command_cork_playback_stream,
-#ifdef __TIZEN__
-    [PA_COMMAND_CORK_PLAYBACK_STREAM_ALL] = command_cork_playback_stream_all,
-#endif
     [PA_COMMAND_FLUSH_PLAYBACK_STREAM] = command_trigger_or_flush_or_prebuf_playback_stream,
     [PA_COMMAND_TRIGGER_PLAYBACK_STREAM] = command_trigger_or_flush_or_prebuf_playback_stream,
     [PA_COMMAND_PREBUF_PLAYBACK_STREAM] = command_trigger_or_flush_or_prebuf_playback_stream,
@@ -379,10 +369,6 @@ static const pa_pdispatch_cb_t command_table[PA_COMMAND_MAX] = {
     [PA_COMMAND_FLUSH_RECORD_STREAM] = command_flush_record_stream,
 
     [PA_COMMAND_SET_DEFAULT_SINK] = command_set_default_sink_or_source,
-#ifdef __TIZEN__
-    [PA_COMMAND_SET_DEFAULT_SINK_BY_API_BUS] = command_set_default_sink_by_api_bus,
-    [PA_COMMAND_SET_DEFAULT_SINK_FOR_USB] = command_set_default_sink_for_usb,
-#endif
     [PA_COMMAND_SET_DEFAULT_SOURCE] = command_set_default_sink_or_source,
     [PA_COMMAND_SET_PLAYBACK_STREAM_NAME] = command_set_stream_name,
     [PA_COMMAND_SET_RECORD_STREAM_NAME] = command_set_stream_name,
@@ -4135,107 +4121,6 @@ static void command_cork_playback_stream(pa_pdispatch *pd, uint32_t command, uin
 
     pa_pstream_send_simple_ack(c->pstream, tag);
 }
-
-#ifdef __TIZEN__
-#define SINK_ALSA_NORMAL "alsa_output.0.analog-stereo"
-#define SINK_ALSA_HDMI   "alsa_output.1.analog-stereo"
-#define SINK_ALSA_VOIP   "alsa_output.3.analog-stereo"
-#define SINK_ALSA_LPA    "alsa_output.4.analog-stereo"
-
-#define PROP_MANUAL_CORK "manual_cork_by_device_switch"
-
-static void command_cork_playback_stream_all(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata) {
-    pa_native_connection *c = PA_NATIVE_CONNECTION(userdata);
-    uint32_t idx;
-    uint32_t sink_idx;
-    bool b;
-    pa_sink_input* si;
-    pa_sink* sink;
-    const char *role = NULL;
-    int ret;
-    const char *is_manual_corked_str = NULL;
-    uint32_t is_manual_corked;
-    pa_sink_input_state_t si_state;
-
-    pa_native_connection_assert_ref(c);
-    pa_assert(t);
-
-    if (pa_tagstruct_get_boolean(t, &b) < 0 ||
-        !pa_tagstruct_eof(t)) {
-        protocol_error(c);
-        return;
-    }
-
-    CHECK_VALIDITY(c->pstream, c->authorized, tag, PA_ERR_ACCESS);
-
-    pa_log_debug("========================= %s start =========================", b > 0 ? "cork" : "uncork");
-
-    PA_IDXSET_FOREACH(si, c->protocol->core->sink_inputs, idx) {
-        /* Skip this if it is already in the process of being moved
-         * anyway */
-        if (!si->sink)
-            continue;
-
-        /* It might happen that a stream and a sink are set up at the
-                same time, in which case we want to make sure we don't
-                interfere with that */
-        if (!PA_SINK_INPUT_IS_LINKED(pa_sink_input_get_state(si)))
-            continue;
-
-        if ((role = pa_proplist_gets(si->proplist, PA_PROP_MEDIA_ROLE))) {
-            if (pa_streq(role, "filter")) {
-                pa_log_debug("This sink-input [%d] linked to [%s] is FILTER...skip", si->index, (si->sink)? si->sink->name : NULL);
-                continue;
-            }
-        }
-
-        if (pa_streq (si->sink->name, SINK_ALSA_VOIP)) {
-            pa_log_info("Skip sink-input for VOIP sink");
-            continue;
-        }
-
-        if (b) {
-            si_state = pa_sink_input_get_state(si);
-            /* Cork only if sink-input was Running / Drained */
-            if (si_state == PA_SINK_INPUT_RUNNING || si_state == PA_SINK_INPUT_DRAINED) {
-                pa_proplist_sets(si->proplist, PROP_MANUAL_CORK, "1");
-                pa_sink_input_cork(si, TRUE);
-                pa_log_info(" <Cork %d> for sink-input[%d]:sink[%s]", b, si->index, si->sink->name);
-            }
-        } else {
-            /* UnCork if corked by manually */
-            if ((is_manual_corked_str = pa_proplist_gets(si->proplist, PROP_MANUAL_CORK))) {
-                pa_atou(is_manual_corked_str, &is_manual_corked);
-                if (is_manual_corked) {
-                    pa_proplist_sets(si->proplist, PROP_MANUAL_CORK, "0");
-                    pa_sink_input_cork(si, FALSE);
-                    pa_log_info(" <UnCork %d> for sink-input[%d]:sink[%s]", b, si->index, si->sink->name);
-                }
-            }
-        }
-    }
-
-    /* If CORK case, Do manual suspend for ALSA devices */
-    if (b) {
-        PA_IDXSET_FOREACH(sink,  c->protocol->core->sinks, sink_idx) {
-            if (pa_streq (sink->name, SINK_ALSA_NORMAL) ||
-                pa_streq (sink->name, SINK_ALSA_LPA) ||
-                pa_streq (sink->name, SINK_ALSA_HDMI)) {
-                pa_log_info("sink[%d][%s] state=[%d], used_by[%d], check_suspend[%d], suspend-cause[0x%x]",
-                    sink->index, sink->name, pa_sink_get_state(sink), pa_sink_used_by(sink), pa_sink_check_suspend(sink), sink->suspend_cause);
-
-                /* If sink is Not Suspended and can be suspended, do suspend */
-                if (pa_sink_get_state(sink) != PA_SINK_SUSPENDED && pa_sink_check_suspend(sink) == 0) {
-                    ret = pa_sink_suspend (sink, TRUE, PA_SUSPEND_INTERNAL);
-                    pa_log_info("suspend result [%d], after suspend-cause[0x%x]", ret, sink->suspend_cause);
-                }
-            }
-        }
-    }
-    pa_log_debug("========================= %s end =========================", b > 0 ? "cork" : "uncork");
-    pa_pstream_send_simple_ack(c->pstream, tag);
-}
-#endif /* __TIZEN__ */
 
 static void command_trigger_or_flush_or_prebuf_playback_stream(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata) {
     pa_native_connection *c = PA_NATIVE_CONNECTION(userdata);

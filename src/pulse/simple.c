@@ -588,46 +588,6 @@ unlock_and_fail:
     return -1;
 }
 
-int pa_simple_mute(pa_simple *p, int mute, int *rerror) {
-    pa_operation *o = NULL;
-    uint32_t idx;
-
-    pa_assert(p);
-
-    CHECK_VALIDITY_RETURN_ANY(rerror, p->direction == PA_STREAM_PLAYBACK, PA_ERR_BADSTATE, -1);
-
-    pa_threaded_mainloop_lock(p->mainloop);
-    CHECK_DEAD_GOTO(p, rerror, unlock_and_fail);
-
-    CHECK_SUCCESS_GOTO(p, rerror, ((idx = pa_stream_get_index (p->stream)) != PA_INVALID_INDEX), unlock_and_fail);
-
-
-    o = pa_context_set_sink_input_mute (p->context, idx, mute, success_context_cb, p);
-    CHECK_SUCCESS_GOTO(p, rerror, o, unlock_and_fail);
-
-    p->operation_success = 0;
-    while (pa_operation_get_state(o) == PA_OPERATION_RUNNING) {
-        pa_threaded_mainloop_wait(p->mainloop);
-        CHECK_DEAD_GOTO(p, rerror, unlock_and_fail);
-    }
-    CHECK_SUCCESS_GOTO(p, rerror, p->operation_success, unlock_and_fail);
-
-    pa_operation_unref(o);
-    pa_threaded_mainloop_unlock(p->mainloop);
-
-    return 0;
-
-unlock_and_fail:
-
-    if (o) {
-        pa_operation_cancel(o);
-        pa_operation_unref(o);
-    }
-
-    pa_threaded_mainloop_unlock(p->mainloop);
-    return -1;
-}
-
 int pa_simple_get_stream_index(pa_simple *p, unsigned int *idx, int *rerror) {
     pa_assert(p);
     CHECK_VALIDITY_RETURN_ANY(rerror, idx != NULL, PA_ERR_INVALID, -1);
@@ -646,53 +606,6 @@ unlock_and_fail:
     return -1;
 }
 
-int pa_simple_set_volume(pa_simple *p, int volume, int *rerror) {
-    pa_operation *o = NULL;
-    pa_stream *s = NULL;
-    uint32_t idx;
-    pa_cvolume cv;
-
-
-    pa_assert(p);
-
-    CHECK_VALIDITY_RETURN_ANY(rerror, p->direction == PA_STREAM_PLAYBACK, PA_ERR_BADSTATE, -1);
-    CHECK_VALIDITY_RETURN_ANY(rerror, volume >= 0, PA_ERR_INVALID, -1);
-    CHECK_VALIDITY_RETURN_ANY(rerror, volume <= 65535, PA_ERR_INVALID, -1);
-
-    pa_threaded_mainloop_lock(p->mainloop);
-    CHECK_DEAD_GOTO(p, rerror, unlock_and_fail);
-
-    CHECK_SUCCESS_GOTO(p, rerror, ((idx = pa_stream_get_index (p->stream)) != PA_INVALID_INDEX), unlock_and_fail);
-
-    s = p->stream;
-    pa_assert(s);
-    pa_cvolume_set(&cv, s->sample_spec.channels, volume);
-
-    o = pa_context_set_sink_input_volume (p->context, idx, &cv, success_context_cb, p);
-    CHECK_SUCCESS_GOTO(p, rerror, o, unlock_and_fail);
-
-    p->operation_success = 0;
-    while (pa_operation_get_state(o) == PA_OPERATION_RUNNING) {
-        pa_threaded_mainloop_wait(p->mainloop);
-        CHECK_DEAD_GOTO(p, rerror, unlock_and_fail);
-    }
-    CHECK_SUCCESS_GOTO(p, rerror, p->operation_success, unlock_and_fail);
-
-    pa_operation_unref(o);
-    pa_threaded_mainloop_unlock(p->mainloop);
-
-    return 0;
-
-unlock_and_fail:
-
-    if (o) {
-        pa_operation_cancel(o);
-        pa_operation_unref(o);
-    }
-
-    pa_threaded_mainloop_unlock(p->mainloop);
-    return -1;
-}
 pa_usec_t pa_simple_get_latency(pa_simple *p, int *rerror) {
     pa_usec_t t;
     int negative;
@@ -721,78 +634,4 @@ unlock_and_fail:
 
     pa_threaded_mainloop_unlock(p->mainloop);
     return (pa_usec_t) -1;
-}
-
-#ifdef __TIZEN__
-pa_usec_t pa_simple_get_final_latency(pa_simple *p, int *rerror) {
-	pa_usec_t t;
-
-	pa_assert(p);
-
-	CHECK_DEAD_GOTO(p, rerror, fail);
-
-	if (p->context->version >= 13) {
-		if (p->direction == PA_STREAM_PLAYBACK) {
-			t = (pa_bytes_to_usec(p->stream->buffer_attr.tlength, &p->stream->sample_spec) + p->stream->timing_info.configured_sink_usec);
-		} else if (p->direction == PA_STREAM_RECORD) {
-			t = (pa_bytes_to_usec(p->stream->buffer_attr.fragsize, &p->stream->sample_spec) + p->stream->timing_info.configured_source_usec);
-		} else {
-			t = (pa_usec_t) -1;
-		}
-	} else {
-		t = (pa_usec_t) -1;
-	}
-
-	return t;
-
-fail:
-	return (pa_usec_t) -1;
-}
-#endif
-
-int pa_simple_cork(pa_simple *p, int cork, int *rerror) {
-    pa_operation *o = NULL;
-
-    pa_assert(p);
-
-    pa_threaded_mainloop_lock(p->mainloop);
-    CHECK_DEAD_GOTO(p, rerror, unlock_and_fail);
-
-    o = pa_stream_cork(p->stream, cork, stream_success_context_cb, p);
-    CHECK_SUCCESS_GOTO(p, rerror, o, unlock_and_fail);
-
-    p->operation_success = 0;
-    while (pa_operation_get_state(o) == PA_OPERATION_RUNNING) {
-        pa_threaded_mainloop_wait(p->mainloop);
-        CHECK_DEAD_GOTO(p, rerror, unlock_and_fail);
-    }
-    CHECK_SUCCESS_GOTO(p, rerror, p->operation_success, unlock_and_fail);
-
-    pa_operation_unref(o);
-    pa_threaded_mainloop_unlock(p->mainloop);
-
-    return 0;
-
-unlock_and_fail:
-
-    if (o) {
-        pa_operation_cancel(o);
-        pa_operation_unref(o);
-    }
-
-    pa_threaded_mainloop_unlock(p->mainloop);
-    return -1;
-}
-
-int pa_simple_is_corked(pa_simple *p) {
-	int is_cork;
-    pa_assert(p);
-
-    pa_threaded_mainloop_lock(p->mainloop);
-
-    is_cork = pa_stream_is_corked(p->stream);
-
-    pa_threaded_mainloop_unlock(p->mainloop);
-
-    return is_cork;
 }

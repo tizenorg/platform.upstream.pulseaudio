@@ -10,7 +10,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          62
+Release:          63
 Group:            Multimedia/Audio
 License:          LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -25,7 +25,6 @@ BuildRequires:    pkgconfig(speexdsp)
 BuildRequires:    pkgconfig(sndfile)
 BuildRequires:    pkgconfig(alsa)
 BuildRequires:    pkgconfig(glib-2.0)
-BuildRequires:    pkgconfig(gconf-2.0)
 %if "%{?tizen_target_name}" != "hawkp"
 BuildRequires:    pkgconfig(bluez)
 BuildRequires:    pkgconfig(sbc)
@@ -347,7 +346,6 @@ fi
 %config %{_sysconfdir}/pulse/filter/*.dat
 %{_bindir}/esdcompat
 %{_bindir}/pulseaudio
-%{_libexecdir}/pulse/*
 %{_libdir}/libpulsecore-%{version}.so
 %{udev_dir}/rules.d/90-pulseaudio.rules
 %config(noreplace) /etc/dbus-1/system.d/pulseaudio-system.conf
@@ -417,7 +415,6 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-esound-compat-spawnpid.so
 %{_libdir}/pulse-%{version}/modules/module-esound-protocol-tcp.so
 %{_libdir}/pulse-%{version}/modules/module-esound-protocol-unix.so
-%{_libdir}/pulse-%{version}/modules/module-gconf.so
 %{_libdir}/pulse-%{version}/modules/module-udev-detect.so
 %{_libdir}/pulse-%{version}/modules/module-role-cork.so
 %{_libdir}/pulse-%{version}/modules/module-switch-on-port-available.so

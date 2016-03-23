@@ -224,18 +224,6 @@ pa_operation* pa_context_exit_daemon(pa_context *c, pa_context_success_cb_t cb, 
 /** Set the name of the default sink. */
 pa_operation* pa_context_set_default_sink(pa_context *c, const char *name, pa_context_success_cb_t cb, void *userdata);
 
-#ifdef __TIZEN__
-/** Set the api&bus of the default sink. */
-pa_operation* pa_context_set_default_sink_by_api_bus(pa_context *c, const char *api, const char *bus, pa_context_success_cb_t cb, void *userdata);
-
-/** Set the name of the default sink for USB */
-pa_operation* pa_context_set_default_sink_for_usb(pa_context *c, const char *name, pa_context_success_cb_t cb, void *userdata);
-
-/** Cork all playback stream and suspend sink manually for device switching */
-pa_operation* pa_context_set_cork_all(pa_context *c, int b, pa_context_success_cb_t cb, void *userdata);
-
-#endif /* __TIZEN__ */
-
 /** Set the name of the default source. */
 pa_operation* pa_context_set_default_source(pa_context *c, const char *name, pa_context_success_cb_t cb, void *userdata);
 

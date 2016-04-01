@@ -169,6 +169,10 @@ int pa_log_set_target(pa_log_target *t) {
 #ifdef HAVE_SYSTEMD_JOURNAL
         case PA_LOG_JOURNAL:
 #endif
+#ifdef USE_DLOG
+        case PA_LOG_DLOG:
+        case PA_LOG_DLOG_COLOR:
+#endif
         case PA_LOG_NULL:
             break;
         case PA_LOG_FILE:
@@ -745,6 +749,14 @@ char *pa_log_target_to_string(const pa_log_target *t) {
 #ifdef HAVE_SYSTEMD_JOURNAL
         case PA_LOG_JOURNAL:
             string = pa_xstrdup("journal");
+            break;
+#endif
+#ifdef USE_DLOG
+        case PA_LOG_DLOG:
+            string = pa_xstrdup("dlog");
+            break;
+        case PA_LOG_DLOG_COLOR:
+            string = pa_xstrdup("dlog-color");
             break;
 #endif
         case PA_LOG_NULL:

@@ -664,16 +664,15 @@ static void fix_record_buffer_attr_post(record_stream *s) {
 
 #ifdef __TIZEN__
 static int get_buffer_attr_from_hal(pa_proplist* proplist, pa_buffer_attr* ret_attr) {
-    pa_log_debug("hal-latency - __TIZEN__ : get_buffer_attr_from_hal()");
     uint32_t maxlength = 0;
     uint32_t tlength   = 0;
     uint32_t prebuf    = 0;
     uint32_t minreq    = 0;
     uint32_t fragsize  = 0;
-
-    pa_assert(ret_attr);
-
     const char* _propStr = NULL;
+
+    pa_log_debug("hal-latency - __TIZEN__ : get_buffer_attr_from_hal()");
+    pa_assert(ret_attr);
 
     if ((_propStr = pa_proplist_gets(proplist, "maxlength")) == NULL) {
         pa_log_debug("hal-latency - Failed to get maxlength from HAL");
@@ -783,8 +782,8 @@ static record_stream* record_stream_new(
      * Updates buffer_attr using HAL that is requested latency from client
      */
     {
-        pa_log_info("hal-latency - __TIZEN__ : playback_stream_new()");
         pa_buffer_attr hal_attr;
+        pa_log_info("hal-latency - __TIZEN__ : playback_stream_new()");
         if (get_buffer_attr_from_hal(source_output->proplist, &hal_attr) == 1) {
             pa_log_info("hal-latency - __TIZEN__ : Updates buffer_attr");
             *attr = hal_attr;
@@ -1266,8 +1265,8 @@ static playback_stream* playback_stream_new(
      * Updates buffer_attr using HAL that is requested latency from client
      */
     {
-        pa_log_info("hal-latency - __TIZEN__ : playback_stream_new()");
         pa_buffer_attr hal_attr;
+        pa_log_info("hal-latency - __TIZEN__ : playback_stream_new()");
         if (get_buffer_attr_from_hal(sink_input->proplist, &hal_attr) == 1) {
             pa_log_info("hal-latency - __TIZEN__ : Updates buffer_attr");
             *a = hal_attr;
@@ -4149,17 +4148,14 @@ static void command_cork_playback_stream_all(pa_pdispatch *pd, uint32_t command,
     pa_native_connection *c = PA_NATIVE_CONNECTION(userdata);
     uint32_t idx;
     uint32_t sink_idx;
-    pa_bool_t b;
-    playback_stream *s;
+    bool b;
     pa_sink_input* si;
     pa_sink* sink;
-    char* role = NULL;
+    const char *role = NULL;
     int ret;
-    char* is_manual_corked_str = NULL;
-    int is_manual_corked;
+    const char *is_manual_corked_str = NULL;
+    uint32_t is_manual_corked;
     pa_sink_input_state_t si_state;
-
-    void *state = NULL;
 
     pa_native_connection_assert_ref(c);
     pa_assert(t);

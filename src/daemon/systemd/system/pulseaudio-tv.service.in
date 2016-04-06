@@ -1,0 +1,13 @@
+[Unit]
+Description=pulseaudio service
+DefaultDependencies=false
+After=factory-init.service
+
+[Service]
+Type=forking
+ExecStartPre=/bin/mkdir -p /tmp/pulseaudio ; /usr/bin/chsmack -a pulseaudio -t /tmp/pulseaudio
+ExecStart=/usr/bin/pulseaudio
+Restart=always
+KillSignal=SIGKILL
+MemoryLimit=50M
+PIDFile=/var/run/pulse/pid

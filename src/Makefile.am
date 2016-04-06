@@ -105,6 +105,7 @@ EXTRA_DIST = \
 		daemon/start-pulseaudio-x11.in \
 		daemon/start-pulseaudio-kde.in \
 		daemon/systemd/system/pulseaudio.service.in \
+		daemon/systemd/system/pulseaudio-tv.service.in \
 		daemon/systemd/system/pulseaudio.socket \
 		daemon/systemd/user/pulseaudio.service.in \
 		daemon/systemd/user/pulseaudio.socket \

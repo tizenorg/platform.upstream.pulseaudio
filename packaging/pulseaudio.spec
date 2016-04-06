@@ -276,8 +276,8 @@ mkdir -p %{buildroot}%{_includedir}/pulsemodule/pulsecore
 
 cp %{buildroot}%{_includedir}/pulse/*.h %{buildroot}%{_includedir}/pulsemodule/pulse
 
-mkdir -p %{buildroot}%{_unitdir}/multi-user.target.wants/
-ln -s  ../pulseaudio.service  %{buildroot}%{_unitdir}/multi-user.target.wants/pulseaudio.service
+mkdir -p %{buildroot}%{_unitdir}/sysinit.target.wants/
+ln -s  ../pulseaudio.service  %{buildroot}%{_unitdir}/sysinit.target.wants/pulseaudio.service
 
 fdupes  %{buildroot}%{_datadir}
 fdupes  %{buildroot}%{_includedir}
@@ -424,7 +424,7 @@ fi
 %{_unitdir_user}/pulseaudio.service
 %{_unitdir_user}/pulseaudio.socket
 %{_unitdir}/pulseaudio.service
-%{_unitdir}/multi-user.target.wants/pulseaudio.service
+%{_unitdir}/sysinit.target.wants/pulseaudio.service
 %{_libdir}/pulse-%{version}/modules/libvolume-api.so
 %{_libdir}/pulse-%{version}/modules/libmain-volume-policy.so
 %{_libdir}/pulse-%{version}/modules/module-volume-api.so

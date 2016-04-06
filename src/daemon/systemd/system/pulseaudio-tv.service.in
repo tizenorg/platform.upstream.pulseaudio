@@ -1,0 +1,12 @@
+[Unit]
+Description=pulseaudio service
+DefaultDependencies=false
+After=dbus.service
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/pulseaudio
+Restart=always
+KillSignal=SIGKILL
+MemoryLimit=50M
+PIDFile=/var/run/pulse/pid

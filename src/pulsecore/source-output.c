@@ -272,9 +272,6 @@ int pa_source_output_new(
     pa_assert(data);
     pa_assert_ctl_context();
 
-    o = data->source_output = pa_msgobject_new(pa_source_output);
-    o->state = PA_SOURCE_OUTPUT_INIT;
-
     if (data->client)
         pa_proplist_update(data->proplist, PA_UPDATE_MERGE, data->client->proplist);
 
@@ -292,38 +289,28 @@ int pa_source_output_new(
                                              !(data->flags & PA_SOURCE_OUTPUT_FIX_FORMAT),
                                              !(data->flags & PA_SOURCE_OUTPUT_FIX_RATE),
                                              !(data->flags & PA_SOURCE_OUTPUT_FIX_CHANNELS));
-        if (!f) {
-            r = -PA_ERR_INVALID;
-            goto fail;
-        }
+        if (!f)
+            return -PA_ERR_INVALID;
 
         formats = pa_idxset_new(NULL, NULL);
         pa_idxset_put(formats, f, NULL);
         pa_source_output_new_data_set_formats(data, formats);
     }
 
-    pa_hook_fire(&core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_NEW], data);
+    if ((r = pa_hook_fire(&core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_NEW], data)) < 0)
+        return r;
 
-    if (data->driver && !pa_utf8_valid(data->driver)) {
-        r = -PA_ERR_INVALID;
-        goto fail;
-    }
+    pa_return_val_if_fail(!data->driver || pa_utf8_valid(data->driver), -PA_ERR_INVALID);
 
     if (!data->source) {
         pa_source *source;
 
         if (data->direct_on_input) {
             source = data->direct_on_input->sink->monitor_source;
-            if (!source) {
-                r = -PA_ERR_INVALID;
-                goto fail;
-            }
+            pa_return_val_if_fail(source, -PA_ERR_INVALID);
         } else {
             source = pa_namereg_get(core, NULL, PA_NAMEREG_SOURCE);
-            if (!source) {
-                r = -PA_ERR_NOENTITY;
-                goto fail;
-            }
+            pa_return_val_if_fail(source, -PA_ERR_NOENTITY);
         }
 
         pa_source_output_new_data_set_source(data, source, false);
@@ -346,19 +333,11 @@ int pa_source_output_new(
         PA_IDXSET_FOREACH(format, data->req_formats, idx)
             pa_log_info(" -- %s", pa_format_info_snprint(fmt, sizeof(fmt), format));
 
-        r = -PA_ERR_NOTSUPPORTED;
-        goto fail;
+        return -PA_ERR_NOTSUPPORTED;
     }
 
-    if (!PA_SOURCE_IS_LINKED(pa_source_get_state(data->source))) {
-        r = -PA_ERR_BADSTATE;
-        goto fail;
-    }
-
-    if (data->direct_on_input && data->direct_on_input->sink != data->source->monitor_of) {
-        r = -PA_ERR_INVALID;
-        goto fail;
-    }
+    pa_return_val_if_fail(PA_SOURCE_IS_LINKED(pa_source_get_state(data->source)), -PA_ERR_BADSTATE);
+    pa_return_val_if_fail(!data->direct_on_input || data->direct_on_input->sink == data->source->monitor_of, -PA_ERR_INVALID);
 
     /* Routing is done. We have a source and a format. */
 
@@ -369,7 +348,7 @@ int pa_source_output_new(
          * modified in pa_format_info_to_sample_spec2(). */
         r = pa_stream_get_volume_channel_map(&data->volume, data->channel_map_is_set ? &data->channel_map : NULL, data->format, &volume_map);
         if (r < 0)
-            goto fail;
+            return r;
     }
 
     /* Now populate the sample spec and channel map according to the final
@@ -377,7 +356,7 @@ int pa_source_output_new(
     r = pa_format_info_to_sample_spec2(data->format, &data->sample_spec, &data->channel_map, &data->source->sample_spec,
                                        &data->source->channel_map);
     if (r < 0)
-        goto fail;
+        return r;
 
     /* Now that the routing is done, we can finalize the volume if it has been
      * set. If the set volume is relative, we convert it to absolute, and if
@@ -404,18 +383,12 @@ int pa_source_output_new(
     if (!data->volume_factor_is_set)
         pa_cvolume_reset(&data->volume_factor, data->sample_spec.channels);
 
-    if (!pa_cvolume_compatible(&data->volume_factor, &data->sample_spec)) {
-        r = -PA_ERR_INVALID;
-        goto fail;
-    }
+    pa_return_val_if_fail(pa_cvolume_compatible(&data->volume_factor, &data->sample_spec), -PA_ERR_INVALID);
 
     if (!data->volume_factor_source_is_set)
         pa_cvolume_reset(&data->volume_factor_source, data->source->sample_spec.channels);
 
-    if (!pa_cvolume_compatible(&data->volume_factor_source, &data->source->sample_spec)) {
-        r = -PA_ERR_INVALID;
-        goto fail;
-    }
+    pa_return_val_if_fail(pa_cvolume_compatible(&data->volume_factor_source, &data->source->sample_spec), -PA_ERR_INVALID);
 
     if (!data->muted_is_set)
         data->muted = false;
@@ -435,19 +408,16 @@ int pa_source_output_new(
         /* rate update failed, or other parts of sample spec didn't match */
 
         pa_log_debug("Could not update source sample spec to match passthrough stream");
-        r = -PA_ERR_NOTSUPPORTED;
-        goto fail;
+        return -PA_ERR_NOTSUPPORTED;
     }
 
     if (data->resample_method == PA_RESAMPLER_INVALID)
         data->resample_method = core->resample_method;
 
-    if (data->resample_method >= PA_RESAMPLER_MAX) {
-        r = -PA_ERR_INVALID;
-        goto fail;
-    }
+    pa_return_val_if_fail(data->resample_method < PA_RESAMPLER_MAX, -PA_ERR_INVALID);
 
-    pa_hook_fire(&core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_FIXATE], data);
+    if ((r = pa_hook_fire(&core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_FIXATE], data)) < 0)
+        return r;
 
     if (!data->volume_is_set) {
         pa_cvolume_reset(&v, data->sample_spec.channels);
@@ -458,14 +428,12 @@ int pa_source_output_new(
     if ((data->flags & PA_SOURCE_OUTPUT_NO_CREATE_ON_SUSPEND) &&
         pa_source_get_state(data->source) == PA_SOURCE_SUSPENDED) {
         pa_log("Failed to create source output: source is suspended.");
-        r = -PA_ERR_BADSTATE;
-        goto fail;
+        return -PA_ERR_BADSTATE;
     }
 
     if (pa_idxset_size(data->source->outputs) >= PA_MAX_OUTPUTS_PER_SOURCE) {
         pa_log("Failed to create source output: too many outputs per source.");
-        r = -PA_ERR_TOOLARGE;
-        goto fail;
+        return -PA_ERR_TOOLARGE;
     }
 
     if ((data->flags & PA_SOURCE_OUTPUT_VARIABLE_RATE) ||
@@ -483,15 +451,16 @@ int pa_source_output_new(
                         (core->disable_remixing || (data->flags & PA_SOURCE_OUTPUT_NO_REMIX) ? PA_RESAMPLER_NO_REMIX : 0) |
                         (core->disable_lfe_remixing ? PA_RESAMPLER_NO_LFE : 0)))) {
                 pa_log_warn("Unsupported resampling operation.");
-                r = -PA_ERR_NOTSUPPORTED;
-                goto fail;
+                return -PA_ERR_NOTSUPPORTED;
             }
     }
 
+    o = pa_msgobject_new(pa_source_output);
     o->parent.parent.free = source_output_free;
     o->parent.process_msg = pa_source_output_process_msg;
 
     o->core = core;
+    o->state = PA_SOURCE_OUTPUT_INIT;
     o->flags = data->flags;
     o->proplist = pa_proplist_copy(data->proplist);
     o->driver = pa_xstrdup(pa_path_get_filename(data->driver));
@@ -569,16 +538,6 @@ int pa_source_output_new(
 
     *_o = o;
     return 0;
-
-fail:
-    if (o) {
-        pa_source_output_unlink(o);
-        pa_source_output_unref(o);
-    }
-
-    data->source_output = NULL;
-
-    return r;
 }
 
 /* Called from main context */

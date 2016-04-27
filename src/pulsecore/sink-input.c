@@ -338,9 +338,6 @@ int pa_sink_input_new(
     pa_assert(data);
     pa_assert_ctl_context();
 
-    i = data->sink_input = pa_msgobject_new(pa_sink_input);
-    i->state = PA_SINK_INPUT_INIT;
-
     if (data->client)
         pa_proplist_update(data->proplist, PA_UPDATE_MERGE, data->client->proplist);
 
@@ -358,31 +355,22 @@ int pa_sink_input_new(
                                              !(data->flags & PA_SINK_INPUT_FIX_FORMAT),
                                              !(data->flags & PA_SINK_INPUT_FIX_RATE),
                                              !(data->flags & PA_SINK_INPUT_FIX_CHANNELS));
-        if (!f) {
-            r = -PA_ERR_INVALID;
-            goto fail;
-        }
+        if (!f)
+            return -PA_ERR_INVALID;
 
         formats = pa_idxset_new(NULL, NULL);
         pa_idxset_put(formats, f, NULL);
         pa_sink_input_new_data_set_formats(data, formats);
     }
 
-    pa_hook_fire(&core->hooks[PA_CORE_HOOK_SINK_INPUT_NEW], data);
+    if ((r = pa_hook_fire(&core->hooks[PA_CORE_HOOK_SINK_INPUT_NEW], data)) < 0)
+        return r;
 
-    if (data->driver && !pa_utf8_valid(data->driver)) {
-        r = -PA_ERR_INVALID;
-        goto fail;
-    }
+    pa_return_val_if_fail(!data->driver || pa_utf8_valid(data->driver), -PA_ERR_INVALID);
 
     if (!data->sink) {
         pa_sink *sink = pa_namereg_get(core, NULL, PA_NAMEREG_SINK);
-
-        if (!sink) {
-            r = -PA_ERR_NOENTITY;
-            goto fail;
-        }
-
+        pa_return_val_if_fail(sink, -PA_ERR_NOENTITY);
         pa_sink_input_new_data_set_sink(data, sink, false);
     } else {
         pa_sink_input_new_data_set_sink(data, data->sink, false);
@@ -403,20 +391,13 @@ int pa_sink_input_new(
         PA_IDXSET_FOREACH(format, data->req_formats, idx)
             pa_log_info(" -- %s", pa_format_info_snprint(fmt, sizeof(fmt), format));
 
-        r = -PA_ERR_NOTSUPPORTED;
-        goto fail;
+        return -PA_ERR_NOTSUPPORTED;
     }
 
-    if (!PA_SINK_IS_LINKED(pa_sink_get_state(data->sink))) {
-        r = -PA_ERR_BADSTATE;
-        goto fail;
-    }
-
-    if (data->sync_base
-            && !(data->sync_base->sink == data->sink && pa_sink_input_get_state(data->sync_base) == PA_SINK_INPUT_CORKED)) {
-        r = -PA_ERR_INVALID;
-        goto fail;
-    }
+    pa_return_val_if_fail(PA_SINK_IS_LINKED(pa_sink_get_state(data->sink)), -PA_ERR_BADSTATE);
+    pa_return_val_if_fail(!data->sync_base || (data->sync_base->sink == data->sink
+                                               && pa_sink_input_get_state(data->sync_base) == PA_SINK_INPUT_CORKED),
+                          -PA_ERR_INVALID);
 
     /* Routing is done. We have a sink and a format. */
 
@@ -427,7 +408,7 @@ int pa_sink_input_new(
          * modified in pa_format_info_to_sample_spec2(). */
         r = pa_stream_get_volume_channel_map(&data->volume, data->channel_map_is_set ? &data->channel_map : NULL, data->format, &volume_map);
         if (r < 0)
-            goto fail;
+            return r;
     }
 
     /* Now populate the sample spec and channel map according to the final
@@ -435,11 +416,11 @@ int pa_sink_input_new(
     r = pa_format_info_to_sample_spec2(data->format, &data->sample_spec, &data->channel_map, &data->sink->sample_spec,
                                        &data->sink->channel_map);
     if (r < 0)
-        goto fail;
+        return r;
 
     r = check_passthrough_connection(pa_sink_input_new_data_is_passthrough(data), data->sink);
     if (r != PA_OK)
-        goto fail;
+        return r;
 
     /* Now that the routing is done, we can finalize the volume if it has been
      * set. If the set volume is relative, we convert it to absolute, and if
@@ -481,19 +462,16 @@ int pa_sink_input_new(
         /* rate update failed, or other parts of sample spec didn't match */
 
         pa_log_debug("Could not update sink sample spec to match passthrough stream");
-        r = -PA_ERR_NOTSUPPORTED;
-        goto fail;
+        return -PA_ERR_NOTSUPPORTED;
     }
 
     if (data->resample_method == PA_RESAMPLER_INVALID)
         data->resample_method = core->resample_method;
 
-    if (data->resample_method >= PA_RESAMPLER_MAX) {
-        r = -PA_ERR_INVALID;
-        goto fail;
-    }
+    pa_return_val_if_fail(data->resample_method < PA_RESAMPLER_MAX, -PA_ERR_INVALID);
 
-    pa_hook_fire(&core->hooks[PA_CORE_HOOK_SINK_INPUT_FIXATE], data);
+    if ((r = pa_hook_fire(&core->hooks[PA_CORE_HOOK_SINK_INPUT_FIXATE], data)) < 0)
+        return r;
 
     if (!data->volume_is_set) {
         pa_cvolume_reset(&v, data->sample_spec.channels);
@@ -504,14 +482,12 @@ int pa_sink_input_new(
     if ((data->flags & PA_SINK_INPUT_NO_CREATE_ON_SUSPEND) &&
         pa_sink_get_state(data->sink) == PA_SINK_SUSPENDED) {
         pa_log_warn("Failed to create sink input: sink is suspended.");
-        r = -PA_ERR_BADSTATE;
-        goto fail;
+        return -PA_ERR_BADSTATE;
     }
 
     if (pa_idxset_size(data->sink->inputs) >= PA_MAX_INPUTS_PER_SINK) {
         pa_log_warn("Failed to create sink input: too many inputs per sink.");
-        r = -PA_ERR_TOOLARGE;
-        goto fail;
+        return -PA_ERR_TOOLARGE;
     }
 
     if ((data->flags & PA_SINK_INPUT_VARIABLE_RATE) ||
@@ -530,15 +506,16 @@ int pa_sink_input_new(
                           (core->disable_remixing || (data->flags & PA_SINK_INPUT_NO_REMIX) ? PA_RESAMPLER_NO_REMIX : 0) |
                           (core->disable_lfe_remixing ? PA_RESAMPLER_NO_LFE : 0)))) {
                 pa_log_warn("Unsupported resampling operation.");
-                r = -PA_ERR_NOTSUPPORTED;
-                goto fail;
+                return -PA_ERR_NOTSUPPORTED;
             }
     }
 
+    i = pa_msgobject_new(pa_sink_input);
     i->parent.parent.free = sink_input_free;
     i->parent.process_msg = pa_sink_input_process_msg;
 
     i->core = core;
+    i->state = PA_SINK_INPUT_INIT;
     i->flags = data->flags;
     i->proplist = pa_proplist_copy(data->proplist);
     i->driver = pa_xstrdup(pa_path_get_filename(data->driver));
@@ -644,16 +621,6 @@ int pa_sink_input_new(
 
     *_i = i;
     return 0;
-
-fail:
-    if (i) {
-        pa_sink_input_unlink(i);
-        pa_sink_input_unref(i);
-    }
-
-    data->sink_input = NULL;
-
-    return r;
 }
 
 /* Called from main context */

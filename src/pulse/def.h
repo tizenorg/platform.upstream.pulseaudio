@@ -487,9 +487,6 @@ typedef enum pa_error_code {
     PA_ERR_FORKED,                 /**< The caller forked without calling execve() and tried to reuse the context. \since 0.9.15 */
     PA_ERR_IO,                     /**< An IO error happened. \since 0.9.16 */
     PA_ERR_BUSY,                   /**< Device or resource busy. \since 0.9.17 */
-#ifdef __TIZEN__
-    PA_ERR_ACCESS_BY_SECURITY,     /**< Access failure by security */
-#endif
     PA_ERR_MAX                     /**< Not really an error but the first invalid error code */
 } pa_error_code_t;
 
@@ -519,9 +516,6 @@ typedef enum pa_error_code {
 #define PA_ERR_OBSOLETE PA_ERR_OBSOLETE
 #define PA_ERR_NOTIMPLEMENTED PA_ERR_NOTIMPLEMENTED
 #define PA_ERR_FORKED PA_ERR_FORKED
-#ifdef __TIZEN__
-#define PA_ERR_ACCESS_BY_SECURITY PA_ERR_ACCESS_BY_SECURITY
-#endif
 #define PA_ERR_MAX PA_ERR_MAX
 /** \endcond */
 

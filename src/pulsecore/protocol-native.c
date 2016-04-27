@@ -2481,7 +2481,7 @@ static void command_create_record_stream(pa_pdispatch *pd, uint32_t command, uin
     pa_log_info("is virtual stream : %s", pa_yes_no(is_virtual_stream));
     if (!is_virtual_stream) {
         CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), RECORDER_PRIVILEGE),
-                       tag, PA_ERR_ACCESS_BY_SECURITY);
+                       tag, PA_ERR_ACCESS);
     }
 #endif /* USE_SECURITY */
 
@@ -3866,7 +3866,7 @@ static void command_set_volume(
 
 #ifdef USE_SECURITY
     CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), VOLUME_SET_PRIVILEGE),
-                   tag, PA_ERR_ACCESS_BY_SECURITY);
+                   tag, PA_ERR_ACCESS);
 #endif /* USE_SECURITY */
 
     switch (command) {
@@ -3966,7 +3966,7 @@ static void command_set_volume_ramp(
     CHECK_VALIDITY(c->pstream, !name || idx == PA_INVALID_INDEX, tag, PA_ERR_INVALID);
 #ifdef USE_SECURITY
     CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), VOLUME_SET_PRIVILEGE),
-                   tag, PA_ERR_ACCESS_BY_SECURITY);
+                   tag, PA_ERR_ACCESS);
 #endif /* USE_SECURITY */
 
     switch (command) {
@@ -4034,7 +4034,7 @@ static void command_set_mute(
     CHECK_VALIDITY(c->pstream, (idx != PA_INVALID_INDEX) ^ (name != NULL), tag, PA_ERR_INVALID);
 #ifdef USE_SECURITY
     CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), VOLUME_SET_PRIVILEGE),
-                   tag, PA_ERR_ACCESS_BY_SECURITY);
+                   tag, PA_ERR_ACCESS);
 #endif /* USE_SECURITY */
 
     switch (command) {

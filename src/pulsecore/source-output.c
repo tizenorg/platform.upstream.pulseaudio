@@ -302,7 +302,8 @@ int pa_source_output_new(
         pa_source_output_new_data_set_formats(data, formats);
     }
 
-    pa_hook_fire(&core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_NEW], data);
+    if ((r = pa_hook_fire(&core->hooks[PA_CORE_HOOK_SOURCE_OUTPUT_NEW], data)) < 0)
+        return r;
 
     if (data->driver && !pa_utf8_valid(data->driver)) {
         r = -PA_ERR_INVALID;

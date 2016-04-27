@@ -769,8 +769,8 @@ static record_stream* record_stream_new(
      */
     {
         pa_buffer_attr hal_attr;
-        pa_log_info("hal-latency - __TIZEN__ : playback_stream_new()");
-        if (get_buffer_attr_from_hal(source_output->proplist, &hal_attr) == 1) {
+        pa_log_info("hal-latency - __TIZEN__ : record_stream_new()");
+        if (source_output && get_buffer_attr_from_hal(source_output->proplist, &hal_attr) == 1) {
             pa_log_info("hal-latency - __TIZEN__ : Updates buffer_attr");
             *attr = hal_attr;
         }
@@ -1253,7 +1253,7 @@ static playback_stream* playback_stream_new(
     {
         pa_buffer_attr hal_attr;
         pa_log_info("hal-latency - __TIZEN__ : playback_stream_new()");
-        if (get_buffer_attr_from_hal(sink_input->proplist, &hal_attr) == 1) {
+        if (sink_input && get_buffer_attr_from_hal(sink_input->proplist, &hal_attr) == 1) {
             pa_log_info("hal-latency - __TIZEN__ : Updates buffer_attr");
             *a = hal_attr;
         }

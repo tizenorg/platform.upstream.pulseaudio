@@ -108,6 +108,9 @@
 #include "server-lookup.h"
 
 #define PA_READY "/tmp/.pa_ready"
+#ifdef TIZEN_TV
+#define PULSEAUDIO_READY "/tmp/.pulseaudio_ready"
+#endif
 #ifdef HAVE_LIBWRAP
 /* Only one instance of these variables */
 int allow_severity = LOG_INFO;
@@ -1180,7 +1183,12 @@ int main(int argc, char *argv[]) {
     pa_log_info(_("Daemon startup complete."));
     /* broadcast if we're ready */
     creat(PA_READY, 0644);
-
+#ifdef TIZEN_TV
+    if (creat(PULSEAUDIO_READY, 0644) != -1)
+        pa_log_warn("PULSEAUDIO_READY(%s) file was created", PULSEAUDIO_READY);
+    else
+        pa_log_error("cannot create PULSEAUDIO_READY(/tmp/.pulseaudio_ready)");
+#endif
     retval = 0;
     if (pa_mainloop_run(mainloop, &retval) < 0)
         goto finish;

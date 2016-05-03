@@ -10,7 +10,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          68
+Release:          69
 Group:            Multimedia/Audio
 License:          LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -210,13 +210,13 @@ export FFLAGS="$FFLAGS -DTIZEN_DEBUG_ENABLE"
 echo "tizen profile werable"
 export CFLAGS+=" -DTIZEN_MICRO -DPM_ASYNC -DADJUST_ANDROID_BITPOOL"
 
-%else if "%{?tizen_profile_name}" == "mobile"
-echo "tizen profile mobile"
-export CFLAGS+=" -DTIZEN_MOBILE -DPM_ASYNC "
-
 %else if "%{?tizen_profile_name}" == "tv"
 echo "tizen profile tv"
 export CFLAGS+=" -DTIZEN_TV "
+
+%else if "%{?tizen_profile_name}" == "mobile"
+echo "tizen profile mobile"
+export CFLAGS+=" -DTIZEN_MOBILE -DPM_ASYNC "
 %endif
 
 export LD_AS_NEEDED=0

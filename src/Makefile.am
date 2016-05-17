@@ -182,7 +182,10 @@ pulseaudio_SOURCES = \
 		daemon/ltdl-bind-now.c daemon/ltdl-bind-now.h \
 		daemon/main.c
 
-pulseaudio_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) $(CAP_CFLAGS) $(DBUS_CFLAGS) -fPIC -pie
+pulseaudio_CFLAGS = $(AM_CFLAGS) $(LIBSNDFILE_CFLAGS) $(CAP_CFLAGS) $(DBUS_CFLAGS)
+if !USE_PRELINK
+pulseaudio_CFLAGS += -fPIC -pie
+endif
 pulseaudio_LDADD = $(AM_LDADD) libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la $(LIBLTDL) $(CAP_LIBS)
 # This is needed because automake doesn't properly expand the foreach below
 pulseaudio_DEPENDENCIES = libpulsecore-@PA_MAJORMINOR@.la libpulsecommon-@PA_MAJORMINOR@.la libpulse.la $(PREOPEN_LIBS)

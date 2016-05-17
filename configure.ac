@@ -719,6 +719,17 @@ AC_ARG_ENABLE(pmlock, AC_HELP_STRING([--enable-pmlock], [using Samsung power man
  ],[USE_PM_LOCK=no])
 AM_CONDITIONAL(USE_PM_LOCK, test "x$USE_PM_LOCK" = "xyes")
 
+#### pre-link option ####
+AC_ARG_ENABLE(prelink, AC_HELP_STRING([--enable-prelink], [enable pre-link feature]),
+[
+ case "${enableval}" in
+     yes) USE_PRELINK=yes ;;
+     no)  USE_PRELINK=no ;;
+     *)   AC_MSG_ERROR(bad value ${enableval} for --enable-prelink) ;;
+ esac
+ ],[USE_PRELINK=no])
+AM_CONDITIONAL([USE_PRELINK], [test "x$USE_PRELINK" = "xyes"])
+
 #### Database support ####
 
 AC_ARG_WITH([database],

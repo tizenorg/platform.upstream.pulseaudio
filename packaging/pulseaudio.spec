@@ -10,7 +10,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          69
+Release:          70
 Group:            Multimedia/Audio
 License:          LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -251,6 +251,9 @@ NOCONFIGURE=yes ./bootstrap.sh
 %endif
 %if %{with pulseaudio_udev_with_usb_only}
         --enable-udev-with-usb-only \
+%endif
+%if %{with TIZEN_PRODUCT_TV}
+        --enable-prelink \
 %endif
         --with-udev-rules-dir=%{udev_dir}/rules.d \
         --with-system-user=pulse \

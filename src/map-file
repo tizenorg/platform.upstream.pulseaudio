@@ -121,6 +121,7 @@ pa_context_suspend_source_by_index;
 pa_context_suspend_source_by_name;
 pa_context_unload_module;
 pa_context_unref;
+pa_context_check_privilege;
 pa_cvolume_avg;
 pa_cvolume_avg_mask;
 pa_cvolume_channels_equal_to;

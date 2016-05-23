@@ -1192,6 +1192,28 @@ pa_operation* pa_context_set_default_source(pa_context *c, const char *name, pa_
     return o;
 }
 
+#ifdef __TIZEN__
+pa_operation* pa_context_check_privilege(pa_context *c, const char *privilege, pa_context_success_cb_t cb, void *userdata) {
+    pa_tagstruct *t;
+    pa_operation *o;
+    uint32_t tag;
+
+    pa_assert(c);
+    pa_assert(PA_REFCNT_VALUE(c) >= 1);
+
+    PA_CHECK_VALIDITY_RETURN_NULL(c, !pa_detect_fork(), PA_ERR_FORKED);
+    PA_CHECK_VALIDITY_RETURN_NULL(c, c->state == PA_CONTEXT_READY, PA_ERR_BADSTATE);
+
+    o = pa_operation_new(c, NULL, (pa_operation_cb_t) cb, userdata);
+    t = pa_tagstruct_command(c, PA_COMMAND_CHECK_PRIVILEGE, &tag);
+    pa_tagstruct_puts(t, privilege);
+    pa_pstream_send_tagstruct(c->pstream, t);
+    pa_pdispatch_register_reply(c->pdispatch, tag, DEFAULT_TIMEOUT,  pa_context_simple_ack_callback, pa_operation_ref(o), (pa_free_cb_t) pa_operation_unref);
+
+    return o;
+}
+#endif
+
 int pa_context_is_local(pa_context *c) {
     pa_assert(c);
     pa_assert(PA_REFCNT_VALUE(c) >= 1);

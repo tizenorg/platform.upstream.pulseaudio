@@ -304,6 +304,9 @@ static void command_set_card_profile(pa_pdispatch *pd, uint32_t command, uint32_
 static void command_set_sink_or_source_port(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 static void command_set_port_latency_offset(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
 static void command_set_volume_ramp(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
+#ifdef __TIZEN__
+static void command_check_privilege(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata);
+#endif
 
 static const pa_pdispatch_cb_t command_table[PA_COMMAND_MAX] = {
     [PA_COMMAND_ERROR] = NULL,
@@ -409,6 +412,9 @@ static const pa_pdispatch_cb_t command_table[PA_COMMAND_MAX] = {
 
     [PA_COMMAND_SET_SINK_VOLUME_RAMP] = command_set_volume_ramp,
     [PA_COMMAND_SET_SINK_INPUT_VOLUME_RAMP] = command_set_volume_ramp,
+#ifdef __TIZEN__
+    [PA_COMMAND_CHECK_PRIVILEGE] = command_check_privilege,
+#endif
 
     [PA_COMMAND_EXTENSION] = command_extension
 };
@@ -2407,6 +2413,24 @@ static void command_delete_stream(pa_pdispatch *pd, uint32_t command, uint32_t t
 
     pa_pstream_send_simple_ack(c->pstream, tag);
 }
+
+#ifdef USE_SECURITY
+static void command_check_privilege(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata) {
+    pa_native_connection *c = PA_NATIVE_CONNECTION(userdata);
+    const char *privilege;
+
+    pa_native_connection_assert_ref(c);
+    pa_assert(t);
+
+    if (pa_tagstruct_gets(t, &privilege) < 0) {
+        protocol_error(c);
+        return;
+    }
+
+    CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), privilege), tag, PA_ERR_ACCESS);
+    pa_pstream_send_simple_ack(c->pstream, tag);
+}
+#endif
 
 static void command_create_record_stream(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata) {
     pa_native_connection *c = PA_NATIVE_CONNECTION(userdata);

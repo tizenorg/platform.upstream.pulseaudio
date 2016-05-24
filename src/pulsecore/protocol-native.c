@@ -412,7 +412,7 @@ static const pa_pdispatch_cb_t command_table[PA_COMMAND_MAX] = {
 
     [PA_COMMAND_SET_SINK_VOLUME_RAMP] = command_set_volume_ramp,
     [PA_COMMAND_SET_SINK_INPUT_VOLUME_RAMP] = command_set_volume_ramp,
-#ifdef USE_SECURITY
+#ifdef __TIZEN__
     [PA_COMMAND_CHECK_PRIVILEGE] = command_check_privilege,
 #endif
 
@@ -2414,7 +2414,7 @@ static void command_delete_stream(pa_pdispatch *pd, uint32_t command, uint32_t t
     pa_pstream_send_simple_ack(c->pstream, tag);
 }
 
-#ifdef USE_SECURITY
+#ifdef __TIZEN__
 static void command_check_privilege(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata) {
     pa_native_connection *c = PA_NATIVE_CONNECTION(userdata);
     const char *privilege;
@@ -2427,7 +2427,11 @@ static void command_check_privilege(pa_pdispatch *pd, uint32_t command, uint32_t
         return;
     }
 
+#ifdef USE_SECURITY
     CHECK_VALIDITY(c->pstream, cynara_check_privilege(_get_connection_out_fd(c), privilege), tag, PA_ERR_ACCESS);
+#else
+    pa_log_warn("Cannot check privilege %s", privilege);
+#endif
     pa_pstream_send_simple_ack(c->pstream, tag);
 }
 #endif

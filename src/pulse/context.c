@@ -1192,7 +1192,7 @@ pa_operation* pa_context_set_default_source(pa_context *c, const char *name, pa_
     return o;
 }
 
-#ifdef USE_SECURITY
+#ifdef __TIZEN__
 pa_operation* pa_context_check_privilege(pa_context *c, const char *privilege, pa_context_success_cb_t cb, void *userdata) {
     pa_tagstruct *t;
     pa_operation *o;

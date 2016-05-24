@@ -288,7 +288,7 @@ size_t pa_context_get_tile_size(pa_context *c, const pa_sample_spec *ss);
  * location, feel free to use this function. \since 5.0 */
 int pa_context_load_cookie_from_file(pa_context *c, const char *cookie_file_path);
 
-#ifdef USE_SECURITY
+#ifdef __TIZEN__
 pa_operation* pa_context_check_privilege(pa_context *c, const char *privilege, pa_context_success_cb_t cb, void *userdata);
 #endif
 

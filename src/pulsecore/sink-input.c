@@ -425,12 +425,12 @@ int pa_sink_input_new(
     /* Now that the routing is done, we can finalize the volume if it has been
      * set. If the set volume is relative, we convert it to absolute, and if
      * it's absolute, we compute the reference ratio. */
-    if (data->volume_is_set)
+    if (data->volume_is_set && data->volume_writable)
         pa_sink_input_new_data_set_volume(data, &data->volume, data->volume_is_relative);
 
     /* Don't restore (or save) stream volume for passthrough streams and
      * prevent attenuation/gain */
-    if (pa_sink_input_new_data_is_passthrough(data)) {
+    if (pa_sink_input_new_data_is_passthrough(data) && data->volume_writable) {
         pa_cvolume_reset(&v, data->sample_spec.channels);
         pa_sink_input_new_data_set_volume(data, &v, false);
         data->save_volume = false;
@@ -473,7 +473,7 @@ int pa_sink_input_new(
     if ((r = pa_hook_fire(&core->hooks[PA_CORE_HOOK_SINK_INPUT_FIXATE], data)) < 0)
         return r;
 
-    if (!data->volume_is_set) {
+    if (!data->volume_is_set && data->volume_writable) {
         pa_cvolume_reset(&v, data->sample_spec.channels);
         pa_sink_input_new_data_set_volume(data, &v, true);
         data->save_volume = false;

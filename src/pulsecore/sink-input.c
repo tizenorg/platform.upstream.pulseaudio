@@ -156,12 +156,16 @@ void pa_sink_input_new_data_set_volume(pa_sink_input_new_data *data, const pa_cv
     pa_cvolume remapped_sink_volume;
 
     pa_assert(data);
-    pa_assert(data->volume_writable);
 
     if ((data->volume_is_set = !!volume))
         data->volume = *volume;
     else
         return;
+
+    if (data->volume_writable == false) {
+        data->volume_is_set = false;
+        relative = false;
+    }
 
     data->volume_is_relative = relative;
 

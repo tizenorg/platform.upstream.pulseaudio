@@ -42,6 +42,9 @@
 #include <pulsecore/ltdl-helper.h>
 
 #ifdef HAVE_DBUS
+#if defined(__TIZEN__) && !defined(USE_DBUS_PROTOCOL)
+#include <pulsecore/dbus-shared.h>
+#endif
 #include <pulsecore/protocol-dbus.h>
 #include <pulsecore/dbus-util.h>
 #endif
@@ -108,7 +111,11 @@ struct userdata {
     pa_sample_spec ss;
 
 #ifdef HAVE_DBUS
+#if defined(__TIZEN__) && !defined(USE_DBUS_PROTOCOL)
+    pa_dbus_connection *dbus_conn;
+#else
     pa_dbus_protocol *dbus_protocol;
+#endif
     char *dbus_path;
 #endif
 
@@ -260,6 +267,176 @@ error:
     pa_dbus_send_error(conn, msg, DBUS_ERROR_FAILED, "Internal error");
 }
 
+#if defined(__TIZEN__) && !defined(USE_DBUS_PROTOCOL)
+#define LADSPA_INTROSPECT_XML                                                          \
+    DBUS_INTROSPECT_1_0_XML_DOCTYPE_DECL_NODE                                          \
+    "<node>"                                                                           \
+    " <interface name=\"org.PulseAudio.Ext.Ladspa1\">"                                 \
+    "  <property name=\"AlgorithmParameters\" type=\"(adab)\" access=\"readwrite\"/>"  \
+    " </interface>"                                                                    \
+    " <interface name=\"org.freedesktop.DBus.Properties\">"                            \
+    "  <method name=\"Get\">"                                                          \
+    "   <arg name=\"interface\" direction=\"in\" type=\"s\"/>"                         \
+    "   <arg name=\"property\" direction=\"in\" type=\"s\"/>"                          \
+    "   <arg name=\"value\" direction=\"out\" type=\"v\"/>"                            \
+    "  </method>"                                                                      \
+    "  <method name=\"Set\">"                                                          \
+    "   <arg name=\"interface\" direction=\"in\" type=\"s\"/>"                         \
+    "   <arg name=\"property\" direction=\"in\" type=\"s\"/>"                          \
+    "   <arg name=\"value\" direction=\"in\" type=\"v\"/>"                             \
+    "  </method>"                                                                      \
+    " </interface>"                                                                    \
+    " <interface name=\"org.freedesktop.DBus.Introspectable\">"                        \
+    "  <method name=\"Introspect\">"                                                   \
+    "   <arg name=\"data\" type=\"s\" direction=\"out\"/>"                             \
+    "  </method>"                                                                      \
+    " </interface>"                                                                    \
+    "</node>"
+
+static DBusHandlerResult handle_introspect(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    const char *xml = LADSPA_INTROSPECT_XML;
+    DBusMessage *r = NULL;
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(userdata);
+
+    pa_assert_se(r = dbus_message_new_method_return(msg));
+    pa_assert_se(dbus_message_append_args(r, DBUS_TYPE_STRING, &xml, DBUS_TYPE_INVALID));
+
+    if (r) {
+        pa_assert_se(dbus_connection_send((conn), r, NULL));
+        dbus_message_unref(r);
+    }
+
+    return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+static DBusHandlerResult handle_methods(DBusConnection *conn, DBusMessage *msg, void *userdata) {
+    struct userdata *u = (struct userdata *)userdata;
+    DBusError error;
+    DBusMessage *reply = NULL;
+
+    dbus_error_init(&error);
+
+    pa_assert(conn);
+    pa_assert(msg);
+    pa_assert(u);
+
+    if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Properties", "Get")) {
+        const char *interface, *property;
+
+        if (!pa_streq(dbus_message_get_signature(msg), "ss")) {
+            pa_log_warn("Wrong signature");
+            return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+        }
+
+        if (!dbus_message_get_args(
+                msg,
+                &error,
+                DBUS_TYPE_STRING, &interface,
+                DBUS_TYPE_STRING, &property,
+                DBUS_TYPE_INVALID))
+            goto invalid;
+
+        if (pa_streq(interface, LADSPA_IFACE)) {
+            if (pa_streq(property, "AlgorithmParameters")) {
+                get_algorithm_parameters(conn, msg, u);  //get parameter
+            } else {
+                reply = dbus_message_new_error_printf(
+                    msg,
+                    DBUS_ERROR_UNKNOWN_METHOD,
+                    "Unknown property %s",
+                    property);
+                dbus_connection_send(conn, reply, NULL);
+                dbus_message_unref(reply);
+            }
+        }
+
+        return DBUS_HANDLER_RESULT_HANDLED;
+    } else if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Properties", "Set")) {
+        const char *interface, *property;
+        DBusMessageIter msg_iter;
+        DBusMessageIter variant_iter;
+
+        if (!pa_streq(dbus_message_get_signature(msg), "ssv")) {
+            pa_log_warn("Wrong signature");
+            return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+        }
+
+        pa_assert_se(dbus_message_iter_init(msg, &msg_iter));
+
+        dbus_message_iter_get_basic(&msg_iter, &interface);
+        pa_assert_se(dbus_message_iter_next(&msg_iter));
+        dbus_message_iter_get_basic(&msg_iter, &property);
+        pa_assert_se(dbus_message_iter_next(&msg_iter));
+
+        dbus_message_iter_recurse(&msg_iter, &variant_iter);
+
+        if (!pa_streq(dbus_message_iter_get_signature(&variant_iter), "(adab)")) {
+            pa_log_warn("Wrong signature of variant");
+            return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+        }
+
+        if (pa_streq(interface, LADSPA_IFACE)) {
+            if (pa_streq(property, "AlgorithmParameters")) {
+                set_algorithm_parameters(conn, msg, &variant_iter, u);  //set parameter
+            } else {
+                reply = dbus_message_new_error_printf(
+                    msg,
+                    DBUS_ERROR_UNKNOWN_METHOD,
+                    "Unknown property %s",
+                    property);
+                dbus_connection_send(conn, reply, NULL);
+                dbus_message_unref(reply);
+            }
+        }
+
+        return DBUS_HANDLER_RESULT_HANDLED;
+    }
+
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+
+invalid:
+    if (reply)
+        dbus_message_unref(reply);
+    reply = dbus_message_new_error(
+        msg,
+        DBUS_ERROR_INVALID_ARGS,
+        "Invalid arguments");
+    dbus_connection_send(conn, reply, NULL);
+    dbus_message_unref(reply);
+    dbus_error_free(&error);
+
+    return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+static DBusHandlerResult object_handler(DBusConnection *c, DBusMessage *m, void *userdata) {
+    struct userdata *u = (struct userdata *)userdata;
+    const char *path, *interface, *member;
+
+    pa_assert(c);
+    pa_assert(m);
+    pa_assert(u);
+
+    path = dbus_message_get_path(m);
+    interface = dbus_message_get_interface(m);
+    member = dbus_message_get_member(m);
+
+    pa_log_debug("dbus: path=%s, interface=%s, member=%s", path, interface, member);
+
+    if (!pa_streq(path, u->dbus_path))
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+
+    if (dbus_message_is_method_call(m, "org.freedesktop.DBus.Introspectable", "Introspect")) {
+        return handle_introspect(c, m, u);
+    } else {
+        return handle_methods(c, m, u);
+    }
+
+    return DBUS_HANDLER_RESULT_HANDLED;
+}
+#else
 static pa_dbus_property_handler ladspa_property_handlers[LADSPA_HANDLER_MAX] = {
     [LADSPA_HANDLER_ALGORITHM_PARAMETERS] = {
         .property_name = LADSPA_ALGORITHM_PARAMETERS,
@@ -326,19 +503,56 @@ static pa_dbus_interface_info ladspa_info = {
     .signals = NULL,
     .n_signals = 0
 };
+#endif
 
 static void dbus_init(struct userdata *u) {
+#if defined(__TIZEN__) && !defined(USE_DBUS_PROTOCOL)
+    DBusError err;
+    pa_dbus_connection *conn = NULL;
+    static const DBusObjectPathVTable vtable = {
+        .message_function = object_handler,
+    };
+#endif
+
     pa_assert_se(u);
 
+#if defined(__TIZEN__) && !defined(USE_DBUS_PROTOCOL)
+    dbus_error_init(&err);
+
+    if (!(conn = pa_dbus_bus_get(u->sink->core, DBUS_BUS_SYSTEM, &err)) || dbus_error_is_set(&err)) {
+        if (conn) {
+            pa_dbus_connection_unref(conn);
+        }
+        pa_log_error("Unable to contact D-Bus system bus: %s: %s", err.name, err.message);
+    } else {
+        pa_log_notice("Got dbus connection");
+    }
+    u->dbus_conn = conn;
+    u->dbus_path = pa_sprintf_malloc("/org/pulseaudio/core1/sink%d", u->sink->index);
+    pa_assert_se(dbus_connection_register_object_path(pa_dbus_connection_get(conn), u->dbus_path, &vtable, u));
+#else
     u->dbus_protocol = pa_dbus_protocol_get(u->sink->core);
     u->dbus_path = pa_sprintf_malloc("/org/pulseaudio/core1/sink%d", u->sink->index);
 
     pa_dbus_protocol_add_interface(u->dbus_protocol, u->dbus_path, &ladspa_info, u);
+#endif
 }
 
 static void dbus_done(struct userdata *u) {
     pa_assert_se(u);
 
+#if defined(__TIZEN__) && !defined(USE_DBUS_PROTOCOL)
+    if (!u->dbus_conn) {
+        pa_assert(!u->dbus_path);
+        return;
+    }
+
+    if (!dbus_connection_unregister_object_path(pa_dbus_connection_get(u->dbus_conn), u->dbus_path))
+        pa_log_error("failed to unregister object path");
+    pa_xfree(u->dbus_path);
+    u->dbus_path = NULL;
+    u->dbus_conn = NULL;
+#else
     if (!u->dbus_protocol) {
         pa_assert(!u->dbus_path);
         return;
@@ -350,6 +564,7 @@ static void dbus_done(struct userdata *u) {
 
     u->dbus_path = NULL;
     u->dbus_protocol = NULL;
+#endif
 }
 
 #endif /* HAVE_DBUS */

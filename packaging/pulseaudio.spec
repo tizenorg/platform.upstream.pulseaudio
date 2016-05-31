@@ -25,7 +25,7 @@ BuildRequires:    pkgconfig(speexdsp)
 BuildRequires:    pkgconfig(sndfile)
 BuildRequires:    pkgconfig(alsa)
 BuildRequires:    pkgconfig(glib-2.0)
-%if "%{?tizen_target_name}" != "hawkp"
+%if "%{?tizen_target_name}" != "hawkp" && "%{?_repository}" != "JazzM"
 BuildRequires:    pkgconfig(bluez)
 BuildRequires:    pkgconfig(sbc)
 %endif

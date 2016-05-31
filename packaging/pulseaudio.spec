@@ -25,7 +25,11 @@ BuildRequires:    pkgconfig(speexdsp)
 BuildRequires:    pkgconfig(sndfile)
 BuildRequires:    pkgconfig(alsa)
 BuildRequires:    pkgconfig(glib-2.0)
-%if "%{?tizen_target_name}" != "hawkp"
+%if "%{?profile}" == "mobile"
+BuildRequires:    pkgconfig(bluez)
+BuildRequires:    pkgconfig(sbc)
+%endif
+%if "%{?profile}" == "wearable"
 BuildRequires:    pkgconfig(bluez)
 BuildRequires:    pkgconfig(sbc)
 %endif

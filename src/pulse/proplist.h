@@ -84,6 +84,11 @@ PA_C_DECL_BEGIN
 #define PA_PROP_MEDIA_TIZEN_GAIN_TYPE          "media.tizen_gain_type" // It will be deprecated.
 #define PA_PROP_MEDIA_TIZEN_AUDIO_LATENCY      "media.tizen_audio_latency"
 #define PA_PROP_MEDIA_FOCUS_STATUS             "media.focus_status"
+#define PA_PROP_BUFFER_ATTR_MAXLENGTH          "buffer.attr.maxlength"
+#define PA_PROP_BUFFER_ATTR_TLENGTH            "buffer.attr.tlength"
+#define PA_PROP_BUFFER_ATTR_MINREQ             "buffer.attr.minreq"
+#define PA_PROP_BUFFER_ATTR_PREBUF             "buffer.attr.prebuf"
+#define PA_PROP_BUFFER_ATTR_FRAGSIZE           "buffer.attr.fragsize"
 #endif
 
 /** For event sound streams: XDG event sound name. e.g.\ "message-new-email" (Event sound streams are those with media.role set to "event") */

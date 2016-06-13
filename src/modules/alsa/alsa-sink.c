@@ -2115,6 +2115,8 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
         goto fail;
     }
 
+    pa_log("fragments(%u), fragment_size(%u)", nfrags, frag_size);
+
     buffer_size = nfrags * frag_size;
 
     period_frames = frag_size/frame_size;

@@ -655,7 +655,7 @@ static void fix_record_buffer_attr_post(record_stream *s) {
 }
 
 #ifdef __TIZEN__
-static int get_buffer_attr_from_hal(pa_proplist* proplist, pa_buffer_attr* ret_attr) {
+static int update_buffer_attr(pa_proplist* proplist, pa_buffer_attr* ret_attr) {
     uint32_t maxlength = 0;
     uint32_t tlength   = 0;
     uint32_t prebuf    = 0;
@@ -663,35 +663,34 @@ static int get_buffer_attr_from_hal(pa_proplist* proplist, pa_buffer_attr* ret_a
     uint32_t fragsize  = 0;
     const char* _propStr = NULL;
 
-    pa_log_debug("hal-latency - __TIZEN__ : get_buffer_attr_from_hal()");
     pa_assert(ret_attr);
 
     if ((_propStr = pa_proplist_gets(proplist, "maxlength")) == NULL) {
-        pa_log_debug("hal-latency - Failed to get maxlength from HAL");
+        pa_log_debug("failed to get maxlength");
         return 0;
     }
     maxlength = atoi(_propStr);
 
     if ((_propStr = pa_proplist_gets(proplist, "tlength")) == NULL) {
-        pa_log_error("hal-latency - Failed to get tlength from HAL");
+        pa_log_error("failed to get tlength");
         return 0;
     }
     tlength = atoi(pa_proplist_gets(proplist, "tlength"));
 
     if ((_propStr = pa_proplist_gets(proplist, "prebuf")) == NULL) {
-        pa_log_error("hal-latency - Failed to get prebuf from HAL");
+        pa_log_error("failed to get prebuf");
         return 0;
     }
     prebuf = atoi(pa_proplist_gets(proplist, "prebuf"));
 
     if ((_propStr = pa_proplist_gets(proplist, "minreq")) == NULL) {
-        pa_log_error("hal-latency - Failed to get minreq from HAL");
+        pa_log_error("failed to get minreq");
         return 0;
     }
     minreq = atoi(pa_proplist_gets(proplist, "minreq"));
 
     if ((_propStr = pa_proplist_gets(proplist, "fragsize")) == NULL) {
-        pa_log_error("hal-latency - Failed to get fragsize from HAL");
+        pa_log_error("failed to get fragsize");
         return 0;
     }
     fragsize  = atoi(pa_proplist_gets(proplist, "fragsize"));
@@ -701,12 +700,11 @@ static int get_buffer_attr_from_hal(pa_proplist* proplist, pa_buffer_attr* ret_a
     ret_attr->prebuf    = prebuf;
     ret_attr->minreq    = minreq;
     ret_attr->fragsize  = fragsize;
-    pa_log_info("hal-latency - update ret_attr->buffer-attr value -> (maxlength:%d, tlength:%d, prebuf:%d, minreq:%d, fragsize:%d)",
-            ret_attr->maxlength, ret_attr->tlength, ret_attr->prebuf, ret_attr->minreq, ret_attr->fragsize);
+    pa_log_info("maxlength:%d, tlength:%d, prebuf:%d, minreq:%d, fragsize:%d",
+                ret_attr->maxlength, ret_attr->tlength, ret_attr->prebuf, ret_attr->minreq, ret_attr->fragsize);
 
     return 1;
 }
-
 #endif
 
 /* Called from main context */
@@ -769,17 +767,11 @@ static record_stream* record_stream_new(
     *ret = -pa_source_output_new(&source_output, c->protocol->core, &data);
 
 #ifdef __TIZEN__
-    /*
-     * TODO:
-     * Updates buffer_attr using HAL that is requested latency from client
-     */
     {
         pa_buffer_attr hal_attr;
-        pa_log_info("hal-latency - __TIZEN__ : record_stream_new()");
-        if (source_output && get_buffer_attr_from_hal(source_output->proplist, &hal_attr) == 1) {
-            pa_log_info("hal-latency - __TIZEN__ : Updates buffer_attr");
+        pa_log_info("*** update buffer attributes - record_stream_new()");
+        if (source_output && update_buffer_attr(source_output->proplist, &hal_attr) == 1)
             *attr = hal_attr;
-        }
     }
 #endif
 
@@ -1252,17 +1244,11 @@ static playback_stream* playback_stream_new(
     *ret = -pa_sink_input_new(&sink_input, c->protocol->core, &data);
 
 #ifdef __TIZEN__
-    /*
-     * TODO:
-     * Updates buffer_attr using HAL that is requested latency from client
-     */
     {
         pa_buffer_attr hal_attr;
-        pa_log_info("hal-latency - __TIZEN__ : playback_stream_new()");
-        if (sink_input && get_buffer_attr_from_hal(sink_input->proplist, &hal_attr) == 1) {
-            pa_log_info("hal-latency - __TIZEN__ : Updates buffer_attr");
+        pa_log_info("*** update buffer attributes - playback_stream_new()");
+        if (sink_input && update_buffer_attr(sink_input->proplist, &hal_attr) == 1)
             *a = hal_attr;
-        }
     }
 #endif
 

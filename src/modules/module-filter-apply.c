@@ -148,6 +148,23 @@ static const char* should_filter(pa_object *o, bool is_sink_input) {
     return NULL;
 }
 
+static const char* should_filter_extra_parameters(pa_object *o, bool is_sink_input) {
+    const char *extra_parameters;
+    pa_proplist *pl;
+
+    if (is_sink_input)
+        pl = PA_SINK_INPUT(o)->proplist;
+    else
+        pl = PA_SOURCE_OUTPUT(o)->proplist;
+
+    /* If the stream need extra parameters, append them to module. */
+    if ((extra_parameters = pa_proplist_gets(pl, PA_PROP_FILTER_APPLY_EXTRA_PARAMETERS)) && !pa_streq(extra_parameters, "")) {
+        return extra_parameters;
+    }
+
+    return NULL;
+}
+
 static bool should_group_filter(struct filter *filter) {
     return pa_streq(filter->name, "echo-cancel");
 }
@@ -414,6 +431,7 @@ static bool can_unload_module(struct userdata *u, uint32_t idx) {
 
 static pa_hook_result_t process(struct userdata *u, pa_object *o, bool is_sink_input) {
     const char *want;
+    const char *extra_parameters;
     bool done_something = false;
     pa_sink *sink = NULL;
     pa_source *source = NULL;
@@ -464,11 +482,16 @@ static pa_hook_result_t process(struct userdata *u, pa_object *o, bool is_sink_i
             char *args;
             pa_module *m;
 
-            args = pa_sprintf_malloc("autoloaded=1 %s%s %s%s",
+            /* Some filter modules might be required extra parameters by default.
+             * (e.g 'plugin', 'label', 'control' of module-ladspa-sink) */
+            extra_parameters = should_filter_extra_parameters(o, is_sink_input);
+
+            args = pa_sprintf_malloc("autoloaded=1 %s%s %s%s %s",
                     fltr->sink_master ? "sink_master=" : "",
                     fltr->sink_master ? fltr->sink_master->name : "",
                     fltr->source_master ? "source_master=" : "",
-                    fltr->source_master ? fltr->source_master->name : "");
+                    fltr->source_master ? fltr->source_master->name : "",
+                    extra_parameters ? extra_parameters : "");
 
             pa_log_debug("Loading %s with arguments '%s'", module_name, args);
 

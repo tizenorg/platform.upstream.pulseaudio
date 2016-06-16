@@ -1695,6 +1695,9 @@ static int process_rewind(struct userdata *u) {
 
         pa_log_debug("Limited to %lu bytes.", (unsigned long) rewind_nbytes);
 
+#ifdef TIZEN_TV
+        out_frames = 0;
+#else
         in_frames = (snd_pcm_sframes_t) (rewind_nbytes / u->frame_size);
         pa_log_debug("before: %lu", (unsigned long) in_frames);
         if ((out_frames = snd_pcm_rewind(u->pcm_handle, (snd_pcm_uframes_t) in_frames)) < 0) {
@@ -1705,6 +1708,7 @@ static int process_rewind(struct userdata *u) {
         }
 
         pa_log_debug("after: %lu", (unsigned long) out_frames);
+#endif
 
         rewind_nbytes = (size_t) out_frames * u->frame_size;
 

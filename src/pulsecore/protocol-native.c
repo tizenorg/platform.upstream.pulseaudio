@@ -698,7 +698,7 @@ static int update_buffer_attr(pa_proplist* proplist, pa_buffer_attr* ret_attr, b
             return -1;
         }
 
-        pa_log_info("maxlength:%d, tlength:%d, prebuf:%d, minreq:%d",
+        pa_log_info(" - props: maxlength(%d), tlength(%d), prebuf(%d), minreq(%d)",
                     ret_attr->maxlength, ret_attr->tlength, ret_attr->prebuf, ret_attr->minreq);
 
     } else {
@@ -712,7 +712,7 @@ static int update_buffer_attr(pa_proplist* proplist, pa_buffer_attr* ret_attr, b
             return -1;
         }
 
-        pa_log_info("maxlength:%d, fragsize:%d", ret_attr->maxlength, ret_attr->fragsize);
+        pa_log_info(" - props: maxlength(%d), fragsize(%d)", ret_attr->maxlength, ret_attr->fragsize);
     }
 
     return 0;
@@ -780,10 +780,17 @@ static record_stream* record_stream_new(
 
 #ifdef __TIZEN__
     {
-        pa_buffer_attr hal_attr;
+        pa_buffer_attr buffer_attr;
         pa_log_info("*** update buffer attributes - record_stream_new()");
-        if (source_output && !update_buffer_attr(source_output->proplist, &hal_attr, false))
-            *attr = hal_attr;
+        if (source_output && !update_buffer_attr(source_output->proplist, &buffer_attr, false)) {
+            pa_log_info(" - origins: maxlength(%d), fragsize(%d)", attr->maxlength, attr->fragsize);
+            if ((int)attr->maxlength >= 0)
+                buffer_attr.maxlength = attr->maxlength;
+            if ((int)attr->fragsize >= 0)
+                buffer_attr.fragsize = attr->fragsize;
+            *attr = buffer_attr;
+            pa_log_info(" - updated: maxlength(%d), fragsize(%d)", attr->maxlength, attr->fragsize);
+        }
     }
 #endif
 
@@ -1257,10 +1264,25 @@ static playback_stream* playback_stream_new(
 
 #ifdef __TIZEN__
     {
-        pa_buffer_attr hal_attr;
+        pa_buffer_attr buffer_attr;
         pa_log_info("*** update buffer attributes - playback_stream_new()");
-        if (sink_input && !update_buffer_attr(sink_input->proplist, &hal_attr, true))
-            *a = hal_attr;
+        if (sink_input && !update_buffer_attr(sink_input->proplist, &buffer_attr, true)) {
+            pa_log_info(" - origins: maxlength(%d), tlength(%d), prebuf(%d), minreq(%d)",
+                        a->maxlength, a->tlength, a->prebuf, a->minreq);
+            /* "a->tlength" is always set to default value from pa_stream_new_with_proplist_internal() in stream.c.
+               but here we use tlength from stream-map.json except -1. */
+            if ((int)buffer_attr.tlength == -1)
+                buffer_attr.tlength = a->tlength;
+            if ((int)a->maxlength >= 0)
+                buffer_attr.maxlength = a->maxlength;
+            if ((int)a->prebuf >= 0)
+                buffer_attr.prebuf = a->prebuf;
+            if ((int)a->minreq >= 0)
+                buffer_attr.minreq = a->minreq;
+            *a = buffer_attr;
+            pa_log_info(" - updated: maxlength(%d), tlength(%d), prebuf(%d), minreq(%d)",
+                        a->maxlength, a->tlength, a->prebuf, a->minreq);
+        }
     }
 #endif
 

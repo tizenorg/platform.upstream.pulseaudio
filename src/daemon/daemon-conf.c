@@ -68,6 +68,9 @@ static const pa_daemon_conf default_conf = {
     .nice_level = -11,
     .realtime_scheduling = true,
     .realtime_priority = 5,  /* Half of JACK's default rtprio */
+#ifdef __TIZEN__
+    .zero_pop_threshold = 10,
+#endif
     .disallow_module_loading = false,
     .disallow_exit = false,
     .flat_volumes = true,
@@ -535,6 +538,9 @@ int pa_daemon_conf_load(pa_daemon_conf *c, const char *filename) {
         { "exit-idle-time",             pa_config_parse_int,      &c->exit_idle_time, NULL },
         { "scache-idle-time",           pa_config_parse_int,      &c->scache_idle_time, NULL },
         { "realtime-priority",          parse_rtprio,             c, NULL },
+#ifdef __TIZEN__
+        { "zero-pop-threshold",         pa_config_parse_int,      &c->zero_pop_threshold, NULL },
+#endif
         { "dl-search-path",             pa_config_parse_string,   &c->dl_search_path, NULL },
         { "default-script-file",        pa_config_parse_string,   &c->default_script_file, NULL },
         { "log-target",                 parse_log_target,         c, NULL },
@@ -728,6 +734,9 @@ char *pa_daemon_conf_dump(pa_daemon_conf *c) {
     pa_strbuf_printf(s, "nice-level = %i\n", c->nice_level);
     pa_strbuf_printf(s, "realtime-scheduling = %s\n", pa_yes_no(c->realtime_scheduling));
     pa_strbuf_printf(s, "realtime-priority = %i\n", c->realtime_priority);
+#ifdef __TIZEN__
+    pa_strbuf_printf(s, "zero-pop-threshold = %i\n", c->zero_pop_threshold);
+#endif
     pa_strbuf_printf(s, "allow-module-loading = %s\n", pa_yes_no(!c->disallow_module_loading));
     pa_strbuf_printf(s, "allow-exit = %s\n", pa_yes_no(!c->disallow_exit));
     pa_strbuf_printf(s, "use-pid-file = %s\n", pa_yes_no(c->use_pid_file));

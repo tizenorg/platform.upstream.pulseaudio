@@ -1037,6 +1037,10 @@ typedef void (*pa_free_cb_t)(void *p);
  * playback. \since 1.0 */
 #define PA_STREAM_EVENT_FORMAT_LOST "format-lost"
 
+#ifdef __TIZEN__
+#define PA_STREAM_EVENT_POP_TIMEOUT "pop-timeout"
+#endif
+
 #ifndef __INCLUDED_FROM_PULSE_AUDIO
 /** Port availability / jack detection status
  * \since 2.0 */

@@ -171,6 +171,8 @@ pa_core* pa_core_new(pa_mainloop_api *m, bool shared, size_t shm_size) {
     c->dump_sink_input = false;
     c->dump_source = false;
     c->dump_source_output = false;
+
+    c->zero_pop_threshold = 10;
 #endif
 
     c->state = PA_CORE_RUNNING;

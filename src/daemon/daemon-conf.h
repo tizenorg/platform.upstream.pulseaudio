@@ -81,6 +81,9 @@ typedef struct pa_daemon_conf {
     int exit_idle_time,
         scache_idle_time,
         realtime_priority,
+#ifdef __TIZEN__
+        zero_pop_threshold,
+#endif
         nice_level,
         resample_method;
     char *script_commands, *dl_search_path, *default_script_file;

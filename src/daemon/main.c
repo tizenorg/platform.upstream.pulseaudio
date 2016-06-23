@@ -1077,6 +1077,10 @@ int main(int argc, char *argv[]) {
     c->server_type = conf->local_server_type;
 #endif
 
+#ifdef __TIZEN__
+    c->zero_pop_threshold = conf->zero_pop_threshold;
+#endif
+
     c->cpu_info.cpu_type = PA_CPU_UNDEFINED;
     if (!getenv("PULSE_NO_SIMD")) {
         if (pa_cpu_init_x86(&(c->cpu_info.flags.x86)))

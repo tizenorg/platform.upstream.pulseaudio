@@ -228,7 +228,10 @@ enum {
     PLAYBACK_STREAM_MESSAGE_OVERFLOW,
     PLAYBACK_STREAM_MESSAGE_DRAIN_ACK,
     PLAYBACK_STREAM_MESSAGE_STARTED,
-    PLAYBACK_STREAM_MESSAGE_UPDATE_TLENGTH
+    PLAYBACK_STREAM_MESSAGE_UPDATE_TLENGTH,
+#ifdef __TIZEN__
+    PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT
+#endif
 };
 
 enum {
@@ -973,6 +976,27 @@ static int playback_stream_process_msg(pa_msgobject *o, int code, void*userdata,
             }
 
             break;
+
+#ifdef __TIZEN__
+        case PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT: {
+                pa_tagstruct *t;
+                pa_proplist* pl = pa_proplist_new();
+
+                pa_log_info("received : PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT, send PA_COMMAND_PLAYBACK_STREAM_EVENT(%s)",
+                    PA_STREAM_EVENT_POP_TIMEOUT);
+
+                t = pa_tagstruct_new(NULL, 0);
+                pa_tagstruct_putu32(t, PA_COMMAND_PLAYBACK_STREAM_EVENT);
+                pa_tagstruct_putu32(t, (uint32_t) -1); /* tag */
+                pa_tagstruct_putu32(t, s->index);
+                pa_tagstruct_puts(t, PA_STREAM_EVENT_POP_TIMEOUT);
+                pa_tagstruct_put_proplist(t, pl);
+                pa_pstream_send_tagstruct(s->connection->pstream, t);
+
+                pa_proplist_free(pl);
+              }
+              break;
+#endif
 
         case PLAYBACK_STREAM_MESSAGE_DRAIN_ACK:
             pa_pstream_send_simple_ack(s->connection->pstream, PA_PTR_TO_UINT(userdata));
@@ -1759,6 +1783,35 @@ static bool sink_input_process_underrun_cb(pa_sink_input *i) {
     return handle_input_underrun(s, true);
 }
 
+#ifdef __TIZEN__
+static void _check_zero_pop_timeout(pa_sink_input *i) {
+    int zero_pop_seconds = 0;
+    playback_stream *s = PLAYBACK_STREAM(i->userdata);
+
+    if (pa_memblockq_get_length(s->memblockq) == 0) {
+        if (i->initial_zero_pop_time) {
+            zero_pop_seconds = (int)((pa_rtclock_now() - i->initial_zero_pop_time) / PA_USEC_PER_SEC);
+            pa_log_debug("pop diff = %d sec., threshold = %d", zero_pop_seconds, i->core->zero_pop_threshold);
+
+            if (zero_pop_seconds >= i->core->zero_pop_threshold) {
+                pa_log_info("async msgq post : PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT");
+                pa_asyncmsgq_post(pa_thread_mq_get()->outq, PA_MSGOBJECT(s),
+                                  PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT, NULL, 0, NULL, NULL);
+                i->initial_zero_pop_time = 0;
+            }
+        } else {
+            pa_log_debug("First zero pop");
+            i->initial_zero_pop_time = pa_rtclock_now();
+        }
+    } else {
+        if (i->initial_zero_pop_time) {
+            pa_log_debug("Reset zero pop");
+            i->initial_zero_pop_time = 0;
+        }
+    }
+}
+#endif
+
 /* Called from thread context */
 static int sink_input_pop_cb(pa_sink_input *i, size_t nbytes, pa_memchunk *chunk) {
     playback_stream *s;
@@ -1770,6 +1823,12 @@ static int sink_input_pop_cb(pa_sink_input *i, size_t nbytes, pa_memchunk *chunk
 
 #ifdef PROTOCOL_NATIVE_DEBUG
     pa_log("%s, pop(): %lu", pa_proplist_gets(i->proplist, PA_PROP_MEDIA_NAME), (unsigned long) pa_memblockq_get_length(s->memblockq));
+#endif
+
+#ifdef __TIZEN__
+    /* If zero pops exceeds certain threshold, send message to client to handle this situation */
+     /* FIXME: maybe we can use s->is_underrun to check.... */
+    _check_zero_pop_timeout(i);
 #endif
 
     if (!handle_input_underrun(s, false))

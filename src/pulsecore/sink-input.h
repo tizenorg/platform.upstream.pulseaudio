@@ -267,6 +267,7 @@ struct pa_sink_input {
 
 #ifdef __TIZEN__
     FILE *dump_fp;
+    int pop_zero_count;
 #endif
 
     void *userdata;

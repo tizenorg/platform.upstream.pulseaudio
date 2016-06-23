@@ -65,7 +65,7 @@
 #include <pulsecore/iochannel.h>
 #endif
 
-/* #define PROTOCOL_NATIVE_DEBUG */
+#define PROTOCOL_NATIVE_DEBUG
 
 /* Kick a client if it doesn't authenticate within this time */
 #define AUTH_TIMEOUT (60 * PA_USEC_PER_SEC)
@@ -80,6 +80,7 @@
 
 #ifdef __TIZEN__
 #define DEVICE_BUS_BUILTIN "builtin"
+#define POP_ZERO_COUNT_THRESHOLD	100
 #endif
 
 struct pa_native_protocol;
@@ -228,7 +229,10 @@ enum {
     PLAYBACK_STREAM_MESSAGE_OVERFLOW,
     PLAYBACK_STREAM_MESSAGE_DRAIN_ACK,
     PLAYBACK_STREAM_MESSAGE_STARTED,
-    PLAYBACK_STREAM_MESSAGE_UPDATE_TLENGTH
+    PLAYBACK_STREAM_MESSAGE_UPDATE_TLENGTH,
+#ifdef __TIZEN__
+    PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT
+#endif
 };
 
 enum {
@@ -962,6 +966,27 @@ static int playback_stream_process_msg(pa_msgobject *o, int code, void*userdata,
             }
 
             break;
+
+#ifdef __TIZEN__
+        case PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT: {
+                pa_tagstruct *t;
+                pa_proplist* pl = pa_proplist_new();
+
+                pa_log("received : PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT, send PA_COMMAND_PLAYBACK_STREAM_EVENT(%s)",
+                    PA_STREAM_EVENT_POP_TIMEOUT);
+
+                t = pa_tagstruct_new(NULL, 0);
+                pa_tagstruct_putu32(t, PA_COMMAND_PLAYBACK_STREAM_EVENT);
+                pa_tagstruct_putu32(t, (uint32_t) -1); /* tag */
+                pa_tagstruct_putu32(t, s->index);
+                pa_tagstruct_puts(t, PA_STREAM_EVENT_POP_TIMEOUT);
+                pa_tagstruct_put_proplist(t, pl);
+                pa_pstream_send_tagstruct(s->connection->pstream, t);
+
+                pa_proplist_free(pl);
+              }
+              break;
+#endif
 
         case PLAYBACK_STREAM_MESSAGE_DRAIN_ACK:
             pa_pstream_send_simple_ack(s->connection->pstream, PA_PTR_TO_UINT(userdata));
@@ -1752,14 +1777,30 @@ static int sink_input_pop_cb(pa_sink_input *i, size_t nbytes, pa_memchunk *chunk
     pa_log("%s, pop(): %lu", pa_proplist_gets(i->proplist, PA_PROP_MEDIA_NAME), (unsigned long) pa_memblockq_get_length(s->memblockq));
 #endif
 
+#ifdef __TIZEN__
+    /* Accumulate zero pop count,
+     * if it exceeds certain threshold, send message to client to handle this situation */
+    if (pa_memblockq_get_length(s->memblockq) == 0) {
+        pa_log("===== pop_timeout_count = %d / %d =====", i->pop_zero_count, POP_ZERO_COUNT_THRESHOLD);
+        if (i->pop_zero_count++ >= POP_ZERO_COUNT_THRESHOLD) {
+            pa_log("async msgq post : PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT");
+            pa_asyncmsgq_post(pa_thread_mq_get()->outq, PA_MSGOBJECT(s), PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT, NULL, 0, NULL, NULL);
+            i->pop_zero_count = 0;
+         }
+    }
+#endif
+
     if (!handle_input_underrun(s, false))
         s->is_underrun = false;
+
+    pa_log("is underrun = %d", s->is_underrun);
 
     /* This call will not fail with prebuf=0, hence we check for
        underrun explicitly in handle_input_underrun */
     if (pa_memblockq_peek(s->memblockq, chunk) < 0)
         return -1;
 
+    pa_log("nbytes = %d, chunk length = %d", nbytes, chunk->length);
     chunk->length = PA_MIN(nbytes, chunk->length);
 
     if (i->thread_info.underrun_for > 0)

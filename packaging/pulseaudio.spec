@@ -10,7 +10,7 @@
 Name:             pulseaudio
 Summary:          Improved Linux sound server
 Version:          5.0
-Release:          76
+Release:          77
 Group:            Multimedia/Audio
 License:          LGPL-2.1+
 URL:              http://pulseaudio.org
@@ -360,7 +360,7 @@ fi
 %defattr(-,root,root,-)
 %license LICENSE LGPL
 %config %{_sysconfdir}/pulse/filter/*.dat
-%{_bindir}/esdcompat
+%exclude %{_bindir}/esdcompat
 %{_bindir}/pulseaudio
 %{_libdir}/libpulsecore-%{version}.so
 %{udev_dir}/rules.d/90-pulseaudio.rules
@@ -451,7 +451,7 @@ fi
 %{_libdir}/pulse-%{version}/modules/module-main-volume-policy.so
 %{_libdir}/pulse-%{version}/modules/module-audio-groups.so
 
-%config(noreplace) /etc/bash_completion.d/pulseaudio-bash-completion.sh
+%exclude %config(noreplace) /etc/bash_completion.d/pulseaudio-bash-completion.sh
 
 %files -n libpulse
 %manifest %{name}.manifest

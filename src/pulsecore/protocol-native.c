@@ -4099,10 +4099,10 @@ static void command_set_volume_ramp(
 
     if (sink) {
         pa_log_debug("Client %s changes volume ramp of sink %s.", client_name, sink->name);
-        pa_sink_set_volume_ramp(sink, &ramp, TRUE, TRUE);
+        pa_sink_set_volume_ramp(sink, &ramp, TRUE);
     } else if (si) {
         pa_log_debug("Client %s changes volume ramp of sink input %s.", client_name, pa_strnull(pa_proplist_gets(si->proplist, PA_PROP_MEDIA_NAME)));
-        pa_sink_input_set_volume_ramp(si, &ramp, TRUE, TRUE);
+        pa_sink_input_set_volume_ramp(si, &ramp, TRUE);
     }
 
     pa_pstream_send_simple_ack(c->pstream, tag);

@@ -1476,8 +1476,7 @@ int pa_sink_input_remove_volume_factor(pa_sink_input *i, const char *key) {
 void pa_sink_input_set_volume_ramp(
         pa_sink_input *i,
         const pa_cvolume_ramp *ramp,
-        bool send_msg,
-        bool save) {
+        bool send_msg) {
 
     pa_sink_input_assert_ref(i);
     pa_assert_ctl_context();

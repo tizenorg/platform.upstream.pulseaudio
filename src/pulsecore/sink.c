@@ -2252,8 +2252,7 @@ void pa_sink_set_volume(
 void pa_sink_set_volume_ramp(
         pa_sink *s,
         const pa_cvolume_ramp *ramp,
-        bool send_msg,
-        bool save) {
+        bool send_msg) {
 
     pa_sink_assert_ref(s);
     pa_assert_ctl_context();

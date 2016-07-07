@@ -400,7 +400,7 @@ pa_cvolume *pa_sink_input_get_volume(pa_sink_input *i, pa_cvolume *volume, bool 
 
 void pa_sink_input_set_mute(pa_sink_input *i, bool mute, bool save);
 
-void pa_sink_input_set_volume_ramp(pa_sink_input *i, const pa_cvolume_ramp *ramp, bool send_msg, bool save);
+void pa_sink_input_set_volume_ramp(pa_sink_input *i, const pa_cvolume_ramp *ramp, bool send_msg);
 
 void pa_sink_input_update_proplist(pa_sink_input *i, pa_update_mode_t mode, pa_proplist *p);
 

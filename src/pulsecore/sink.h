@@ -471,7 +471,7 @@ bool pa_sink_get_mute(pa_sink *sink, bool force_refresh);
 
 bool pa_sink_update_proplist(pa_sink *s, pa_update_mode_t mode, pa_proplist *p);
 
-void pa_sink_set_volume_ramp(pa_sink *s, const pa_cvolume_ramp *ramp, bool send_msg, bool save);
+void pa_sink_set_volume_ramp(pa_sink *s, const pa_cvolume_ramp *ramp, bool send_msg);
 
 int pa_sink_set_port(pa_sink *s, const char *name, bool save);
 void pa_sink_set_mixer_dirty(pa_sink *s, bool is_dirty);

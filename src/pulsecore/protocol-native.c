@@ -1785,16 +1785,21 @@ static bool sink_input_process_underrun_cb(pa_sink_input *i) {
 
 #ifdef __TIZEN__
 static void _check_zero_pop_timeout(pa_sink_input *i) {
-    int zero_pop_seconds = 0;
+    uint32_t zero_pop_seconds = 0;
     playback_stream *s = PLAYBACK_STREAM(i->userdata);
 
     if (pa_memblockq_get_length(s->memblockq) == 0) {
         if (i->initial_zero_pop_time) {
-            zero_pop_seconds = (int)((pa_rtclock_now() - i->initial_zero_pop_time) / PA_USEC_PER_SEC);
-            pa_log_debug("pop diff = %d sec., threshold = %d", zero_pop_seconds, i->core->zero_pop_threshold);
+            zero_pop_seconds = (uint32_t)((pa_rtclock_now() - i->initial_zero_pop_time) / PA_USEC_PER_SEC);
+
+            if (zero_pop_seconds > i->zero_pop_duration) {
+                pa_log_debug("zero pop (no sink-input data) for [%d] sec., timeout in [%d] sec.",
+                             zero_pop_seconds, i->core->zero_pop_threshold);
+                i->zero_pop_duration = zero_pop_seconds;
+            }
 
             if (zero_pop_seconds >= i->core->zero_pop_threshold) {
-                pa_log_info("async msgq post : PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT");
+                pa_log_warn("async msgq post : PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT");
                 pa_asyncmsgq_post(pa_thread_mq_get()->outq, PA_MSGOBJECT(s),
                                   PLAYBACK_STREAM_MESSAGE_POP_TIMEOUT, NULL, 0, NULL, NULL);
                 i->initial_zero_pop_time = 0;
@@ -1802,6 +1807,7 @@ static void _check_zero_pop_timeout(pa_sink_input *i) {
         } else {
             pa_log_debug("First zero pop");
             i->initial_zero_pop_time = pa_rtclock_now();
+            i->zero_pop_duration = 0;
         }
     } else {
         if (i->initial_zero_pop_time) {
@@ -1827,8 +1833,9 @@ static int sink_input_pop_cb(pa_sink_input *i, size_t nbytes, pa_memchunk *chunk
 
 #ifdef __TIZEN__
     /* If zero pops exceeds certain threshold, send message to client to handle this situation */
-     /* FIXME: maybe we can use s->is_underrun to check.... */
-    _check_zero_pop_timeout(i);
+    /* FIXME: maybe we can use s->is_underrun to check.... */
+    if (!i->is_virtual) /* skip for virtual stream */
+        _check_zero_pop_timeout(i);
 #endif
 
     if (!handle_input_underrun(s, false))

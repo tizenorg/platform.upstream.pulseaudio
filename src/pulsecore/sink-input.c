@@ -332,6 +332,9 @@ int pa_sink_input_new(
     char *pt;
     char *memblockq_name;
     pa_cvolume v;
+#ifdef __TIZEN__
+    char *media_name = NULL;
+#endif
 
     pa_assert(_i);
     pa_assert(core);
@@ -564,6 +567,11 @@ int pa_sink_input_new(
     i->userdata = NULL;
 #ifdef __TIZEN__
     i->dump_fp = NULL;
+
+    i->is_virtual = false;
+    media_name = pa_proplist_gets(i->proplist, PA_PROP_MEDIA_NAME);
+    if (media_name && pa_streq(media_name, "VIRTUAL_STREAM"))
+        i->is_virtual = true;
 #endif
     if (data->flags & PA_SINK_INPUT_START_RAMP_MUTED)
         pa_cvolume_ramp_int_init(&i->ramp, PA_VOLUME_MUTED, data->sink->sample_spec.channels);

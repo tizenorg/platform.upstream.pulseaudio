@@ -267,7 +267,9 @@ struct pa_sink_input {
 
 #ifdef __TIZEN__
     FILE *dump_fp;
-    pa_usec_t initial_zero_pop_time;
+    pa_usec_t zero_pop_start_time;
+    uint32_t old_zero_pop_time;
+    bool is_virtual;
 #endif
 
     void *userdata;

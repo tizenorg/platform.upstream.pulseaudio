@@ -791,8 +791,9 @@ static float calc_volume_ramp_linear(pa_volume_ramp_int_t *ramp) {
 }
 
 static float calc_volume_ramp_logarithmic(pa_volume_ramp_int_t *ramp) {
-    float x_val, s, e;
+    float s, e;
     long temp;
+    double x_val;
 
     pa_assert(ramp);
     pa_assert(ramp->length > 0);
@@ -807,10 +808,10 @@ static float calc_volume_ramp_logarithmic(pa_volume_ramp_int_t *ramp) {
         e = ramp->end;
     }
 
-    x_val = temp == 0 ? 0.0 : powf(temp, 10);
+    x_val = temp == 0 ? 0.0 : pow((double) temp, 10);
 
     /* base 10 logarithmic interpolation */
-    return s + x_val * (e - s) / powf(ramp->length, 10);
+    return s + (float) ((x_val * (e - s) / pow((double) ramp->length, 10)));
 }
 
 static float calc_volume_ramp_cubic(pa_volume_ramp_int_t *ramp) {

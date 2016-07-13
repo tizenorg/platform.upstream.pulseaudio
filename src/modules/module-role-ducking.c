@@ -45,6 +45,8 @@ PA_MODULE_USAGE(
         "ducking_roles=<Comma(and slash) separated list of roles which will be ducked. Slash can divide the roles into groups>"
         "global=<Should we operate globally or only inside the same device?>"
         "volume=<Volume for the attenuated streams. Default: -20dB. If trigger_roles and ducking_roles are separated by slash, use slash for dividing volume group>"
+        "fade_out=<Fade-out duration(ms). If trigger_roles and ducking_roles are separated by slash, use slash for dividing fade group. Default: 0.>"
+        "fade_in=<Fade-in duration(ms). If trigger_roles and ducking_roles are separated by slash, use slash for dividing fade group. Default: 0.>"
 );
 
 static const char* const valid_modargs[] = {
@@ -52,15 +54,25 @@ static const char* const valid_modargs[] = {
     "ducking_roles",
     "global",
     "volume",
+    "fade_out",
+    "fade_in",
     NULL
+};
+
+struct fade_durations {
+    long out;
+    long in;
 };
 
 struct group {
     char *name;
     pa_idxset *trigger_roles;
     pa_idxset *ducking_roles;
+    pa_idxset *triggered_inputs;
     pa_idxset *ducked_inputs;
     pa_volume_t volume;
+    struct fade_durations fade_durs;
+    bool fade_needed;
 };
 
 struct userdata {
@@ -79,11 +91,15 @@ struct userdata {
 
 static bool sink_has_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_input *ignore, struct group *g) {
     pa_sink_input *j;
-    uint32_t idx, role_idx;
+    uint32_t idx, role_idx, trigger_idx;
     const char *trigger_role;
+    void *si;
+    bool found = false;
 
     pa_assert(u);
     pa_sink_assert_ref(s);
+
+    g->fade_needed = true;
 
     PA_IDXSET_FOREACH(j, s->inputs, idx) {
         const char *role;
@@ -94,15 +110,31 @@ static bool sink_has_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_inp
         if (!(role = pa_proplist_gets(j->proplist, PA_PROP_MEDIA_ROLE)))
             continue;
 
-        PA_IDXSET_FOREACH(trigger_role, g->trigger_roles, role_idx) {
-            if (pa_streq(role, trigger_role)) {
-                pa_log_debug("Found a '%s' stream that will trigger the ducking.", trigger_role);
-                return true;
+        if (g->fade_durs.in || g->fade_durs.out) {
+            PA_IDXSET_FOREACH(trigger_role, g->trigger_roles, role_idx) {
+                if (pa_streq(role, trigger_role)) {
+                    pa_log_debug("Found a '%s' stream(%u) that will trigger the ducking.", trigger_role, j->index);
+                    PA_IDXSET_FOREACH(si, g->triggered_inputs, trigger_idx) {
+                        if (j == si) {
+                            g->fade_needed = false;
+                            break;
+                        }
+                    }
+                    found = true;
+                    pa_idxset_put(g->triggered_inputs, j, NULL);
+                }
+            }
+        } else {
+            PA_IDXSET_FOREACH(trigger_role, g->trigger_roles, role_idx) {
+                if (pa_streq(role, trigger_role)) {
+                    pa_log_debug("Found a '%s' stream(%u) that will trigger the ducking.", trigger_role, j->index);
+                    return true;
+                }
             }
         }
     }
 
-    return false;
+    return found;
 }
 
 static bool sinks_have_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_input *ignore, struct group *g) {
@@ -121,11 +153,38 @@ static bool sinks_have_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_i
     return ret;
 }
 
+static bool stream_is_affected_by_other_groups(struct userdata *u, pa_sink_input *s, struct group *skip_g, pa_volume_t *min_vol) {
+    bool ret = false;
+    uint32_t i;
+    pa_sink_input *si;
+    pa_volume_t vol = PA_VOLUME_MAX;
+
+    pa_assert(u);
+
+    for (i = 0; i < u->n_groups; i++) {
+        uint32_t idx;
+        if (u->groups[i] == skip_g)
+            continue;
+        PA_IDXSET_FOREACH(si, u->groups[i]->ducked_inputs, idx)
+            if (si == s) {
+                if (u->groups[i]->volume < vol)
+                    vol = u->groups[i]->volume;
+                ret = true;
+            }
+    }
+    if (ret)
+        *min_vol = vol;
+
+    return ret;
+}
+
 static void apply_ducking_to_sink(struct userdata *u, pa_sink *s, pa_sink_input *ignore, bool duck, struct group *g) {
     pa_sink_input *j;
     uint32_t idx, role_idx;
     const char *ducking_role;
     bool trigger = false;
+    bool exist = false;
+    pa_volume_t min_vol;
 
     pa_assert(u);
     pa_sink_assert_ref(s);
@@ -149,17 +208,51 @@ static void apply_ducking_to_sink(struct userdata *u, pa_sink *s, pa_sink_input 
 
         i = pa_idxset_get_by_data(g->ducked_inputs, j, NULL);
         if (duck && !i) {
-            pa_cvolume vol;
-            vol.channels = 1;
-            vol.values[0] = g->volume;
+            if (g->fade_durs.in || g->fade_durs.out) {
+                pa_cvolume_ramp vol_ramp;
+                pa_cvolume_ramp_set(&vol_ramp, j->volume.channels, PA_VOLUME_RAMP_TYPE_LINEAR, g->fade_durs.out, g->volume);
+                if (!g->fade_needed) {
+                    pa_cvolume vol;
+                    vol.channels = 1;
+                    vol.values[0] = g->volume;
+                    pa_log_debug("Found a '%s' stream(%u) that should be ducked by '%s'.", ducking_role, j->index, g->name);
 
-            pa_log_debug("Found a '%s' stream that should be ducked by '%s'.", ducking_role, g->name);
-            pa_sink_input_add_volume_factor(j, g->name, &vol);
+                    pa_sink_input_add_volume_factor(j, g->name, &vol);
+                    pa_sink_input_set_volume_ramp(j, &vol_ramp, false, false);
+                } else {
+                    exist = stream_is_affected_by_other_groups(u, j, g, &min_vol);
+                    pa_cvolume_ramp_set(&vol_ramp, j->volume.channels, PA_VOLUME_RAMP_TYPE_LINEAR,
+                                        g->fade_durs.out, exist ? MIN(g->volume, min_vol) : g->volume);
+                    pa_log_debug("Found a '%s' stream(%u) that should be ducked with fade-out(%lums) by '%s'.",
+                                 ducking_role, j->index, g->fade_durs.out, g->name);
+
+                    pa_sink_input_set_volume_ramp(j, &vol_ramp, true, false);
+                }
+            } else {
+                pa_cvolume vol;
+                vol.channels = 1;
+                vol.values[0] = g->volume;
+
+                pa_log_debug("Found a '%s' stream(%u) that should be ducked by '%s'.", ducking_role, j->index, g->name);
+                pa_sink_input_add_volume_factor(j, g->name, &vol);
+            }
             pa_idxset_put(g->ducked_inputs, j, NULL);
         } else if (!duck && i) { /* This stream should not longer be ducked */
-            pa_log_debug("Found a '%s' stream that should be unducked by '%s'", ducking_role, g->name);
+            if (g->fade_durs.in || g->fade_durs.out) {
+                pa_cvolume_ramp vol_ramp;
+                pa_log_debug("Found a '%s' stream(%u) that should be unducked with fade-in(%lums) by '%s'",
+                             ducking_role, j->index, g->fade_durs.in, g->name);
+                pa_sink_input_remove_volume_factor(j, g->name);
+                exist = stream_is_affected_by_other_groups(u, j, g, &min_vol);
+                pa_cvolume_ramp_set(&vol_ramp, j->volume.channels, PA_VOLUME_RAMP_TYPE_LINEAR,
+                                    g->fade_durs.in, exist ? min_vol : PA_VOLUME_NORM);
+
+                pa_sink_input_set_volume_ramp(j, &vol_ramp, true, false);
+            } else {
+                pa_log_debug("Found a '%s' stream(%u) that should be unducked by '%s'", ducking_role, j->index, g->name);
+                pa_sink_input_remove_volume_factor(j, g->name);
+            }
             pa_idxset_remove_by_data(g->ducked_inputs, j, NULL);
-            pa_sink_input_remove_volume_factor(j, g->name);
         }
     }
 }
@@ -212,8 +305,10 @@ static pa_hook_result_t sink_input_unlink_cb(pa_core *core, pa_sink_input *i, st
 
     pa_sink_input_assert_ref(i);
 
-    for (j = 0; j < u->n_groups; j++)
+    for (j = 0; j < u->n_groups; j++) {
         pa_idxset_remove_by_data(u->groups[j]->ducked_inputs, i, NULL);
+        pa_idxset_remove_by_data(u->groups[j]->triggered_inputs, i, NULL);
+    }
 
     return process(u, i, false);
 }
@@ -237,9 +332,12 @@ int pa__init(pa_module *m) {
     struct userdata *u;
     const char *roles;
     const char *volumes;
+    const char *times;
     uint32_t group_count_tr = 0;
     uint32_t group_count_du = 0;
     uint32_t group_count_vol = 0;
+    uint32_t group_count_fd_out = 0;
+    uint32_t group_count_fd_in = 0;
     uint32_t i = 0;
 
     pa_assert(m);
@@ -281,9 +379,28 @@ int pa__init(pa_module *m) {
             pa_xfree(n);
         }
     }
+    times = pa_modargs_get_value(ma, "fade_out", NULL);
+    if (times) {
+        const char *split_state = NULL;
+        char *n = NULL;
+        while ((n = pa_split(times, "/", &split_state))) {
+            group_count_fd_out++;
+            pa_xfree(n);
+        }
+    }
+    times = pa_modargs_get_value(ma, "fade_in", NULL);
+    if (times) {
+        const char *split_state = NULL;
+        char *n = NULL;
+        while ((n = pa_split(times, "/", &split_state))) {
+            group_count_fd_in++;
+            pa_xfree(n);
+        }
+    }
 
     if ((group_count_tr > 1 || group_count_du > 1 || group_count_vol > 1) &&
-        ((group_count_tr != group_count_du) || (group_count_tr != group_count_vol))) {
+        ((group_count_tr != group_count_du) || (group_count_tr != group_count_vol) ||
+        (group_count_fd_out > group_count_tr) || (group_count_fd_in > group_count_tr))) {
         pa_log("Invalid number of groups");
         goto fail;
     }
@@ -299,6 +416,7 @@ int pa__init(pa_module *m) {
         u->groups[i]->name = pa_sprintf_malloc("%s_group_%u", u->name, i);
         u->groups[i]->trigger_roles = pa_idxset_new(NULL, NULL);
         u->groups[i]->ducking_roles = pa_idxset_new(NULL, NULL);
+        u->groups[i]->triggered_inputs = pa_idxset_new(NULL, NULL);
         u->groups[i]->ducked_inputs = pa_idxset_new(NULL, NULL);
     }
 
@@ -387,6 +505,48 @@ int pa__init(pa_module *m) {
         }
     }
 
+    times = pa_modargs_get_value(ma, "fade_out", NULL);
+    if (times) {
+        const char *group_split_state = NULL;
+        char *time_in_group = NULL;
+        i = 0;
+        while ((time_in_group = pa_split(times, "/", &group_split_state))) {
+            if (time_in_group[0] != '\0') {
+                if (pa_atol(time_in_group, &(u->groups[i++]->fade_durs.out))) {
+                    pa_log("Failed to pa_atol() for fade-out duration");
+                    pa_xfree(time_in_group);
+                    goto fail;
+                }
+            } else {
+                pa_log("empty fade-out duration");
+                pa_xfree(time_in_group);
+                goto fail;
+            }
+            pa_xfree(time_in_group);
+        }
+    }
+
+    times = pa_modargs_get_value(ma, "fade_in", NULL);
+    if (times) {
+        const char *group_split_state = NULL;
+        char *time_in_group = NULL;
+        i = 0;
+        while ((time_in_group = pa_split(times, "/", &group_split_state))) {
+            if (time_in_group[0] != '\0') {
+                if (pa_atol(time_in_group, &(u->groups[i++]->fade_durs.in))) {
+                    pa_log("Failed to pa_atol() for fade-in duration");
+                    pa_xfree(time_in_group);
+                    goto fail;
+                }
+            } else {
+                pa_log("empty fade-in duration");
+                pa_xfree(time_in_group);
+                goto fail;
+            }
+            pa_xfree(time_in_group);
+        }
+    }
+
     u->global = false;
     if (pa_modargs_get_value_boolean(ma, "global", &u->global) < 0) {
         pa_log("Failed to parse a boolean parameter: global");
@@ -428,6 +588,7 @@ void pa__done(pa_module *m) {
             while ((i = pa_idxset_steal_first(u->groups[j]->ducked_inputs, NULL)))
                 pa_sink_input_remove_volume_factor(i, u->groups[j]->name);
             pa_idxset_free(u->groups[j]->ducked_inputs, NULL);
+            pa_idxset_free(u->groups[j]->triggered_inputs, NULL);
             pa_xfree(u->groups[j]->name);
             pa_xfree(u->groups[j]);
         }

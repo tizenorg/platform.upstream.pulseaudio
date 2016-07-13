@@ -55,15 +55,21 @@ static const char* const valid_modargs[] = {
     NULL
 };
 
+struct group {
+    char *name;
+    pa_idxset *trigger_roles;
+    pa_idxset *ducking_roles;
+    pa_idxset *ducked_inputs;
+    pa_volume_t volume;
+};
+
 struct userdata {
     pa_core *core;
     const char *name;
-    uint32_t n_group;
-    pa_idxset **trigger_roles;
-    pa_idxset **ducking_roles;
-    pa_idxset **ducked_inputs;
-    char **volumes;
+    uint32_t n_groups;
+    struct group **groups;
     bool global;
+    pa_volume_t volume;
     pa_hook_slot
         *sink_input_put_slot,
         *sink_input_unlink_slot,
@@ -71,7 +77,7 @@ struct userdata {
         *sink_input_move_finish_slot;
 };
 
-static bool sink_has_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_input *ignore, uint32_t group_idx) {
+static bool sink_has_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_input *ignore, struct group *g) {
     pa_sink_input *j;
     uint32_t idx, role_idx;
     const char *trigger_role;
@@ -88,7 +94,7 @@ static bool sink_has_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_inp
         if (!(role = pa_proplist_gets(j->proplist, PA_PROP_MEDIA_ROLE)))
             continue;
 
-        PA_IDXSET_FOREACH(trigger_role, u->trigger_roles[group_idx], role_idx) {
+        PA_IDXSET_FOREACH(trigger_role, g->trigger_roles, role_idx) {
             if (pa_streq(role, trigger_role)) {
                 pa_log_debug("Found a '%s' stream that will trigger the ducking.", trigger_role);
                 return true;
@@ -99,7 +105,7 @@ static bool sink_has_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_inp
     return false;
 }
 
-static bool sinks_have_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_input *ignore, uint32_t group_idx) {
+static bool sinks_have_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_input *ignore, struct group *g) {
     bool ret = false;
 
     pa_assert(u);
@@ -107,25 +113,22 @@ static bool sinks_have_trigger_streams(struct userdata *u, pa_sink *s, pa_sink_i
     if (u->global) {
         uint32_t idx;
         PA_IDXSET_FOREACH(s, u->core->sinks, idx)
-            if ((ret = sink_has_trigger_streams(u, s, ignore, group_idx)))
+            if ((ret = sink_has_trigger_streams(u, s, ignore, g)))
                 break;
     } else
-        ret = sink_has_trigger_streams(u, s, ignore, group_idx);
+        ret = sink_has_trigger_streams(u, s, ignore, g);
 
     return ret;
 }
 
-static void apply_ducking_to_sink(struct userdata *u, pa_sink *s, pa_sink_input *ignore, bool duck, uint32_t group_idx) {
+static void apply_ducking_to_sink(struct userdata *u, pa_sink *s, pa_sink_input *ignore, bool duck, struct group *g) {
     pa_sink_input *j;
     uint32_t idx, role_idx;
     const char *ducking_role;
     bool trigger = false;
-    char *name = NULL;
 
     pa_assert(u);
     pa_sink_assert_ref(s);
-
-    name = pa_sprintf_malloc("%s_group_%u", u->name, group_idx);
 
     PA_IDXSET_FOREACH(j, s->inputs, idx) {
         const char *role;
@@ -137,41 +140,39 @@ static void apply_ducking_to_sink(struct userdata *u, pa_sink *s, pa_sink_input 
         if (!(role = pa_proplist_gets(j->proplist, PA_PROP_MEDIA_ROLE)))
             continue;
 
-        PA_IDXSET_FOREACH(ducking_role, u->ducking_roles[group_idx], role_idx) {
+        PA_IDXSET_FOREACH(ducking_role, g->ducking_roles, role_idx) {
             if ((trigger = pa_streq(role, ducking_role)))
                 break;
         }
         if (!trigger)
             continue;
 
-        i = pa_idxset_get_by_data(u->ducked_inputs[group_idx], j, NULL);
+        i = pa_idxset_get_by_data(g->ducked_inputs, j, NULL);
         if (duck && !i) {
             pa_cvolume vol;
             vol.channels = 1;
-            pa_parse_volume(u->volumes[group_idx], &vol.values[0]);
+            vol.values[0] = g->volume;
 
-            pa_log_debug("Found a '%s' stream that should be ducked by group '%u'.", ducking_role, group_idx);
-            pa_sink_input_add_volume_factor(j, name, &vol);
-            pa_idxset_put(u->ducked_inputs[group_idx], j, NULL);
+            pa_log_debug("Found a '%s' stream that should be ducked by '%s'.", ducking_role, g->name);
+            pa_sink_input_add_volume_factor(j, g->name, &vol);
+            pa_idxset_put(g->ducked_inputs, j, NULL);
         } else if (!duck && i) { /* This stream should not longer be ducked */
-            pa_log_debug("Found a '%s' stream that should be unducked by group '%u'", ducking_role, group_idx);
-            pa_idxset_remove_by_data(u->ducked_inputs[group_idx], j, NULL);
-            pa_sink_input_remove_volume_factor(j, name);
+            pa_log_debug("Found a '%s' stream that should be unducked by '%s'", ducking_role, g->name);
+            pa_idxset_remove_by_data(g->ducked_inputs, j, NULL);
+            pa_sink_input_remove_volume_factor(j, g->name);
         }
     }
-
-    pa_xfree(name);
 }
 
-static void apply_ducking(struct userdata *u, pa_sink *s, pa_sink_input *ignore, bool duck, uint32_t group_idx) {
+static void apply_ducking(struct userdata *u, pa_sink *s, pa_sink_input *ignore, bool duck, struct group *g) {
     pa_assert(u);
 
     if (u->global) {
         uint32_t idx;
         PA_IDXSET_FOREACH(s, u->core->sinks, idx)
-            apply_ducking_to_sink(u, s, ignore, duck, group_idx);
+            apply_ducking_to_sink(u, s, ignore, duck, g);
     } else
-        apply_ducking_to_sink(u, s, ignore, duck, group_idx);
+        apply_ducking_to_sink(u, s, ignore, duck, g);
 }
 
 static pa_hook_result_t process(struct userdata *u, pa_sink_input *i, bool duck) {
@@ -191,9 +192,9 @@ static pa_hook_result_t process(struct userdata *u, pa_sink_input *i, bool duck)
     if (!i->sink)
         return PA_HOOK_OK;
 
-    for (j = 0; j < u->n_group; j++) {
-        should_duck = sinks_have_trigger_streams(u, i->sink, duck ? NULL : i, j);
-        apply_ducking(u, i->sink, duck ? NULL : i, should_duck, j);
+    for (j = 0; j < u->n_groups; j++) {
+        should_duck = sinks_have_trigger_streams(u, i->sink, duck ? NULL : i, u->groups[j]);
+        apply_ducking(u, i->sink, duck ? NULL : i, should_duck, u->groups[j]);
     }
 
     return PA_HOOK_OK;
@@ -211,8 +212,8 @@ static pa_hook_result_t sink_input_unlink_cb(pa_core *core, pa_sink_input *i, st
 
     pa_sink_input_assert_ref(i);
 
-    for (j = 0; j < u->n_group; j++)
-        pa_idxset_remove_by_data(u->ducked_inputs[j], i, NULL);
+    for (j = 0; j < u->n_groups; j++)
+        pa_idxset_remove_by_data(u->groups[j]->ducked_inputs, i, NULL);
 
     return process(u, i, false);
 }
@@ -236,7 +237,6 @@ int pa__init(pa_module *m) {
     struct userdata *u;
     const char *roles;
     const char *volumes;
-    pa_volume_t volume;
     uint32_t group_count_tr = 0;
     uint32_t group_count_du = 0;
     uint32_t group_count_vol = 0;
@@ -289,18 +289,17 @@ int pa__init(pa_module *m) {
     }
 
     if (group_count_tr > 0)
-        u->n_group = group_count_tr;
+        u->n_groups = group_count_tr;
     else
-        u->n_group = 1;
+        u->n_groups = 1;
 
-    u->trigger_roles = pa_xmalloc0(u->n_group * sizeof(pa_idxset*));
-    u->ducking_roles = pa_xmalloc0(u->n_group * sizeof(pa_idxset*));
-    u->ducked_inputs = pa_xmalloc0(u->n_group * sizeof(pa_idxset*));
-    u->volumes = pa_xmalloc0(u->n_group * sizeof(char*));
-    while (i < u->n_group) {
-        u->trigger_roles[i] = pa_idxset_new(NULL, NULL);
-        u->ducking_roles[i] = pa_idxset_new(NULL, NULL);
-        u->ducked_inputs[i++] = pa_idxset_new(NULL, NULL);
+    u->groups = pa_xmalloc0(u->n_groups * sizeof(struct group*));
+    for (i = 0; i < u->n_groups; i++) {
+        u->groups[i] = pa_xmalloc0(sizeof(struct group));
+        u->groups[i]->name = pa_sprintf_malloc("%s_group_%u", u->name, i);
+        u->groups[i]->trigger_roles = pa_idxset_new(NULL, NULL);
+        u->groups[i]->ducking_roles = pa_idxset_new(NULL, NULL);
+        u->groups[i]->ducked_inputs = pa_idxset_new(NULL, NULL);
     }
 
     roles = pa_modargs_get_value(ma, "trigger_roles", NULL);
@@ -314,18 +313,24 @@ int pa__init(pa_module *m) {
                 char *n = NULL;
                 while ((n = pa_split(roles_in_group, ",", &split_state))) {
                     if (n[0] != '\0')
-                        pa_idxset_put(u->trigger_roles[i], n, NULL);
-                    else
+                        pa_idxset_put(u->groups[i]->trigger_roles, n, NULL);
+                    else {
+                        pa_log("empty trigger role");
                         pa_xfree(n);
+                        goto fail;
+                    }
                 }
                 i++;
-            } else
+            } else {
+                pa_log("empty trigger roles");
                 pa_xfree(roles_in_group);
+                goto fail;
+            }
         }
     }
-    if (pa_idxset_isempty(u->trigger_roles[0])) {
+    if (pa_idxset_isempty(u->groups[0]->trigger_roles)) {
         pa_log_debug("Using role 'phone' as trigger role.");
-        pa_idxset_put(u->trigger_roles[0], pa_xstrdup("phone"), NULL);
+        pa_idxset_put(u->groups[0]->trigger_roles, pa_xstrdup("phone"), NULL);
     }
 
     roles = pa_modargs_get_value(ma, "ducking_roles", NULL);
@@ -339,41 +344,46 @@ int pa__init(pa_module *m) {
                 char *n = NULL;
                 while ((n = pa_split(roles_in_group, ",", &split_state))) {
                     if (n[0] != '\0')
-                        pa_idxset_put(u->ducking_roles[i], n, NULL);
-                    else
+                        pa_idxset_put(u->groups[i]->ducking_roles, n, NULL);
+                    else {
+                        pa_log("empty ducking role");
                         pa_xfree(n);
+                        goto fail;
+                     }
                 }
                 i++;
-            } else
+            } else {
+                pa_log("empty ducking roles");
                 pa_xfree(roles_in_group);
+                goto fail;
+            }
         }
     }
-    if (pa_idxset_isempty(u->ducking_roles[0])) {
+    if (pa_idxset_isempty(u->groups[0]->ducking_roles)) {
         pa_log_debug("Using roles 'music' and 'video' as ducking roles.");
-        pa_idxset_put(u->ducking_roles[0], pa_xstrdup("music"), NULL);
-        pa_idxset_put(u->ducking_roles[0], pa_xstrdup("video"), NULL);
+        pa_idxset_put(u->groups[0]->ducking_roles, pa_xstrdup("music"), NULL);
+        pa_idxset_put(u->groups[0]->ducking_roles, pa_xstrdup("video"), NULL);
     }
 
+    u->groups[0]->volume = pa_sw_volume_from_dB(-20);
     volumes = pa_modargs_get_value(ma, "volume", NULL);
     if (volumes) {
         const char *group_split_state = NULL;
         char *n = NULL;
         i = 0;
         while ((n = pa_split(volumes, "/", &group_split_state))) {
-            pa_log_debug("%s", n);
-            if (n[0] != '\0')
-                u->volumes[i++] = n;
-            else
+            if (n[0] != '\0') {
+                if (pa_parse_volume(n, &(u->groups[i++]->volume)) == -1) {
+                    pa_log("Failed to parse volume");
+                    pa_xfree(n);
+                    goto fail;
+                }
+            } else {
+                pa_log("empty volume");
                 pa_xfree(n);
-        }
-    }
-    if (!u->volumes[0])
-        u->volumes[0] = pa_xstrdup("-20db");
-
-    for (i = 0; i < u->n_group; i++) {
-        if (pa_parse_volume(u->volumes[i], &volume) == -1) {
-            pa_log("Failed to parse a volume parameter: volume");
-            goto fail;
+                goto fail;
+            }
+            pa_xfree(n);
         }
     }
 
@@ -405,43 +415,23 @@ void pa__done(pa_module *m) {
     struct userdata* u;
     pa_sink_input *i;
     uint32_t j;
-    uint32_t k;
 
     pa_assert(m);
 
     if (!(u = m->userdata))
         return;
 
-    if (u->trigger_roles) {
-        for (j = 0; j < u->n_group; j++)
-            pa_idxset_free(u->trigger_roles[j], pa_xfree);
-        pa_xfree(u->trigger_roles);
-    }
-
-    if (u->ducking_roles) {
-        for (j = 0; j < u->n_group; j++)
-            pa_idxset_free(u->ducking_roles[j], pa_xfree);
-        pa_xfree(u->ducking_roles);
-    }
-
-    if (u->volumes) {
-        for (j = 0; j < u->n_group; j++)
-            pa_xfree(u->volumes[j]);
-        pa_xfree(u->volumes);
-    }
-
-    if (u->ducked_inputs) {
-        char *name = NULL;
-        for (j = 0; j < u->n_group; j++) {
-            while ((i = pa_idxset_steal_first(u->ducked_inputs[j], NULL)))
-                for (k = 0; k < u->n_group; k++) {
-                    name = pa_sprintf_malloc("%s_group_%u", u->name, k);
-                    pa_sink_input_remove_volume_factor(i, name);
-                    pa_xfree(name);
-                }
-            pa_idxset_free(u->ducked_inputs[j], NULL);
+    if (u->groups) {
+        for (j = 0; j < u->n_groups; j++) {
+            pa_idxset_free(u->groups[j]->trigger_roles, pa_xfree);
+            pa_idxset_free(u->groups[j]->ducking_roles, pa_xfree);
+            while ((i = pa_idxset_steal_first(u->groups[j]->ducked_inputs, NULL)))
+                pa_sink_input_remove_volume_factor(i, u->groups[j]->name);
+            pa_idxset_free(u->groups[j]->ducked_inputs, NULL);
+            pa_xfree(u->groups[j]->name);
+            pa_xfree(u->groups[j]);
         }
-        pa_xfree(u->ducked_inputs);
+        pa_xfree(u->groups);
     }
 
     if (u->sink_input_put_slot)

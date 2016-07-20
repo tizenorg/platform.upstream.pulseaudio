@@ -4,6 +4,7 @@ Description=Sound Service
 [Service]
 ExecStart=@PA_BINARY@ --daemonize=no
 Restart=on-failure
+SmackProcessLabel=System
 
 [Install]
 Also=pulseaudio.socket

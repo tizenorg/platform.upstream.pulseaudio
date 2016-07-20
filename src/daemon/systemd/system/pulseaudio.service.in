@@ -9,6 +9,7 @@ Restart=always
 KillSignal=SIGKILL
 MemoryLimit=50M
 PIDFile=/var/run/pulse/pid
+SmackProcessLabel=System
 
 [Install]
 WantedBy=multi-user.target

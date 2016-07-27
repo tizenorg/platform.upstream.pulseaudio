@@ -198,9 +198,17 @@ int pa_udev_get_info(int card_idx, pa_proplist *p) {
         if ((v = udev_device_get_devpath(card)))
             pa_proplist_sets(p, "sysfs.path", v);
 
+#ifdef __TIZEN__
+    if (!pa_proplist_contains(p, PA_PROP_UDEV_ID))
+#else
     if (!pa_proplist_contains(p, "udev.id"))
+#endif
         if ((v = udev_device_get_property_value(card, "ID_ID")) && *v)
+#ifdef __TIZEN__
+            pa_proplist_sets(p, PA_PROP_UDEV_ID, v);
+#else
             pa_proplist_sets(p, "udev.id", v);
+#endif
 
     if (!pa_proplist_contains(p, PA_PROP_DEVICE_BUS))
         if ((v = udev_device_get_property_value(card, "ID_BUS")) && *v)

@@ -94,6 +94,7 @@ PA_C_DECL_BEGIN
 #define PA_PROP_BUFFER_ATTR_MINREQ             "buffer.attr.minreq"
 #define PA_PROP_BUFFER_ATTR_PREBUF             "buffer.attr.prebuf"
 #define PA_PROP_BUFFER_ATTR_FRAGSIZE           "buffer.attr.fragsize"
+#define PA_PROP_UDEV_ID                        "udev.id"
 #endif
 
 /** For event sound streams: XDG event sound name. e.g.\ "message-new-email" (Event sound streams are those with media.role set to "event") */
